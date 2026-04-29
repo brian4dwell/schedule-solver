@@ -1,3 +1,57 @@
+# Project local secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Node / Next.js frontend tooling
+**/node_modules/
+**/.next/
+**/out/
+**/.vercel/
+**/.turbo/
+**/.pnp/
+**/.pnp.*
+**/.yarn/*
+!**/.yarn/patches/
+!**/.yarn/plugins/
+!**/.yarn/releases/
+!**/.yarn/versions/
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/.pnpm-debug.log*
+**/*.tsbuildinfo
+**/next-env.d.ts
+
+# Frontend and browser test output
+**/coverage/
+**/playwright-report/
+**/test-results/
+**/.nyc_output/
+
+# Local database, queue, and container state
+.docker/
+.data/
+data/
+postgres-data/
+redis-data/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.dump
+*.backup
+
+# Fly.io local state
+**/.fly/
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -148,9 +202,9 @@ activemq-data/
 *.sage.py
 
 # Environments
-.env
 .envrc
 .venv
+.venv/
 env/
 venv/
 ENV/
