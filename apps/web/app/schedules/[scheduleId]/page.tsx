@@ -1,7 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { ScheduleWorkspace } from "@/components/schedules/schedule-workspace";
-import { listCenters, listRoomsForCenter } from "@/lib/api";
+import { listCenters, listProviders, listRoomsForCenter } from "@/lib/api";
 
 type ScheduleDetailPageProps = {
   params: Promise<{
@@ -14,6 +14,7 @@ export default async function ScheduleDetailPage({
 }: ScheduleDetailPageProps) {
   const routeParams = await params;
   const centers = await listCenters();
+  const providers = await listProviders();
   const roomGroups = await Promise.all(
     centers.map(async (center) => {
       const rooms = await listRoomsForCenter(center.id);
@@ -31,7 +32,11 @@ export default async function ScheduleDetailPage({
         title="Schedule Workspace"
         description="Edit one schedule period at a time. Open another schedule in a separate browser tab to compare versions."
       />
-      <ScheduleWorkspace rooms={rooms} scheduleId={routeParams.scheduleId} />
+      <ScheduleWorkspace
+        providers={providers}
+        rooms={rooms}
+        scheduleId={routeParams.scheduleId}
+      />
     </AppShell>
   );
 }

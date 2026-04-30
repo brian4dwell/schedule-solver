@@ -7,7 +7,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
-from app.db.models import Assignment
 from app.db.models import Center
 from app.db.models import Provider
 from app.db.models import ProviderCenterCredential
@@ -96,21 +95,6 @@ def validate_room_types(
     return skill_room_type_ids
 
 
-def provider_has_assignments_for_center(
-    provider: Provider,
-    center_id: UUID,
-    organization_id: UUID,
-    session: Session,
-) -> bool:
-    statement = select(Assignment.id).where(Assignment.organization_id == organization_id)
-    statement = statement.where(Assignment.provider_id == provider.id)
-    statement = statement.where(Assignment.center_id == center_id)
-    statement = statement.limit(1)
-    assignment_id = session.scalar(statement)
-    has_assignment = assignment_id is not None
-    return has_assignment
-
-
 def replace_provider_center_credentials(
     provider: Provider,
     center_ids: list[UUID],
@@ -122,35 +106,15 @@ def replace_provider_center_credentials(
         credential.center_id
         for credential in provider.center_credentials
     ]
-    removed_center_ids = [
-        center_id
-        for center_id in current_center_ids
-        if center_id not in credentialed_center_ids
-    ]
     added_center_ids = [
         center_id
         for center_id in credentialed_center_ids
         if center_id not in current_center_ids
     ]
-
-    for removed_center_id in removed_center_ids:
-        has_assignment = provider_has_assignments_for_center(
-            provider,
-            removed_center_id,
-            organization_id,
-            session,
-        )
-
-        if has_assignment:
-            raise HTTPException(
-                status_code=409,
-                detail="Provider has existing assignments at a removed credentialed center",
-            )
-
     remaining_credentials = [
         credential
         for credential in provider.center_credentials
-        if credential.center_id not in removed_center_ids
+        if credential.center_id in credentialed_center_ids
     ]
     provider.center_credentials = remaining_credentials
 

@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import type { Center, Room } from "@/lib/api";
+import type { Center, Provider, Room } from "@/lib/api";
 import type {
+  ProviderIneligibilityReason,
   ScheduleDayKey,
   SchedulePublishEvent,
   ScheduleRoomAssignment,
@@ -22,9 +23,11 @@ type RoomRow = {
 
 type AvailableRoom = {
   id: string;
+  centerId: string;
   centerName: string;
   name: string;
   mdOnly: boolean;
+  roomTypeIds: string[];
   roomTypeNames: string[];
 };
 
@@ -51,8 +54,15 @@ type DragPayload =
     };
 
 type ScheduleWorkspaceProps = {
+  providers: Provider[];
   rooms: RoomRow[];
   scheduleId: string;
+};
+
+type ProviderPickerOption = {
+  provider: Provider;
+  isEligible: boolean;
+  reasons: ProviderIneligibilityReason[];
 };
 
 const dayColumns: DayColumn[] = [
@@ -133,9 +143,13 @@ function availableRoomsFromRows(rows: RoomRow[]): AvailableRoom[] {
     .map((row) => {
       const room = {
         id: row.room.id,
+        centerId: row.center.id,
         centerName: row.center.name,
         name: row.room.name,
         mdOnly: row.room.md_only,
+        roomTypeIds: row.room.room_types.map((roomType) => {
+          return roomType.id;
+        }),
         roomTypeNames: row.room.room_types.map((roomType) => {
           return roomType.name;
         }),
@@ -143,6 +157,151 @@ function availableRoomsFromRows(rows: RoomRow[]): AvailableRoom[] {
       return room;
     });
   return availableRooms;
+}
+
+function createProviderReason(
+  code: string,
+  category: ProviderIneligibilityReason["category"],
+  message: string,
+): ProviderIneligibilityReason {
+  const reason = {
+    code,
+    category,
+    message,
+  };
+  return reason;
+}
+
+function providerEligibilityForRoom(
+  provider: Provider,
+  room: AvailableRoom,
+): ProviderPickerOption {
+  const reasons: ProviderIneligibilityReason[] = [];
+
+  if (!provider.is_active) {
+    const reason = createProviderReason(
+      "inactive_provider",
+      "other_hard_constraint",
+      "Provider is inactive.",
+    );
+    reasons.push(reason);
+  }
+
+  const hasCenterCredential = provider.credentialed_center_ids.includes(room.centerId);
+
+  if (!hasCenterCredential) {
+    const reason = createProviderReason(
+      "missing_center_credential",
+      "missing_credential",
+      "Missing credential for this center.",
+    );
+    reasons.push(reason);
+  }
+
+  for (const roomTypeId of room.roomTypeIds) {
+    const hasRequiredSkill = provider.skill_room_type_ids.includes(roomTypeId);
+
+    if (hasRequiredSkill) {
+      continue;
+    }
+
+    const reason = createProviderReason(
+      "missing_required_skill",
+      "missing_skill",
+      "Missing required room type skill.",
+    );
+    reasons.push(reason);
+  }
+
+  if (room.mdOnly) {
+    const providerIsDoctor = provider.provider_type === "doctor";
+
+    if (!providerIsDoctor) {
+      const reason = createProviderReason(
+        "md_requirement_not_met",
+        "md_requirement_not_met",
+        "MD requirement not met.",
+      );
+      reasons.push(reason);
+    }
+  }
+
+  const isEligible = reasons.length === 0;
+  const option = {
+    provider,
+    isEligible,
+    reasons,
+  };
+  return option;
+}
+
+function sortProviderOptions(
+  options: ProviderPickerOption[],
+): ProviderPickerOption[] {
+  const sortedOptions = options.toSorted((first, second) => {
+    if (first.isEligible !== second.isEligible) {
+      return first.isEligible ? -1 : 1;
+    }
+
+    const comparison = first.provider.display_name.localeCompare(
+      second.provider.display_name,
+    );
+    return comparison;
+  });
+  return sortedOptions;
+}
+
+function providerOptionsForRoom(
+  providers: Provider[],
+  room: AvailableRoom,
+): ProviderPickerOption[] {
+  const options = providers.map((provider) => {
+    return providerEligibilityForRoom(provider, room);
+  });
+  const sortedOptions = sortProviderOptions(options);
+  return sortedOptions;
+}
+
+function selectedProviderOption(
+  options: ProviderPickerOption[],
+  providerId: string | null,
+): ProviderPickerOption | null {
+  if (providerId === null) {
+    return null;
+  }
+
+  const option = options.find((candidate) => {
+    return candidate.provider.id === providerId;
+  });
+  const selectedOption = option ?? null;
+  return selectedOption;
+}
+
+function validationMessagesForSelection(
+  option: ProviderPickerOption | null,
+): string[] {
+  if (option === null) {
+    return ["No provider assigned."];
+  }
+
+  const messages = option.reasons.map((reason) => {
+    return reason.message;
+  });
+  return messages;
+}
+
+function validationStatusForSelection(
+  option: ProviderPickerOption | null,
+): ScheduleRoomAssignment["validationStatus"] {
+  if (option === null) {
+    return "warning";
+  }
+
+  if (!option.isEligible) {
+    return "invalid";
+  }
+
+  return "valid";
 }
 
 function parseDragPayload(data: string): DragPayload | null {
@@ -246,20 +405,30 @@ function moveAssignment(
 }
 
 function createRoomAssignment(
-  roomId: string,
+  room: AvailableRoom,
   dayKey: ScheduleDayKey,
   sortOrder: number,
 ): ScheduleRoomAssignment {
-  const assignment = {
+  const assignment: ScheduleRoomAssignment = {
     id: createAssignmentId(),
     dayKey,
-    roomId,
+    centerId: room.centerId,
+    roomId: room.id,
+    providerId: null,
+    startTime: "07:00",
+    endTime: "15:00",
     sortOrder,
+    validationStatus: "unknown",
+    validationMessages: [],
   };
   return assignment;
 }
 
-export function ScheduleWorkspace({ rooms, scheduleId }: ScheduleWorkspaceProps) {
+export function ScheduleWorkspace({
+  providers,
+  rooms,
+  scheduleId,
+}: ScheduleWorkspaceProps) {
   const availableRooms = useMemo(() => {
     return availableRoomsFromRows(rooms);
   }, [rooms]);
@@ -286,6 +455,25 @@ export function ScheduleWorkspace({ rooms, scheduleId }: ScheduleWorkspaceProps)
   }
 
   function handlePublishSchedule() {
+    const invalidAssignments = workingVersion.assignments.filter((assignment) => {
+      const room = roomForAssignment(assignment);
+
+      if (room === undefined) {
+        return true;
+      }
+
+      const options = providerOptionsForRoom(providers, room);
+      const option = selectedProviderOption(options, assignment.providerId);
+      const validationStatus = validationStatusForSelection(option);
+      const isInvalid = validationStatus !== "valid";
+      return isInvalid;
+    });
+    const hasInvalidAssignments = invalidAssignments.length > 0;
+
+    if (hasInvalidAssignments) {
+      return;
+    }
+
     const publishedAt = new Date().toISOString();
     const nextEvent = schedulePublishEventSchema.parse({
       id: createPublishEventId(),
@@ -297,6 +485,33 @@ export function ScheduleWorkspace({ rooms, scheduleId }: ScheduleWorkspaceProps)
       const nextEvents = [...currentEvents, nextEvent];
       return nextEvents;
     });
+  }
+
+  function handleSaveDraft() {
+    const nextAssignments = workingVersion.assignments.map((assignment) => {
+      const room = roomForAssignment(assignment);
+
+      if (room === undefined) {
+        return assignment;
+      }
+
+      const options = providerOptionsForRoom(providers, room);
+      const option = selectedProviderOption(options, assignment.providerId);
+      const validationStatus = validationStatusForSelection(option);
+      const validationMessages = validationMessagesForSelection(option);
+      const nextAssignment = {
+        ...assignment,
+        validationStatus,
+        validationMessages,
+      };
+      return nextAssignment;
+    });
+    const nextVersion = scheduleVersionSchema.parse({
+      ...workingVersion,
+      status: "draft",
+      assignments: nextAssignments,
+    });
+    updateWorkingVersion(nextVersion);
   }
 
   function handleDragStart(event: React.DragEvent, payload: DragPayload) {
@@ -316,8 +531,16 @@ export function ScheduleWorkspace({ rooms, scheduleId }: ScheduleWorkspaceProps)
     }
 
     if (payload.type === "available-room") {
+      const room = availableRooms.find((availableRoom) => {
+        return availableRoom.id === payload.roomId;
+      });
+
+      if (room === undefined) {
+        return;
+      }
+
       const sortOrder = nextSortOrder(workingVersion.assignments, dayKey);
-      const assignment = createRoomAssignment(payload.roomId, dayKey, sortOrder);
+      const assignment = createRoomAssignment(room, dayKey, sortOrder);
       const assignments = [...workingVersion.assignments, assignment];
       const nextVersion = scheduleVersionSchema.parse({
         ...workingVersion,
@@ -361,7 +584,15 @@ export function ScheduleWorkspace({ rooms, scheduleId }: ScheduleWorkspaceProps)
     }
 
     if (payload.type === "available-room") {
-      const assignment = createRoomAssignment(payload.roomId, dayKey, targetIndex);
+      const room = availableRooms.find((availableRoom) => {
+        return availableRoom.id === payload.roomId;
+      });
+
+      if (room === undefined) {
+        return;
+      }
+
+      const assignment = createRoomAssignment(room, dayKey, targetIndex);
       const sameDayAssignments = assignmentsForKey(
         workingVersion.assignments,
         dayKey,
@@ -415,12 +646,53 @@ export function ScheduleWorkspace({ rooms, scheduleId }: ScheduleWorkspaceProps)
     updateWorkingVersion(nextVersion);
   }
 
+  function handleProviderSelected(
+    assignment: ScheduleRoomAssignment,
+    option: ProviderPickerOption,
+  ) {
+    const validationStatus = validationStatusForSelection(option);
+    const validationMessages = validationMessagesForSelection(option);
+    const assignments = workingVersion.assignments.map((currentAssignment) => {
+      if (currentAssignment.id !== assignment.id) {
+        return currentAssignment;
+      }
+
+      const nextAssignment = {
+        ...currentAssignment,
+        providerId: option.provider.id,
+        validationStatus,
+        validationMessages,
+      };
+      return nextAssignment;
+    });
+    const nextVersion = scheduleVersionSchema.parse({
+      ...workingVersion,
+      assignments,
+    });
+    updateWorkingVersion(nextVersion);
+  }
+
   function roomForAssignment(assignment: ScheduleRoomAssignment) {
     const room = availableRooms.find((availableRoom) => {
       return availableRoom.id === assignment.roomId;
     });
     return room;
   }
+
+  const invalidAssignmentCount = workingVersion.assignments.filter((assignment) => {
+    const room = roomForAssignment(assignment);
+
+    if (room === undefined) {
+      return true;
+    }
+
+    const options = providerOptionsForRoom(providers, room);
+    const option = selectedProviderOption(options, assignment.providerId);
+    const validationStatus = validationStatusForSelection(option);
+    const isInvalid = validationStatus !== "valid";
+    return isInvalid;
+  }).length;
+  const canPublish = invalidAssignmentCount === 0 && assignedRoomCount > 0;
 
   return (
     <div className="space-y-5">
@@ -437,7 +709,8 @@ export function ScheduleWorkspace({ rooms, scheduleId }: ScheduleWorkspaceProps)
               {workingVersion.name}
             </h3>
             <p className="text-sm text-slate-500">
-              Working schedule with {assignedRoomCount} assigned rooms. Last publish:
+              Working schedule with {assignedRoomCount} assigned rooms and{" "}
+              {invalidAssignmentCount} publish blockers. Last publish:
               {" "}
               {lastPublishedLabel}.
             </p>
@@ -454,8 +727,16 @@ export function ScheduleWorkspace({ rooms, scheduleId }: ScheduleWorkspaceProps)
             </label>
             <button
               type="button"
+              onClick={handleSaveDraft}
+              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Save draft
+            </button>
+            <button
+              type="button"
               onClick={handlePublishSchedule}
-              className="inline-flex h-9 items-center justify-center rounded-md bg-teal-700 px-3 text-sm font-semibold text-white hover:bg-teal-800"
+              disabled={!canPublish}
+              className="inline-flex h-9 items-center justify-center rounded-md bg-teal-700 px-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
               Publish changes
             </button>
@@ -495,6 +776,18 @@ export function ScheduleWorkspace({ rooms, scheduleId }: ScheduleWorkspaceProps)
                       const centerName = room?.centerName ?? "Unknown center";
                       const mdOnly = room?.mdOnly ?? false;
                       const roomTypeNames = room?.roomTypeNames ?? [];
+                      const providerOptions =
+                        room === undefined ? [] : providerOptionsForRoom(providers, room);
+                      const selectedOption = selectedProviderOption(
+                        providerOptions,
+                        assignment.providerId,
+                      );
+                      const selectedMessages = validationMessagesForSelection(
+                        selectedOption,
+                      );
+                      const selectedStatus = validationStatusForSelection(
+                        selectedOption,
+                      );
                       return (
                         <div
                           key={assignment.id}
@@ -549,6 +842,81 @@ export function ScheduleWorkspace({ rooms, scheduleId }: ScheduleWorkspaceProps)
                                 </span>
                               );
                             })}
+                          </div>
+                          <div className="mt-3 border-t border-slate-100 pt-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-xs font-semibold uppercase text-slate-500">
+                                Provider
+                              </p>
+                              <span
+                                className={
+                                  selectedStatus === "valid"
+                                    ? "rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700"
+                                    : "rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800"
+                                }
+                              >
+                                {selectedStatus === "valid"
+                                  ? "Eligible"
+                                  : "Not publishable"}
+                              </span>
+                            </div>
+                            <div className="mt-2 max-h-44 space-y-1 overflow-y-auto">
+                              {providerOptions.map((option) => {
+                                const isSelected =
+                                  option.provider.id === assignment.providerId;
+                                const firstReason = option.reasons.at(0);
+                                return (
+                                  <button
+                                    key={option.provider.id}
+                                    type="button"
+                                    onClick={() =>
+                                      handleProviderSelected(assignment, option)
+                                    }
+                                    className={
+                                      isSelected
+                                        ? "w-full rounded-md border border-teal-600 bg-teal-50 px-2 py-2 text-left"
+                                        : "w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-left hover:bg-slate-50"
+                                    }
+                                  >
+                                    <span className="block text-sm font-semibold text-slate-950">
+                                      {option.provider.display_name}
+                                    </span>
+                                    <span
+                                      className={
+                                        option.isEligible
+                                          ? "block text-xs text-emerald-700"
+                                          : "block text-xs text-red-700"
+                                      }
+                                    >
+                                      {option.isEligible
+                                        ? "Eligible"
+                                        : `Not eligible: ${
+                                            firstReason?.message ?? "Review required."
+                                          }`}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                              {providerOptions.length === 0 ? (
+                                <p className="rounded-md border border-dashed border-slate-300 px-2 py-3 text-sm text-slate-500">
+                                  Add providers before assigning this slot.
+                                </p>
+                              ) : null}
+                            </div>
+                            {selectedMessages.length > 0 ? (
+                              <div className="mt-2 space-y-1">
+                                {selectedMessages.map((message) => {
+                                  return (
+                                    <p
+                                      key={message}
+                                      className="text-xs leading-5 text-red-700"
+                                    >
+                                      {message}
+                                    </p>
+                                  );
+                                })}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       );

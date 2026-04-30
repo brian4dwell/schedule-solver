@@ -11,16 +11,42 @@ export const scheduleDayKeySchema = z.enum([
 ]);
 
 export const scheduleVersionStatusSchema = z.enum([
-  "working",
+  "draft",
   "published",
   "superseded",
+  "working",
 ]);
+
+export const providerIneligibilityReasonSchema = z.object({
+  code: z.string().min(1),
+  category: z.enum([
+    "missing_credential",
+    "credential_inactive",
+    "missing_skill",
+    "md_requirement_not_met",
+    "availability_conflict",
+    "other_hard_constraint",
+  ]),
+  message: z.string().min(1),
+});
+
+export const providerPickerEligibilitySchema = z.object({
+  providerId: z.string().uuid(),
+  isEligible: z.boolean(),
+  reasons: z.array(providerIneligibilityReasonSchema),
+});
 
 export const scheduleRoomAssignmentSchema = z.object({
   id: z.string().min(1),
   dayKey: scheduleDayKeySchema,
-  roomId: z.string().min(1),
+  centerId: z.string().uuid(),
+  roomId: z.string().uuid(),
+  providerId: z.string().uuid().nullable(),
+  startTime: z.string().min(1),
+  endTime: z.string().min(1),
   sortOrder: z.number().int().min(0),
+  validationStatus: z.enum(["unknown", "valid", "warning", "invalid"]),
+  validationMessages: z.array(z.string()),
 });
 
 export const scheduleVersionSchema = z.object({
@@ -51,6 +77,14 @@ export const schedulePeriodSummarySchema = z.object({
 export type ScheduleDayKey = z.infer<typeof scheduleDayKeySchema>;
 
 export type ScheduleVersionStatus = z.infer<typeof scheduleVersionStatusSchema>;
+
+export type ProviderIneligibilityReason = z.infer<
+  typeof providerIneligibilityReasonSchema
+>;
+
+export type ProviderPickerEligibility = z.infer<
+  typeof providerPickerEligibilitySchema
+>;
 
 export type ScheduleRoomAssignment = z.infer<typeof scheduleRoomAssignmentSchema>;
 

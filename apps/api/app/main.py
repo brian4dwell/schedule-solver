@@ -5,6 +5,7 @@ from app.routers.centers import router as centers_router
 from app.routers.health import router as health_router
 from app.routers.providers import router as providers_router
 from app.routers.rooms import router as rooms_router
+from app.routers.schedules import router as schedules_router
 
 app = FastAPI(title="Schedule Solver API")
 
@@ -20,3 +21,4 @@ app.include_router(health_router)
 app.include_router(centers_router)
 app.include_router(rooms_router)
 app.include_router(providers_router)
+app.include_router(schedules_router)
