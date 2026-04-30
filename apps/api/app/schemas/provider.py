@@ -22,6 +22,7 @@ class ProviderBase(BaseModel):
     employment_type: EmploymentType
     notes: str | None = None
     credentialed_center_ids: list[UUID] = Field(default_factory=list)
+    skill_room_type_ids: list[UUID] = Field(default_factory=list)
 
 
 class ProviderCreate(ProviderBase):
@@ -38,6 +39,7 @@ class ProviderUpdate(BaseModel):
     employment_type: EmploymentType | None = None
     notes: str | None = None
     credentialed_center_ids: list[UUID] | None = None
+    skill_room_type_ids: list[UUID] | None = None
 
 
 class ProviderRead(TimestampedSchema, ProviderBase):

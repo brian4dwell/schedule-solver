@@ -134,6 +134,10 @@ class Provider(Base, TimestampMixin):
         back_populates="provider",
         cascade="all, delete-orphan",
     )
+    room_type_skills: Mapped[list["ProviderRoomTypeSkill"]] = relationship(
+        back_populates="provider",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def credentialed_center_ids(self) -> list[uuid.UUID]:
@@ -142,6 +146,14 @@ class Provider(Base, TimestampMixin):
             for credential in self.center_credentials
         ]
         return credentialed_center_ids
+
+    @property
+    def skill_room_type_ids(self) -> list[uuid.UUID]:
+        skill_room_type_ids = [
+            skill.room_type_id
+            for skill in self.room_type_skills
+        ]
+        return skill_room_type_ids
 
 
 class ProviderCenterCredential(Base, TimestampMixin):
@@ -153,6 +165,17 @@ class ProviderCenterCredential(Base, TimestampMixin):
     provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
     center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("centers.id"), nullable=False)
     provider: Mapped[Provider] = relationship(back_populates="center_credentials")
+
+
+class ProviderRoomTypeSkill(Base, TimestampMixin):
+    __tablename__ = "provider_room_type_skills"
+    __table_args__ = (UniqueConstraint("organization_id", "provider_id", "room_type_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
+    room_type_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("room_types.id"), nullable=False)
+    provider: Mapped[Provider] = relationship(back_populates="room_type_skills")
 
 
 class ProviderAvailability(Base, TimestampMixin):

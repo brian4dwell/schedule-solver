@@ -11,6 +11,8 @@ from app.db.models import Assignment
 from app.db.models import Center
 from app.db.models import Provider
 from app.db.models import ProviderCenterCredential
+from app.db.models import ProviderRoomTypeSkill
+from app.db.models import RoomType
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
 from app.schemas.provider import ProviderCreate
@@ -28,6 +30,7 @@ def find_provider(
     statement = select(Provider).where(Provider.id == provider_id)
     statement = statement.where(Provider.organization_id == organization_id)
     statement = statement.options(selectinload(Provider.center_credentials))
+    statement = statement.options(selectinload(Provider.room_type_skills))
     provider = session.scalar(statement)
 
     if provider is None:
@@ -36,16 +39,16 @@ def find_provider(
     return provider
 
 
-def distinct_center_ids(center_ids: list[UUID]) -> list[UUID]:
-    seen_center_ids: set[UUID] = set()
+def distinct_ids(ids: list[UUID]) -> list[UUID]:
+    seen_ids: set[UUID] = set()
     distinct_ids: list[UUID] = []
 
-    for center_id in center_ids:
-        if center_id in seen_center_ids:
+    for id_value in ids:
+        if id_value in seen_ids:
             continue
 
-        seen_center_ids.add(center_id)
-        distinct_ids.append(center_id)
+        seen_ids.add(id_value)
+        distinct_ids.append(id_value)
 
     return distinct_ids
 
@@ -55,7 +58,7 @@ def validate_centers(
     organization_id: UUID,
     session: Session,
 ) -> list[UUID]:
-    credentialed_center_ids = distinct_center_ids(center_ids)
+    credentialed_center_ids = distinct_ids(center_ids)
 
     if len(credentialed_center_ids) == 0:
         return credentialed_center_ids
@@ -68,6 +71,32 @@ def validate_centers(
         raise HTTPException(status_code=400, detail="Credentialed center not found")
 
     return credentialed_center_ids
+
+
+def validate_room_types(
+    room_type_ids: list[UUID],
+    organization_id: UUID,
+    session: Session,
+) -> list[UUID]:
+    skill_room_type_ids = distinct_ids(room_type_ids)
+
+    if len(skill_room_type_ids) == 0:
+        return skill_room_type_ids
+
+    statement = select(RoomType).where(RoomType.organization_id == organization_id)
+    statement = statement.where(RoomType.id.in_(skill_room_type_ids))
+    room_types = list(session.scalars(statement))
+
+    if len(room_types) != len(skill_room_type_ids):
+        raise HTTPException(status_code=400, detail="Skill room type not found")
+
+    for room_type in room_types:
+        if room_type.is_active:
+            continue
+
+        raise HTTPException(status_code=400, detail="Skill room type is inactive")
+
+    return skill_room_type_ids
 
 
 def provider_has_assignments_for_center(
@@ -137,6 +166,43 @@ def replace_provider_center_credentials(
         provider.center_credentials.append(credential)
 
 
+def replace_provider_room_type_skills(
+    provider: Provider,
+    room_type_ids: list[UUID],
+    organization_id: UUID,
+    session: Session,
+) -> None:
+    skill_room_type_ids = validate_room_types(room_type_ids, organization_id, session)
+    current_room_type_ids = [
+        skill.room_type_id
+        for skill in provider.room_type_skills
+    ]
+    removed_room_type_ids = [
+        room_type_id
+        for room_type_id in current_room_type_ids
+        if room_type_id not in skill_room_type_ids
+    ]
+    added_room_type_ids = [
+        room_type_id
+        for room_type_id in skill_room_type_ids
+        if room_type_id not in current_room_type_ids
+    ]
+    remaining_skills = [
+        skill
+        for skill in provider.room_type_skills
+        if skill.room_type_id not in removed_room_type_ids
+    ]
+    provider.room_type_skills = remaining_skills
+
+    for room_type_id in added_room_type_ids:
+        skill = ProviderRoomTypeSkill(
+            organization_id=organization_id,
+            provider_id=provider.id,
+            room_type_id=room_type_id,
+        )
+        provider.room_type_skills.append(skill)
+
+
 @router.get("", response_model=list[ProviderRead])
 def list_providers(
     session: Session = Depends(get_db),
@@ -145,6 +211,7 @@ def list_providers(
     statement = select(Provider).where(Provider.organization_id == organization_id)
     statement = statement.order_by(Provider.display_name)
     statement = statement.options(selectinload(Provider.center_credentials))
+    statement = statement.options(selectinload(Provider.room_type_skills))
     providers = list(session.scalars(statement))
     return providers
 
@@ -171,6 +238,12 @@ def create_provider(
     replace_provider_center_credentials(
         provider,
         request.credentialed_center_ids,
+        organization_id,
+        session,
+    )
+    replace_provider_room_type_skills(
+        provider,
+        request.skill_room_type_ids,
         organization_id,
         session,
     )
@@ -226,6 +299,14 @@ def update_provider(
         replace_provider_center_credentials(
             provider,
             request.credentialed_center_ids,
+            organization_id,
+            session,
+        )
+
+    if request.skill_room_type_ids is not None:
+        replace_provider_room_type_skills(
+            provider,
+            request.skill_room_type_ids,
             organization_id,
             session,
         )

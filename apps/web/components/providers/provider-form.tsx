@@ -3,12 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { createProvider, type Center, type Provider, updateProvider } from "@/lib/api";
+import { createProvider, type Center, type Provider, type RoomType, updateProvider } from "@/lib/api";
 import type { ProviderFormValues } from "@/lib/schemas/provider";
 
 type ProviderFormProps = {
   centers: Center[];
   provider?: Provider;
+  roomTypes: RoomType[];
 };
 
 function providerIsCredentialedForCenter(provider: Provider | undefined, centerId: string) {
@@ -21,10 +22,24 @@ function providerIsCredentialedForCenter(provider: Provider | undefined, centerI
   return isCredentialed;
 }
 
-export function ProviderForm({ centers, provider }: ProviderFormProps) {
+function providerHasRoomTypeSkill(provider: Provider | undefined, roomTypeId: string) {
+  if (provider === undefined) {
+    return false;
+  }
+
+  const providerRoomTypeIds = provider.skill_room_type_ids;
+  const hasSkill = providerRoomTypeIds.includes(roomTypeId);
+  return hasSkill;
+}
+
+export function ProviderForm({ centers, provider, roomTypes }: ProviderFormProps) {
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const isEditing = provider !== undefined;
+  const availableRoomTypes = roomTypes.filter((roomType) => {
+    const shouldShowRoomType = roomType.is_active;
+    return shouldShowRoomType;
+  });
 
   async function handleSubmit(formData: FormData) {
     setErrorMessage(null);
@@ -41,6 +56,10 @@ export function ProviderForm({ centers, provider }: ProviderFormProps) {
       credentialedCenterIds: formData.getAll("credentialedCenterIds").map((centerId) => {
         const credentialedCenterId = String(centerId);
         return credentialedCenterId;
+      }),
+      skillRoomTypeIds: formData.getAll("skillRoomTypeIds").map((roomTypeId) => {
+        const skillRoomTypeId = String(roomTypeId);
+        return skillRoomTypeId;
       }),
     };
 
@@ -171,6 +190,36 @@ export function ProviderForm({ centers, provider }: ProviderFormProps) {
                     className="h-4 w-4 rounded border-slate-300 text-teal-700"
                   />
                   <span>{center.name}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </fieldset>
+      <fieldset className="space-y-3 rounded-md border border-slate-200 p-4">
+        <legend className="px-1 text-sm font-semibold text-slate-950">
+          Skills
+        </legend>
+        {availableRoomTypes.length === 0 ? (
+          <p className="text-sm leading-6 text-slate-500">Add room types before assigning provider skills.</p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {availableRoomTypes.map((roomType) => {
+              const hasSkill = providerHasRoomTypeSkill(provider, roomType.id);
+
+              return (
+                <label
+                  key={roomType.id}
+                  className="flex items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700"
+                >
+                  <input
+                    name="skillRoomTypeIds"
+                    type="checkbox"
+                    value={roomType.id}
+                    defaultChecked={hasSkill}
+                    className="h-4 w-4 rounded border-slate-300 text-teal-700"
+                  />
+                  <span>{roomType.name}</span>
                 </label>
               );
             })}

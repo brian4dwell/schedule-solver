@@ -25,6 +25,7 @@ export const providerSchema = z.object({
   employmentType: employmentTypeSchema,
   notes: z.string().optional(),
   credentialedCenterIds: z.array(z.string().uuid()),
+  skillRoomTypeIds: z.array(z.string().uuid()),
 });
 
 export type ProviderFormValues = z.infer<typeof providerSchema>;
@@ -40,6 +41,7 @@ export const providerApiSchema = z.object({
   employment_type: employmentTypeSchema,
   notes: z.string().nullable(),
   credentialed_center_ids: z.array(z.string().uuid()),
+  skill_room_type_ids: z.array(z.string().uuid()),
   is_active: z.boolean(),
   created_at: z.string(),
   updated_at: z.string(),

@@ -4,11 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { deactivateProvider, type Center, type Provider } from "@/lib/api";
+import { deactivateProvider, type Center, type Provider, type RoomType } from "@/lib/api";
 
 type ProvidersTableProps = {
   centers: Center[];
   providers: Provider[];
+  roomTypes: RoomType[];
 };
 
 function centerNameForId(centers: Center[], centerId: string) {
@@ -27,7 +28,23 @@ function credentialedCenterNames(provider: Provider, centers: Center[]) {
   return names;
 }
 
-export function ProvidersTable({ centers, providers }: ProvidersTableProps) {
+function roomTypeNameForId(roomTypes: RoomType[], roomTypeId: string) {
+  const roomType = roomTypes.find((item) => {
+    return item.id === roomTypeId;
+  });
+  const roomTypeName = roomType?.name ?? "Unknown skill";
+  return roomTypeName;
+}
+
+function providerSkillNames(provider: Provider, roomTypes: RoomType[]) {
+  const names = provider.skill_room_type_ids.map((roomTypeId) => {
+    const roomTypeName = roomTypeNameForId(roomTypes, roomTypeId);
+    return roomTypeName;
+  });
+  return names;
+}
+
+export function ProvidersTable({ centers, providers, roomTypes }: ProvidersTableProps) {
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -58,6 +75,7 @@ export function ProvidersTable({ centers, providers }: ProvidersTableProps) {
               <th className="px-4 py-3 font-semibold">Type</th>
               <th className="px-4 py-3 font-semibold">Employment</th>
               <th className="px-4 py-3 font-semibold">Credentialed centers</th>
+              <th className="px-4 py-3 font-semibold">Skills</th>
               <th className="px-4 py-3 font-semibold">Status</th>
               <th className="px-4 py-3 font-semibold">Actions</th>
             </tr>
@@ -68,6 +86,9 @@ export function ProvidersTable({ centers, providers }: ProvidersTableProps) {
               const centerNames = credentialedCenterNames(provider, centers);
               const credentialedCenters = centerNames.join(", ");
               const credentialedCenterLabel = credentialedCenters || "None";
+              const skillNames = providerSkillNames(provider, roomTypes);
+              const skills = skillNames.join(", ");
+              const skillLabel = skills || "None";
 
               return (
                 <tr key={provider.id}>
@@ -83,6 +104,7 @@ export function ProvidersTable({ centers, providers }: ProvidersTableProps) {
                   <td className="px-4 py-3 text-slate-600">{provider.provider_type}</td>
                   <td className="px-4 py-3 text-slate-600">{provider.employment_type}</td>
                   <td className="px-4 py-3 text-slate-600">{credentialedCenterLabel}</td>
+                  <td className="px-4 py-3 text-slate-600">{skillLabel}</td>
                   <td className="px-4 py-3 text-slate-600">{status}</td>
                   <td className="px-4 py-3">
                     <button

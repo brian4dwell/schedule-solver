@@ -123,6 +123,7 @@ function providerPayload(values: ProviderFormValues) {
     employment_type: values.employmentType,
     notes: values.notes || null,
     credentialed_center_ids: values.credentialedCenterIds,
+    skill_room_type_ids: values.skillRoomTypeIds,
   };
   return payload;
 }

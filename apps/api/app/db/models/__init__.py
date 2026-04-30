@@ -5,6 +5,7 @@ from app.db.models.scheduling import Organization
 from app.db.models.scheduling import Provider
 from app.db.models.scheduling import ProviderAvailability
 from app.db.models.scheduling import ProviderCenterCredential
+from app.db.models.scheduling import ProviderRoomTypeSkill
 from app.db.models.scheduling import Room
 from app.db.models.scheduling import RoomRoomType
 from app.db.models.scheduling import RoomType
@@ -22,6 +23,7 @@ __all__ = [
     "Provider",
     "ProviderAvailability",
     "ProviderCenterCredential",
+    "ProviderRoomTypeSkill",
     "Room",
     "RoomRoomType",
     "RoomType",
