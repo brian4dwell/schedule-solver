@@ -1,1248 +1,356 @@
+# Schedule Solver Implementation Status
 
-
-That gives Next.js a clean `apps/web` folder. Then add `apps/api`, `apps/worker`, `packages/shared`, `infra`, and `docs` around it.
-
-Below is a Codex-ready document you can drop in as `docs/IMPLEMENTATION_PROMPT.md` or paste directly into Codex.
-
----
-
-# CRNA Surgery Center Scheduling Tool — Codex Implementation Brief
+Updated: 2026-04-30
 
 ## Project Goal
 
-Build an internal scheduling tool for CRNA / anesthesia coverage across multiple surgery centers.
+Build an internal CRNA / anesthesia scheduling tool for surgery-center coverage.
 
-This should be a Homebase-style scheduling app, but specialized for surgery-center staffing, room coverage, provider availability, provider preferences, credential requirements, and constraint-based schedule generation.
+The original plan was a Homebase-style scheduling app with:
 
-The tool will eventually use a solver such as Google OR-Tools, but the first implementation should establish a clean full-stack foundation.
+- Centers and Rooms as the demand locations.
+- Providers as the schedulable people.
+- Provider availability, provider preferences, credential requirements, and room coverage constraints.
+- Schedule generation through an async worker, eventually using OR-Tools.
+- Reviewable schedule versions before publishing.
 
-## Glossary
+That direction is still right. The implementation has deliberately spent more time strengthening the scheduling domain model before adding the worker and solver.
 
-Use these domain terms consistently throughout the codebase, database, API, UI, and docs.
+## Current Architecture
 
-```text
-Center = physical surgery center location
-Room = surgical room inside a Center
-Provider = person doing the scheduled service, including CRNA, doctor, staff, or contractor
-```
-
-
-## Chosen Stack
+The repo now follows the intended monorepo shape.
 
 ```text
-Hosting: Fly.io
-Auth: Clerk
-Frontend: Next.js
-Frontend validation/types: Zod
-Backend: FastAPI
-Backend validation/types: Pydantic
-ORM: SQLAlchemy 2.x
-Migrations: Alembic
-Database: Postgres
-UI: Tailwind CSS + shadcn/ui
-Queue: Redis
-Worker: Python worker, initially RQ or simple job runner
-Solver: Google OR-Tools later
+apps/web       Next.js App Router frontend
+apps/api       FastAPI backend
+apps/worker    Placeholder worker directory, not implemented yet
+packages/shared Placeholder shared package directory
+infra/fly      Fly.io support files
+docs           Current plans and implementation notes
 ```
 
-## Architecture
-
-The app should be split into three logical parts:
-
-```text
-apps/web      = Next.js frontend
-apps/api      = FastAPI backend
-apps/worker   = Python background worker for scheduling jobs
-```
-
-The backend is the source of truth. The frontend should not write directly to the database.
+The backend remains the source of truth. The frontend calls the API and does not write directly to Postgres.
 
 ```text
 Next.js UI
-  ↓
-Zod validates frontend forms
-  ↓
-FastAPI API
-  ↓
-Pydantic validates requests
-  ↓
-SQLAlchemy writes to Postgres
-  ↓
-Alembic manages schema migrations
+  -> Zod validation at frontend boundaries
+  -> FastAPI API
+  -> Pydantic request/response models
+  -> SQLAlchemy models
+  -> Alembic migrations
+  -> Postgres
 ```
 
-Schedule generation should be asynchronous from day one.
+## What Is Implemented
+
+### Backend Foundation
+
+Implemented in `apps/api`:
+
+- FastAPI application setup.
+- Health endpoint at `GET /health`.
+- SQLAlchemy 2.x database setup.
+- Alembic migration setup.
+- Pydantic schemas for the active CRUD surface.
+- Docker Compose services for Postgres and Redis.
+- `uv` managed Python environment.
+
+The current API routers are:
 
 ```text
-User clicks Generate Schedule
-  ↓
-API creates scheduling_job row
-  ↓
-API enqueues background job
-  ↓
-Worker runs scheduling logic
-  ↓
-Worker writes draft schedule/version/assignments
-  ↓
-UI displays proposed schedule for review
-```
-
-## Repo Layout
-
-Create or use the following structure:
-
-```text
-crna-scheduler/
-  apps/
-    web/
-      Next.js app
-    api/
-      FastAPI app
-    worker/
-      Python worker app
-
-  packages/
-    shared/
-      shared constants and generated API types later
-
-  infra/
-    fly/
-      fly.toml files or deployment notes
-
-  docs/
-    IMPLEMENTATION_PROMPT.md
-    DOMAIN_MODEL.md
-    SCHEDULING_CONSTRAINTS.md
-
-  README.md
-  .gitignore
-```
-
-## Important Next.js Bootstrap Instruction
-
-This architecture is compatible with Next.js.
-
-Use `create-next-app` inside `apps/web`.
-
-Recommended bootstrap:
-
-```bash
-mkdir crna-scheduler
-cd crna-scheduler
-
-mkdir -p apps
-cd apps
-
-npx create-next-app@latest web
-```
-
-Recommended answers for `create-next-app`:
-
-```text
-TypeScript: Yes
-ESLint: Yes
-Tailwind CSS: Yes
-src directory: Optional, prefer No unless already using src convention
-App Router: Yes
-Turbopack: Yes if stable in current environment, otherwise No
-Import alias: Yes
-Alias: @/*
-```
-
-Then return to repo root:
-
-```bash
-cd ..
-cd ..
-mkdir -p apps/api apps/worker packages/shared infra/fly docs
-```
-
-Do not place `package.json`, `next.config.ts`, or `app/` at the repo root. They belong in `apps/web`.
-
-## Initial Milestone
-
-Build the first vertical slice:
-
-```text
-1. Clerk login
-2. API health check
-3. Postgres connection
-4. Alembic migration setup
-5. Create Centers
-6. Create Rooms under Centers
-7. Create Providers
-8. Add basic Provider availability
-9. Create Schedule Period
-10. Click Generate Schedule
-11. Worker creates placeholder draft schedule
-12. UI displays schedule job status and draft assignments
-```
-
-The first solver can be fake/simple. The goal is to establish the job pipeline and data model before adding OR-Tools complexity.
-
-## Backend Requirements
-
-Use FastAPI.
-
-Create this rough backend structure:
-
-```text
-apps/api/
-  app/
-    main.py
-
-    core/
-      config.py
-      security.py
-
-    auth/
-      clerk.py
-
-    db/
-      base.py
-      session.py
-      models/
-        organization.py
-        user.py
-        center.py
-        room.py
-        provider.py
-        provider_availability.py
-        schedule_period.py
-        schedule_job.py
-        schedule_version.py
-        assignment.py
-
-    schemas/
-      center.py
-      room.py
-      provider.py
-      provider_availability.py
-      schedule_period.py
-      schedule_job.py
-      assignment.py
-
-    routers/
-      health.py
-      centers.py
-      rooms.py
-      providers.py
-      provider_availability.py
-      schedule_periods.py
-      schedule_jobs.py
-
-    services/
-      scheduling/
-        generate_placeholder_schedule.py
-        constraints.py
-
-  alembic/
-  alembic.ini
-  pyproject.toml
-```
-
-## Backend Libraries
-
-Use:
-
-```text
-fastapi
-uvicorn
-pydantic
-pydantic-settings
-sqlalchemy
-alembic
-psycopg[binary]
-python-dotenv
-httpx
-python-jose or PyJWT
-redis
-rq
-```
-
-## Backend Environment Variables
-
-Support these env vars:
-
-```env
-DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/crna_scheduler
-CLERK_SECRET_KEY=
-CLERK_JWT_ISSUER=
-CLERK_JWKS_URL=
-REDIS_URL=redis://localhost:6379/0
-ENVIRONMENT=development
-```
-
-## Backend Auth
-
-Use Clerk for identity.
-
-The frontend sends the Clerk session token to the API as:
-
-```http
-Authorization: Bearer <token>
-```
-
-The API should verify the JWT against Clerk’s JWKS.
-
-For MVP, implement auth middleware/dependency but allow an environment flag for local development if needed.
-
-Suggested dependency:
-
-```python
-get_current_user()
-```
-
-This should return an app-level user object containing:
-
-```text
-clerk_user_id
-clerk_org_id, if available
-email
-role
-```
-
-Store app-specific authorization in Postgres.
-
-## Database Model
-
-Use UUID primary keys unless there is a strong reason not to.
-
-Use `created_at` and `updated_at` timestamps on core tables.
-
-### organizations
-
-Represents the internal company/practice using the tool.
-
-Fields:
-
-```text
-id
-clerk_org_id nullable
-name
-created_at
-updated_at
-```
-
-### users
-
-Application users.
-
-Fields:
-
-```text
-id
-organization_id
-clerk_user_id
-email
-first_name nullable
-last_name nullable
-role
-created_at
-updated_at
-```
-
-Roles for now:
-
-```text
-owner
-admin
-scheduler
-viewer
-provider
-```
-
-### centers
-
-Physical surgery center locations.
-
-Fields:
-
-```text
-id
-organization_id
-name
-address_line_1 nullable
-address_line_2 nullable
-city nullable
-state nullable
-postal_code nullable
-timezone
-is_active
-created_at
-updated_at
-```
-
-### rooms
-
-Surgical rooms inside a Center.
-
-Fields:
-
-```text
-id
-organization_id
-center_id
-name
-display_order
-is_active
-created_at
-updated_at
-```
-
-A Room belongs to exactly one Center.
-
-### providers
-
-Broad table for people who can be scheduled.
-
-Fields:
-
-```text
-id
-organization_id
-first_name
-last_name
-display_name
-email nullable
-phone nullable
-provider_type
-employment_type
-is_active
-notes nullable
-created_at
-updated_at
-```
-
-`provider_type` examples:
-
-```text
-crna
-doctor
-staff
-contractor
-other
-```
-
-`employment_type` examples:
-
-```text
-employee
-contractor
-locum
-other
-```
-
-### provider_credentials
-
-Credentials or permissions that affect scheduling.
-
-Fields:
-
-```text
-id
-organization_id
-provider_id
-credential_type
-credential_value
-expires_at nullable
-created_at
-updated_at
-```
-
-Examples:
-
-```text
-can_cover_center
-can_cover_room
-pediatric_certified
-cardiac_certified
-state_license
-```
-
-Keep flexible for MVP.
-
-### provider_availability
-
-Provider availability blocks.
-
-Fields:
-
-```text
-id
-organization_id
-provider_id
-start_time
-end_time
-availability_type
-notes nullable
-created_at
-updated_at
-```
-
-`availability_type` examples:
-
-```text
-available
-unavailable
-preferred
-avoid_if_possible
-```
-
-### shift_requirements
-
-The demand side of the schedule: what coverage is needed.
-
-Fields:
-
-```text
-id
-organization_id
-center_id
-room_id nullable
-start_time
-end_time
-required_provider_count
-required_provider_type nullable
-notes nullable
-created_at
-updated_at
-```
-
-For example:
-
-```text
-Center A, Room 1, Monday 7am-3pm, needs 1 CRNA
-```
-
-### schedule_periods
-
-Represents a date range being scheduled.
-
-Fields:
-
-```text
-id
-organization_id
-name
-start_date
-end_date
-status
-created_at
-updated_at
-```
-
-`status` examples:
-
-```text
-draft
-generating
-ready_for_review
-published
-archived
-```
-
-### schedule_jobs
-
-Tracks schedule generation jobs.
-
-Fields:
-
-```text
-id
-organization_id
-schedule_period_id
-status
-requested_by_user_id nullable
-started_at nullable
-finished_at nullable
-error_message nullable
-created_at
-updated_at
-```
-
-`status` examples:
-
-```text
-pending
-running
-succeeded
-failed
-cancelled
-```
-
-### schedule_versions
-
-Each solver/manual generation creates a version.
-
-Fields:
-
-```text
-id
-organization_id
-schedule_period_id
-schedule_job_id nullable
-version_number
-status
-solver_score nullable
-notes nullable
-created_at
-updated_at
-```
-
-`status` examples:
-
-```text
-draft
-reviewed
-published
-superseded
-```
-
-### assignments
-
-Actual proposed or published assignments.
-
-Fields:
-
-```text
-id
-organization_id
-schedule_version_id
-schedule_period_id
-provider_id
-center_id
-room_id nullable
-shift_requirement_id nullable
-start_time
-end_time
-assignment_status
-source
-notes nullable
-created_at
-updated_at
-```
-
-`assignment_status` examples:
-
-```text
-proposed
-accepted
-declined
-published
-removed
-```
-
-`source` examples:
-
-```text
-solver
-manual
-import
-```
-
-### constraint_violations
-
-Track schedule issues.
-
-Fields:
-
-```text
-id
-organization_id
-schedule_version_id
-assignment_id nullable
-severity
-constraint_type
-message
-metadata_json nullable
-created_at
-updated_at
-```
-
-`severity` examples:
-
-```text
-info
-warning
-error
-hard_violation
-```
-
-## API Endpoints
-
-Implement REST endpoints.
-
-### Health
-
-```http
-GET /health
-```
-
-Returns:
-
-```json
-{
-  "status": "ok"
-}
-```
-
-### Centers
-
-```http
-GET /centers
-POST /centers
-GET /centers/{center_id}
-PATCH /centers/{center_id}
+GET    /health
+
+GET    /centers
+POST   /centers
+GET    /centers/{center_id}
+PATCH  /centers/{center_id}
 DELETE /centers/{center_id}
-```
 
-Use soft delete by setting `is_active = false`.
-
-### Rooms
-
-```http
-GET /centers/{center_id}/rooms
-POST /centers/{center_id}/rooms
-GET /rooms/{room_id}
-PATCH /rooms/{room_id}
+GET    /centers/{center_id}/rooms
+POST   /centers/{center_id}/rooms
+GET    /rooms/{room_id}
+PATCH  /rooms/{room_id}
 DELETE /rooms/{room_id}
-```
 
-Use soft delete by setting `is_active = false`.
+GET    /room-types
+POST   /room-types
+PATCH  /room-types/{room_type_id}
+DELETE /room-types/{room_type_id}
 
-### Providers
-
-```http
-GET /providers
-POST /providers
-GET /providers/{provider_id}
-PATCH /providers/{provider_id}
+GET    /providers
+POST   /providers
+GET    /providers/{provider_id}
+PATCH  /providers/{provider_id}
 DELETE /providers/{provider_id}
 ```
 
-Use soft delete by setting `is_active = false`.
+### Database Backbone
 
-### Provider Availability
+The original scheduling backbone exists as SQLAlchemy models and migrations:
 
-```http
-GET /providers/{provider_id}/availability
-POST /providers/{provider_id}/availability
-PATCH /provider-availability/{availability_id}
-DELETE /provider-availability/{availability_id}
-```
+- `organizations`
+- `users`
+- `centers`
+- `rooms`
+- `providers`
+- `provider_availability`
+- `shift_requirements`
+- `schedule_periods`
+- `schedule_jobs`
+- `schedule_versions`
+- `assignments`
+- `constraint_violations`
 
-### Shift Requirements
+Additional implemented scheduling-domain tables:
 
-```http
-GET /shift-requirements
-POST /shift-requirements
-GET /shift-requirements/{shift_requirement_id}
-PATCH /shift-requirements/{shift_requirement_id}
-DELETE /shift-requirements/{shift_requirement_id}
-```
+- `room_types`
+- `room_room_types`
+- `provider_center_credentials`
+- `provider_room_type_skills`
 
-### Schedule Periods
+Additional implemented room/provider fields:
 
-```http
-GET /schedule-periods
-POST /schedule-periods
-GET /schedule-periods/{schedule_period_id}
-PATCH /schedule-periods/{schedule_period_id}
-```
+- `rooms.md_only`
+- Providers expose `credentialed_center_ids`.
+- Providers expose `skill_room_type_ids`.
 
-### Schedule Generation
+There is also a database-level guard tying an assignment's provider and center to `provider_center_credentials`. That is stricter than the original generic `provider_credentials` table and matches the emerging requirement that center credentialing is a first-class scheduling rule.
 
-```http
-POST /schedule-periods/{schedule_period_id}/generate
-```
+### Frontend Foundation
 
-Creates a `schedule_job` with status `pending`, enqueues background work, and returns the job.
+Implemented in `apps/web`:
 
-```http
-GET /schedule-jobs/{schedule_job_id}
-```
+- Next.js App Router app.
+- Tailwind CSS styling.
+- Zod schemas for frontend forms and schedule working-copy data.
+- App shell with dashboard, sidebar, and top navigation.
+- Centers pages and forms.
+- Rooms page and forms.
+- Room Types page and forms.
+- Providers pages and forms.
+- Schedule list and schedule workspace pages.
 
-Returns job status.
+The UI currently uses real API data for:
 
-```http
-GET /schedule-periods/{schedule_period_id}/versions
-```
+- Centers
+- Rooms
+- Room types
+- Providers
+- Provider center credentials
+- Provider room type skills
 
-Returns schedule versions.
+The schedule workspace currently uses real room data, but schedule periods, schedule versions, publish events, and room placements are still frontend-local working-copy state.
 
-```http
-GET /schedule-versions/{schedule_version_id}/assignments
-```
+## Original Acceptance Criteria Status
 
-Returns assignments for display in the frontend.
+Implemented:
 
-## Worker Requirements
+- `apps/web` exists as a Next.js app.
+- `apps/api` exists as a FastAPI app.
+- `/health` returns the health contract.
+- Alembic has an initial schema and follow-up migrations.
+- Centers can be created, listed, updated, and deactivated.
+- Rooms can be created, listed, updated, and removed or deactivated.
+- Providers can be created, listed, updated, and deactivated.
+- The frontend has working pages for Centers, Rooms, and Providers.
+- The UI consistently uses Provider as the broad scheduling person term.
+- The database has no broad `Clinician` entity.
 
-Create a worker in `apps/worker`.
+Still incomplete from the original vertical slice:
 
-For MVP, the worker can import shared backend modules if needed, but avoid circular dependencies.
+- Clerk login and JWT verification.
+- User and organization authorization beyond the current local organization dependency.
+- Provider availability CRUD.
+- Shift requirement CRUD.
+- Schedule period CRUD.
+- Schedule generation job endpoints.
+- Redis/RQ worker processing.
+- Placeholder draft schedule generation.
+- Persisted schedule versions and assignments surfaced in the UI.
 
-The worker should:
+## What We Chose To Do Differently
 
-```text
-1. Pull a schedule_job from Redis/RQ
-2. Mark schedule_job as running
-3. Read schedule_period, shift_requirements, providers, availability
-4. Generate placeholder assignments
-5. Create schedule_version
-6. Create assignments
-7. Create constraint_violations if needed
-8. Mark job succeeded or failed
-```
+### Local Organization Before Clerk
 
-For the placeholder solver:
+The original plan called for Clerk from the start. The current backend instead creates or reuses one local organization through `get_current_organization_id`.
 
-```text
-For each shift requirement:
-  choose the first active Provider who:
-    - has matching provider_type if required
-    - does not have explicit unavailable block overlapping the shift
-  create assignment
-```
+This keeps the first CRUD and scheduling-domain work moving without blocking on auth. It should be treated as a temporary development shortcut, not the final authorization model.
 
-This is intentionally simple. Later replace with OR-Tools.
+### Credential Tables Instead Of Generic Provider Credentials
 
-## Frontend Requirements
+The original plan suggested a flexible `provider_credentials` table with `credential_type` and `credential_value`.
 
-Use Next.js App Router.
+The current implementation made two concrete credential/skill concepts first-class:
 
-Use Clerk for auth.
+- `provider_center_credentials`
+- `provider_room_type_skills`
 
-Use Tailwind and shadcn/ui.
+This is a good divergence. These rules are central to assignment eligibility, easier to validate with foreign keys, and safer than a loosely typed credential-value table for the core scheduling workflow.
 
-Suggested frontend structure:
+### Room Types And MD-Only Rooms Came Earlier
 
-```text
-apps/web/
-  app/
-    layout.tsx
-    page.tsx
-
-    dashboard/
-      page.tsx
-
-    centers/
-      page.tsx
-      new/
-        page.tsx
-      [centerId]/
-        page.tsx
-
-    rooms/
-      page.tsx
-
-    providers/
-      page.tsx
-      new/
-        page.tsx
-      [providerId]/
-        page.tsx
-
-    availability/
-      page.tsx
-
-    shift-requirements/
-      page.tsx
-
-    schedule-periods/
-      page.tsx
-      [schedulePeriodId]/
-        page.tsx
-        review/
-          page.tsx
-
-  components/
-    layout/
-      app-shell.tsx
-      sidebar.tsx
-      top-nav.tsx
-
-    centers/
-      center-form.tsx
-      centers-table.tsx
-
-    rooms/
-      room-form.tsx
-      rooms-table.tsx
-
-    providers/
-      provider-form.tsx
-      providers-table.tsx
-
-    scheduling/
-      schedule-grid.tsx
-      generate-schedule-button.tsx
-      schedule-job-status.tsx
-
-  lib/
-    api.ts
-    schemas/
-      center.ts
-      room.ts
-      provider.ts
-      providerAvailability.ts
-      shiftRequirement.ts
-      schedulePeriod.ts
-```
-
-## Frontend Pages
-
-### Dashboard
-
-Show simple navigation cards:
+The original first slice did not require room types or MD-only rooms.
 
-```text
-Centers
-Rooms
-Providers
-Availability
-Shift Requirements
-Schedule Periods
-```
+The implementation added:
 
-### Centers Page
-
-Allow users to:
-
-```text
-view centers
-create center
-edit center
-deactivate center
-```
+- `room_types`
+- many-to-many room-to-room-type assignment
+- provider room type skills
+- `rooms.md_only`
 
-### Center Detail Page
+This moved future solver constraints into the CRUD foundation, which should make the first solver less throwaway.
 
-Show:
+### Schedule Workspace Before Schedule Persistence
 
-```text
-center info
-rooms inside center
-button to add room
-```
-
-### Providers Page
-
-Allow users to:
-
-```text
-view providers
-create provider
-edit provider
-deactivate provider
-```
+The original plan put schedule periods, jobs, versions, and assignments before a richer scheduling editor.
 
-Use the term Provider in the UI.
+The current frontend has a local drag-and-drop schedule workspace first. It can place rooms by day, reorder them, and simulate publish events, but it does not persist schedule periods, versions, assignments, or publish history yet.
 
-### Availability Page
+This was useful for exploring the shape of the scheduling UI, but the next backend milestone needs to catch up so schedule work is durable.
 
-Allow basic provider availability creation.
+### Room Deletion Is Conditional
 
-For MVP this can be a simple form:
+The original plan said room delete should soft-delete by setting `is_active = false`.
 
-```text
-Provider
-Start time
-End time
-Availability type
-Notes
-```
-
-### Shift Requirements Page
-
-Allow creation of demand/coverage requirements.
+The current implementation hard-deletes rooms when they have no schedule records and soft-deletes them when schedule records exist. This is reasonable, but it is different from the original simple rule and should stay intentional.
 
-Fields:
-
-```text
-Center
-Room optional
-Start time
-End time
-Required provider count
-Required provider type optional
-Notes
-```
-
-### Schedule Periods Page
-
-Allow creation of a schedule period.
+### No Shadcn Yet
 
-Fields:
+The chosen stack named Tailwind CSS plus shadcn/ui. The current UI uses Tailwind directly and does not appear to include shadcn components.
 
-```text
-Name
-Start date
-End date
-```
+That is acceptable for now. Add shadcn only when the app benefits from shared component behavior rather than because it appeared in the original brief.
 
-### Schedule Period Detail Page
+## Current Planning Documents
 
-Show:
+The implementation has evolved into three focused next-step plans:
 
-```text
-Generate Schedule button
-latest schedule job status
-schedule versions
-link to review screen
-```
+- `docs/plans/save_schedules.md`
+- `docs/plans/provider-assignment.md`
+- `docs/plans/solver.md`
 
-### Schedule Review Page
+These should now be treated as the detailed implementation plans for the next milestones.
 
-Show assignments in a simple grid/table.
+## Recommended Next Milestones
 
-MVP table columns:
+### 1. Save Schedules With Versions
 
-```text
-Date
-Start
-End
-Center
-Room
-Provider
-Status
-Source
-Notes
-```
+Use `docs/plans/save_schedules.md`.
 
-## Zod Schemas
+Build the persistence layer for schedule periods, schedule versions, assignments, and publish state.
 
-Create Zod schemas for frontend form validation.
+Immediate backend work:
 
-Example:
+- Add schedule period schemas and routes.
+- Add schedule version schemas and routes.
+- Add assignment read contracts.
+- Add `POST /schedule-periods/{period_id}/versions`.
+- Add publish endpoint.
+- Add version metadata fields:
+  - `source`
+  - `parent_schedule_version_id`
+  - `published_at`
+  - `published_by_user_id`
+  - `created_by_user_id`
 
-```ts
-import { z } from "zod";
+Immediate frontend work:
 
-export const providerSchema = z.object({
-  firstName: z.string().min(1),
-  lastName: z.string().min(1),
-  displayName: z.string().min(1),
-  email: z.string().email().optional().or(z.literal("")),
-  phone: z.string().optional(),
-  providerType: z.enum(["crna", "doctor", "staff", "contractor", "other"]),
-  employmentType: z.enum(["employee", "contractor", "locum", "other"]),
-  notes: z.string().optional(),
-});
-```
+- Replace mock schedule periods on `/schedules`.
+- Load a real schedule period in `/schedules/[scheduleId]`.
+- Save the current working copy as a new immutable version.
+- Publish a saved version through the API.
+- Show version history from persisted records.
 
-## Pydantic Schemas
+### 2. Add Provider Assignments To Schedule Slots
 
-Create equivalent Pydantic schemas in the API.
+Use `docs/plans/provider-assignment.md`.
 
-Example:
+The schedule workspace currently assigns rooms to days. It needs to become a room-slot and provider-assignment workspace.
 
-```python
-from pydantic import BaseModel, EmailStr
-from typing import Optional, Literal
+Immediate work:
 
-class ProviderCreate(BaseModel):
-    first_name: str
-    last_name: str
-    display_name: str
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    provider_type: Literal["crna", "doctor", "staff", "contractor", "other"]
-    employment_type: Literal["employee", "contractor", "locum", "other"]
-    notes: Optional[str] = None
-```
+- Add provider selection to each scheduled room slot.
+- Add slot start and end times.
+- Add frontend Zod contracts for provider-assigned slots.
+- Load providers into the schedule workspace.
+- Add backend provider eligibility contracts and service.
+- Validate center credential, room type skill, MD-only, availability, and double booking in one reusable backend service.
 
-## Naming Conventions
+### 3. Add Availability And Shift Requirements CRUD
 
-Use snake_case in the backend and database.
+These were in the original plan and are required before the solver can produce meaningful output.
 
-```text
-provider_type
-employment_type
-created_at
-```
+Immediate work:
 
-Use camelCase in the frontend.
+- Add provider availability create/list/update/delete API.
+- Add provider availability frontend page.
+- Add shift requirement create/list/update/delete API.
+- Add shift requirement frontend page.
+- Connect schedule periods to shift requirements.
 
-```text
-providerType
-employmentType
-createdAt
-```
+### 4. Add Worker And First Solver Slice
 
-The API may return snake_case initially. If convenient, convert at the frontend API client boundary.
+Use `docs/plans/solver.md`.
 
-## Development Setup
+Start with the worker and job lifecycle, then add OR-Tools.
 
-Use Docker Compose for local Postgres and Redis.
+Immediate work:
 
-Create:
+- Implement `apps/worker`.
+- Add schedule generation endpoints:
+  - `POST /schedule-periods/{period_id}/generate`
+  - `GET /schedule-jobs/{job_id}`
+- Add typed solver input/output contracts.
+- Build candidate generation from provider eligibility.
+- Persist generated assignments as a new draft schedule version.
 
-```text
-docker-compose.yml
-```
+## Later Work
 
-With:
+Keep these out of the immediate milestone unless they become blockers:
 
-```text
-postgres
-redis
-```
+- Full Clerk auth and role enforcement.
+- Advanced permissions.
+- Notifications.
+- Calendar sync.
+- Payroll.
+- Mobile app.
+- Multi-tenant billing.
+- Complex recurring availability rules.
+- Advanced solver preference tuning.
 
-Use local commands:
+## Current Development Commands
+
+Start local services:
 
 ```bash
-# web
+docker compose up -d postgres redis
+```
+
+Run API migrations:
+
+```bash
+cd apps/api
+uv run alembic upgrade head
+```
+
+Run the API:
+
+```bash
+cd apps/api
+uv run uvicorn app.main:app --reload --port 8000
+```
+
+Run the web app:
+
+```bash
 cd apps/web
 npm run dev
+```
 
-# api
+Run backend tests when tests exist:
+
+```bash
 cd apps/api
-uvicorn app.main:app --reload --port 8000
-
-# worker
-cd apps/worker
-python -m worker.main
+uv run pytest
 ```
 
-## Fly Deployment Direction
-
-Eventually deploy:
-
-```text
-crna-scheduler-web
-crna-scheduler-api
-crna-scheduler-worker
-```
-
-Or use one Fly app with multiple process groups.
-
-For MVP, prefer separate apps if it keeps deployment clearer:
-
-```text
-web = Next.js app
-api = FastAPI app
-worker = Python worker
-```
-
-All connect to the same Postgres and Redis.
-
-## Non-Goals For First Pass
-
-Do not implement these yet:
-
-```text
-full OR-Tools optimization
-complex recurring availability rules
-SMS/email notifications
-payroll
-mobile app
-calendar sync
-document parsing
-advanced permissions
-multi-tenant billing
-```
-
-Build the simple vertical slice first.
-
-## First Codex Task
-
-Implement the initial repo scaffold and basic CRUD foundation.
-
-Tasks:
-
-```text
-1. Create monorepo structure.
-2. Bootstrap Next.js app in apps/web.
-3. Add Tailwind/shadcn-compatible layout.
-4. Create FastAPI app in apps/api.
-5. Add SQLAlchemy database setup.
-6. Add Alembic migration setup.
-7. Create initial SQLAlchemy models:
-   - Organization
-   - User
-   - Center
-   - Room
-   - Provider
-   - ProviderAvailability
-   - ShiftRequirement
-   - SchedulePeriod
-   - ScheduleJob
-   - ScheduleVersion
-   - Assignment
-   - ConstraintViolation
-8. Create initial Pydantic schemas.
-9. Create CRUD endpoints for Centers, Rooms, Providers.
-10. Create health endpoint.
-11. Create docker-compose.yml with Postgres and Redis.
-12. Create README with local development commands.
-```
-
-## Acceptance Criteria
-
-The first pass is complete when:
-
-```text
-1. `apps/web` runs locally with Next.js.
-2. `apps/api` runs locally with FastAPI.
-3. `/health` returns `{ "status": "ok" }`.
-4. Alembic can create and apply the initial migration.
-5. The API can create/list/update/deactivate Centers.
-6. The API can create/list/update/deactivate Rooms under Centers.
-7. The API can create/list/update/deactivate Providers.
-8. The frontend has basic pages for Centers, Rooms, and Providers.
-9. The UI consistently uses the term Provider.
-10. There are no references to Clinician as the broad scheduling entity.
-```
-
-## Important Implementation Note
-
-Keep the first version boring and explicit. Avoid clever abstractions.
-
-The purpose of this first pass is to create a stable foundation for:
-
-```text
-availability capture
-shift requirements
-schedule generation jobs
-manual schedule review
-OR-Tools optimization
-constraint explanations
-```
-
-Do not overbuild the solver yet. Build the data model, API, and UI foundation first.
-
----
-
-## Answer on Next.js compatibility
-
-This project layout will **not** break Next.js as long as Next.js lives inside `apps/web`.
-
-This is safe:
-
-```text
-crna-scheduler/
-  apps/
-    web/
-      package.json
-      next.config.ts
-      app/
-      components/
-```
-
-This can cause confusion:
-
-```text
-crna-scheduler/
-  package.json
-  next.config.ts
-  app/
-  apps/
-    api/
-    worker/
-```
-
-The second layout makes the repo root the Next.js project. That is not what we want.
-
-Use the first layout. It keeps the frontend clean while letting the repo also contain FastAPI, worker, infra, and docs.
+Do not invoke bare `pytest` in this repo.
