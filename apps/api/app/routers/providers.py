@@ -29,6 +29,7 @@ def find_provider(
 ) -> Provider:
     statement = select(Provider).where(Provider.id == provider_id)
     statement = statement.where(Provider.organization_id == organization_id)
+    statement = statement.where(Provider.is_active.is_(True))
     statement = statement.options(selectinload(Provider.center_credentials))
     statement = statement.options(selectinload(Provider.room_type_skills))
     provider = session.scalar(statement)
@@ -64,6 +65,7 @@ def validate_centers(
         return credentialed_center_ids
 
     statement = select(Center.id).where(Center.organization_id == organization_id)
+    statement = statement.where(Center.is_active.is_(True))
     statement = statement.where(Center.id.in_(credentialed_center_ids))
     valid_center_ids = list(session.scalars(statement))
 
@@ -85,16 +87,11 @@ def validate_room_types(
 
     statement = select(RoomType).where(RoomType.organization_id == organization_id)
     statement = statement.where(RoomType.id.in_(skill_room_type_ids))
+    statement = statement.where(RoomType.is_active.is_(True))
     room_types = list(session.scalars(statement))
 
     if len(room_types) != len(skill_room_type_ids):
         raise HTTPException(status_code=400, detail="Skill room type not found")
-
-    for room_type in room_types:
-        if room_type.is_active:
-            continue
-
-        raise HTTPException(status_code=400, detail="Skill room type is inactive")
 
     return skill_room_type_ids
 
@@ -209,6 +206,7 @@ def list_providers(
     organization_id: UUID = Depends(get_current_organization_id),
 ) -> list[Provider]:
     statement = select(Provider).where(Provider.organization_id == organization_id)
+    statement = statement.where(Provider.is_active.is_(True))
     statement = statement.order_by(Provider.display_name)
     statement = statement.options(selectinload(Provider.center_credentials))
     statement = statement.options(selectinload(Provider.room_type_skills))
@@ -271,31 +269,31 @@ def update_provider(
 ) -> Provider:
     provider = find_provider(provider_id, organization_id, session)
 
-    if request.first_name is not None:
+    if "first_name" in request.model_fields_set:
         provider.first_name = request.first_name
 
-    if request.last_name is not None:
+    if "last_name" in request.model_fields_set:
         provider.last_name = request.last_name
 
-    if request.display_name is not None:
+    if "display_name" in request.model_fields_set:
         provider.display_name = request.display_name
 
-    if request.email is not None:
+    if "email" in request.model_fields_set:
         provider.email = request.email
 
-    if request.phone is not None:
+    if "phone" in request.model_fields_set:
         provider.phone = request.phone
 
-    if request.provider_type is not None:
+    if "provider_type" in request.model_fields_set:
         provider.provider_type = request.provider_type
 
-    if request.employment_type is not None:
+    if "employment_type" in request.model_fields_set:
         provider.employment_type = request.employment_type
 
-    if request.notes is not None:
+    if "notes" in request.model_fields_set:
         provider.notes = request.notes
 
-    if request.credentialed_center_ids is not None:
+    if "credentialed_center_ids" in request.model_fields_set:
         replace_provider_center_credentials(
             provider,
             request.credentialed_center_ids,
@@ -303,7 +301,7 @@ def update_provider(
             session,
         )
 
-    if request.skill_room_type_ids is not None:
+    if "skill_room_type_ids" in request.model_fields_set:
         replace_provider_room_type_skills(
             provider,
             request.skill_room_type_ids,

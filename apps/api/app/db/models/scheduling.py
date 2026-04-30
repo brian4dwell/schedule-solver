@@ -1,6 +1,7 @@
 import uuid
 from datetime import date
 from datetime import datetime
+from datetime import UTC
 
 from sqlalchemy import Boolean
 from sqlalchemy import Date
@@ -33,14 +34,14 @@ def create_uuid() -> uuid.UUID:
 
 
 def current_utc_time() -> datetime:
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     return now
 
 
 class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=current_utc_time, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=current_utc_time, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=current_utc_time,
         onupdate=current_utc_time,
         nullable=False,
@@ -184,8 +185,8 @@ class ProviderAvailability(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
     provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
-    start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     availability_type: Mapped[str] = mapped_column(String(40), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -197,8 +198,8 @@ class ShiftRequirement(Base, TimestampMixin):
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
     center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("centers.id"), nullable=False)
     room_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("rooms.id"), nullable=True)
-    start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     required_provider_count: Mapped[int] = mapped_column(Integer, nullable=False)
     required_provider_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -223,8 +224,8 @@ class ScheduleJob(Base, TimestampMixin):
     schedule_period_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("schedule_periods.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -263,8 +264,8 @@ class Assignment(Base, TimestampMixin):
     center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("centers.id"), nullable=False)
     room_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("rooms.id"), nullable=True)
     shift_requirement_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("shift_requirements.id"), nullable=True)
-    start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     assignment_status: Mapped[str] = mapped_column(String(40), nullable=False)
     source: Mapped[str] = mapped_column(String(40), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
