@@ -242,6 +242,11 @@ class ScheduleVersion(Base, TimestampMixin):
     schedule_job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("schedule_jobs.id"), nullable=True)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    parent_schedule_version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("schedule_versions.id"), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    published_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     solver_score: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 

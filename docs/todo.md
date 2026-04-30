@@ -1,9 +1,7 @@
-schedule/room default and editted time slots
-
-schedule needs provider assignments
-
-save schedules to db, with versions
+Provider availability CRUD.
 
 play with solver
+- Schedule generation job endpoints.
+- Redis/RQ worker processing.
 
 add more constraints

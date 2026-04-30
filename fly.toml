@@ -5,7 +5,8 @@ primary_region = "ord"
   dockerfile = "Dockerfile"
 
 [env]
-  ENVIRONMENT = "production"
+  AUTH_MODE = "local"
+  ENVIRONMENT = "development"
   HOSTNAME = "0.0.0.0"
   INTERNAL_API_BASE_URL = "http://127.0.0.1:8000"
   NEXT_PUBLIC_API_BASE_URL = "/api"

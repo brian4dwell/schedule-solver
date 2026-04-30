@@ -3,7 +3,16 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import type { Center, Provider, Room } from "@/lib/api";
+import {
+  publishScheduleVersion,
+  saveDraftScheduleVersion,
+  type Center,
+  type Provider,
+  type Room,
+  type ScheduleAssignmentSavePayload,
+  type SchedulePeriod,
+  type ScheduleVersionDetail,
+} from "@/lib/api";
 import type {
   ProviderIneligibilityReason,
   ScheduleDayKey,
@@ -54,8 +63,10 @@ type DragPayload =
     };
 
 type ScheduleWorkspaceProps = {
+  initialVersionDetail: ScheduleVersionDetail | null;
   providers: Provider[];
   rooms: RoomRow[];
+  schedulePeriod: SchedulePeriod;
   scheduleId: string;
 };
 
@@ -85,19 +96,6 @@ function createPublishEventId() {
   return randomValue;
 }
 
-function scheduleNameFromId(scheduleId: string) {
-  const name = scheduleId
-    .split("-")
-    .map((word) => {
-      const firstLetter = word.charAt(0).toUpperCase();
-      const remainingLetters = word.slice(1);
-      const titleWord = `${firstLetter}${remainingLetters}`;
-      return titleWord;
-    })
-    .join(" ");
-  return name;
-}
-
 function formatTimelineDate(value: string) {
   const date = new Date(value);
   const formatter = new Intl.DateTimeFormat("en-US", {
@@ -110,11 +108,11 @@ function formatTimelineDate(value: string) {
   return formattedValue;
 }
 
-function createInitialVersion(scheduleId: string): ScheduleVersion {
+function createInitialVersion(schedulePeriod: SchedulePeriod): ScheduleVersion {
   const createdAt = new Date().toISOString();
   const version = {
-    id: `${scheduleId}-working`,
-    name: `${scheduleNameFromId(scheduleId)} Working Version`,
+    id: `${schedulePeriod.id}-working`,
+    name: `${schedulePeriod.name} Working Version`,
     status: "working",
     createdAt,
     assignments: [],
@@ -123,13 +121,131 @@ function createInitialVersion(scheduleId: string): ScheduleVersion {
   return parsedVersion;
 }
 
-function createInitialPublishEvents(): SchedulePublishEvent[] {
-  const publishedAt = new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString();
+function dateAtUtcMidnight(value: string) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return date;
+}
+
+function dayKeyForAssignment(
+  schedulePeriod: SchedulePeriod,
+  startTime: string,
+): ScheduleDayKey {
+  const periodStart = dateAtUtcMidnight(schedulePeriod.start_date);
+  const assignmentDate = new Date(startTime);
+  const assignmentMidnight = Date.UTC(
+    assignmentDate.getUTCFullYear(),
+    assignmentDate.getUTCMonth(),
+    assignmentDate.getUTCDate(),
+  );
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  const dayOffset = Math.floor(
+    (assignmentMidnight - periodStart.getTime()) / millisecondsPerDay,
+  );
+  const boundedOffset = ((dayOffset % dayColumns.length) + dayColumns.length) %
+    dayColumns.length;
+  const dayColumn = dayColumns[boundedOffset];
+
+  if (dayColumn === undefined) {
+    throw new Error("Schedule day offset must resolve to a day column.");
+  }
+
+  const dayKey = dayColumn.key;
+  return dayKey;
+}
+
+function timeLabelFromDateTime(value: string) {
+  const date = new Date(value);
+  const hour = date.getUTCHours().toString().padStart(2, "0");
+  const minute = date.getUTCMinutes().toString().padStart(2, "0");
+  const label = `${hour}:${minute}`;
+  return label;
+}
+
+function dateForDayKey(schedulePeriod: SchedulePeriod, dayKey: ScheduleDayKey) {
+  const periodStart = dateAtUtcMidnight(schedulePeriod.start_date);
+  const dayIndex = dayColumns.findIndex((column) => {
+    return column.key === dayKey;
+  });
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  const dateTime = periodStart.getTime() + dayIndex * millisecondsPerDay;
+  const date = new Date(dateTime);
+  return date;
+}
+
+function dateTimeForAssignment(
+  schedulePeriod: SchedulePeriod,
+  dayKey: ScheduleDayKey,
+  timeValue: string,
+) {
+  const date = dateForDayKey(schedulePeriod, dayKey);
+  const timeParts = timeValue.split(":");
+  const hour = Number(timeParts[0]);
+  const minute = Number(timeParts[1]);
+  date.setUTCHours(hour, minute, 0, 0);
+  const value = date.toISOString();
+  return value;
+}
+
+function versionFromDetail(
+  schedulePeriod: SchedulePeriod,
+  detail: ScheduleVersionDetail,
+): ScheduleVersion {
+  const assignments = detail.assignments.flatMap((assignment, index) => {
+    if (assignment.room_id === null) {
+      return [];
+    }
+
+    const violations = detail.violations.filter((violation) => {
+      return violation.assignment_id === assignment.id;
+    });
+    const validationMessages = violations.map((violation) => {
+      return violation.message;
+    });
+    const hasViolations = violations.length > 0;
+    const validationStatus = hasViolations ? "invalid" : "valid";
+    const roomAssignment = {
+      id: assignment.id,
+      dayKey: dayKeyForAssignment(schedulePeriod, assignment.start_time),
+      centerId: assignment.center_id,
+      roomId: assignment.room_id,
+      providerId: assignment.provider_id,
+      startTime: timeLabelFromDateTime(assignment.start_time),
+      endTime: timeLabelFromDateTime(assignment.end_time),
+      sortOrder: index,
+      validationStatus,
+      validationMessages,
+    };
+    return [roomAssignment];
+  });
+  const version = {
+    id: detail.version.id,
+    name: `${schedulePeriod.name} Version ${detail.version.version_number}`,
+    status: detail.version.status,
+    createdAt: detail.version.created_at,
+    assignments,
+  };
+  const parsedVersion = scheduleVersionSchema.parse(version);
+  return parsedVersion;
+}
+
+function publishEventsFromDetail(
+  detail: ScheduleVersionDetail | null,
+): SchedulePublishEvent[] {
+  if (detail === null) {
+    return [];
+  }
+
+  const publishedAt = detail.version.published_at;
+
+  if (publishedAt === null) {
+    return [];
+  }
+
   const publishEvent = {
-    id: "publish-1",
-    versionId: "published-version-1",
+    id: `${detail.version.id}-published`,
+    versionId: detail.version.id,
     publishedAt,
-    summary: "Published initial provider schedule",
+    summary: "Published saved schedule",
   };
   const parsedPublishEvent = schedulePublishEventSchema.parse(publishEvent);
   return [parsedPublishEvent];
@@ -304,6 +420,27 @@ function validationStatusForSelection(
   return "valid";
 }
 
+function providerPickerButtonLabel(option: ProviderPickerOption | null): string {
+  if (option === null) {
+    return "Select Provider...";
+  }
+
+  const label = option.provider.display_name;
+  return label;
+}
+
+function providerPickerStatusLabel(option: ProviderPickerOption | null): string | null {
+  if (option === null) {
+    return null;
+  }
+
+  if (!option.isEligible) {
+    return "Not eligible";
+  }
+
+  return "Eligible";
+}
+
 function parseDragPayload(data: string): DragPayload | null {
   try {
     const parsedData = JSON.parse(data) as DragPayload;
@@ -425,20 +562,34 @@ function createRoomAssignment(
 }
 
 export function ScheduleWorkspace({
+  initialVersionDetail,
   providers,
   rooms,
+  schedulePeriod,
   scheduleId,
 }: ScheduleWorkspaceProps) {
   const availableRooms = useMemo(() => {
     return availableRoomsFromRows(rooms);
   }, [rooms]);
   const [workingVersion, setWorkingVersion] = useState<ScheduleVersion>(() => {
-    return createInitialVersion(scheduleId);
+    if (initialVersionDetail !== null) {
+      return versionFromDetail(schedulePeriod, initialVersionDetail);
+    }
+
+    return createInitialVersion(schedulePeriod);
   });
+  const [savedVersionDetail, setSavedVersionDetail] =
+    useState<ScheduleVersionDetail | null>(initialVersionDetail);
   const [publishEvents, setPublishEvents] = useState<SchedulePublishEvent[]>(() => {
-    return createInitialPublishEvents();
+    return publishEventsFromDetail(initialVersionDetail);
   });
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [showWeekends, setShowWeekends] = useState(false);
+  const [openProviderAssignmentId, setOpenProviderAssignmentId] = useState<
+    string | null
+  >(null);
   const visibleColumns = dayColumns.filter((column) => {
     const shouldShowColumn = showWeekends || !column.isWeekend;
     return shouldShowColumn;
@@ -454,7 +605,41 @@ export function ScheduleWorkspace({
     setWorkingVersion(nextVersion);
   }
 
-  function handlePublishSchedule() {
+  function savePayloadFromAssignments(
+    assignments: ScheduleRoomAssignment[],
+  ): ScheduleAssignmentSavePayload[] {
+    const payload = assignments.flatMap((assignment) => {
+      if (assignment.providerId === null) {
+        return [];
+      }
+
+      const startTime = dateTimeForAssignment(
+        schedulePeriod,
+        assignment.dayKey,
+        assignment.startTime,
+      );
+      const endTime = dateTimeForAssignment(
+        schedulePeriod,
+        assignment.dayKey,
+        assignment.endTime,
+      );
+      const assignmentPayload = {
+        provider_id: assignment.providerId,
+        center_id: assignment.centerId,
+        room_id: assignment.roomId,
+        shift_requirement_id: null,
+        required_provider_type: null,
+        start_time: startTime,
+        end_time: endTime,
+        source: "manual",
+        notes: null,
+      };
+      return [assignmentPayload];
+    });
+    return payload;
+  }
+
+  async function handlePublishSchedule() {
     const invalidAssignments = workingVersion.assignments.filter((assignment) => {
       const room = roomForAssignment(assignment);
 
@@ -471,23 +656,48 @@ export function ScheduleWorkspace({
     const hasInvalidAssignments = invalidAssignments.length > 0;
 
     if (hasInvalidAssignments) {
+      setActionMessage("Resolve publish blockers before publishing.");
       return;
     }
 
-    const publishedAt = new Date().toISOString();
-    const nextEvent = schedulePublishEventSchema.parse({
-      id: createPublishEventId(),
-      versionId: workingVersion.id,
-      publishedAt,
-      summary: "Published current working schedule",
-    });
-    setPublishEvents((currentEvents) => {
-      const nextEvents = [...currentEvents, nextEvent];
-      return nextEvents;
-    });
+    if (savedVersionDetail === null) {
+      setActionMessage("Save a draft before publishing.");
+      return;
+    }
+
+    setIsPublishing(true);
+    setActionMessage(null);
+
+    try {
+      const response = await publishScheduleVersion(savedVersionDetail.version.id);
+      const publishedAt = response.version.published_at;
+
+      if (publishedAt !== null) {
+        const nextEvent = schedulePublishEventSchema.parse({
+          id: createPublishEventId(),
+          versionId: response.version.id,
+          publishedAt,
+          summary: "Published saved schedule",
+        });
+        setPublishEvents((currentEvents) => {
+          const nextEvents = [...currentEvents, nextEvent];
+          return nextEvents;
+        });
+      }
+
+      setSavedVersionDetail({
+        ...savedVersionDetail,
+        version: response.version,
+      });
+      setActionMessage("Schedule published.");
+    } catch {
+      setActionMessage("Publish failed because the saved version has blockers.");
+    } finally {
+      setIsPublishing(false);
+    }
   }
 
-  function handleSaveDraft() {
+  async function handleSaveDraft() {
     const nextAssignments = workingVersion.assignments.map((assignment) => {
       const room = roomForAssignment(assignment);
 
@@ -506,12 +716,36 @@ export function ScheduleWorkspace({
       };
       return nextAssignment;
     });
-    const nextVersion = scheduleVersionSchema.parse({
+    const validatedVersion = scheduleVersionSchema.parse({
       ...workingVersion,
       status: "draft",
       assignments: nextAssignments,
     });
-    updateWorkingVersion(nextVersion);
+    const savePayload = savePayloadFromAssignments(nextAssignments);
+    const parentVersionId =
+      savedVersionDetail === null ? null : savedVersionDetail.version.id;
+    const payload = {
+      schedule_period_id: scheduleId,
+      parent_schedule_version_id: parentVersionId,
+      notes: null,
+      assignments: savePayload,
+    };
+
+    setIsSaving(true);
+    setActionMessage(null);
+    updateWorkingVersion(validatedVersion);
+
+    try {
+      const detail = await saveDraftScheduleVersion(payload);
+      const nextVersion = versionFromDetail(schedulePeriod, detail);
+      setSavedVersionDetail(detail);
+      updateWorkingVersion(nextVersion);
+      setActionMessage("Draft saved.");
+    } catch {
+      setActionMessage("Draft save failed.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function handleDragStart(event: React.DragEvent, payload: DragPayload) {
@@ -670,6 +904,19 @@ export function ScheduleWorkspace({
       assignments,
     });
     updateWorkingVersion(nextVersion);
+    setOpenProviderAssignmentId(null);
+  }
+
+  function handleProviderPickerToggled(assignmentId: string) {
+    setOpenProviderAssignmentId((currentAssignmentId) => {
+      const assignmentIsOpen = currentAssignmentId === assignmentId;
+
+      if (assignmentIsOpen) {
+        return null;
+      }
+
+      return assignmentId;
+    });
   }
 
   function roomForAssignment(assignment: ScheduleRoomAssignment) {
@@ -692,7 +939,9 @@ export function ScheduleWorkspace({
     const isInvalid = validationStatus !== "valid";
     return isInvalid;
   }).length;
-  const canPublish = invalidAssignmentCount === 0 && assignedRoomCount > 0;
+  const hasSavedVersion = savedVersionDetail !== null;
+  const canPublish =
+    invalidAssignmentCount === 0 && assignedRoomCount > 0 && hasSavedVersion;
 
   return (
     <div className="space-y-5">
@@ -714,6 +963,11 @@ export function ScheduleWorkspace({
               {" "}
               {lastPublishedLabel}.
             </p>
+            {actionMessage !== null ? (
+              <p className="mt-1 text-sm font-medium text-teal-700">
+                {actionMessage}
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
             <label className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700">
@@ -728,17 +982,18 @@ export function ScheduleWorkspace({
             <button
               type="button"
               onClick={handleSaveDraft}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              disabled={isSaving}
+              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
             >
-              Save draft
+              {isSaving ? "Saving" : "Save draft"}
             </button>
             <button
               type="button"
               onClick={handlePublishSchedule}
-              disabled={!canPublish}
+              disabled={!canPublish || isPublishing}
               className="inline-flex h-9 items-center justify-center rounded-md bg-teal-700 px-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
-              Publish changes
+              {isPublishing ? "Publishing" : "Publish changes"}
             </button>
           </div>
         </div>
@@ -788,6 +1043,12 @@ export function ScheduleWorkspace({
                       const selectedStatus = validationStatusForSelection(
                         selectedOption,
                       );
+                      const providerPickerIsOpen =
+                        openProviderAssignmentId === assignment.id;
+                      const providerPickerLabel =
+                        providerPickerButtonLabel(selectedOption);
+                      const providerPickerStatus =
+                        providerPickerStatusLabel(selectedOption);
                       return (
                         <div
                           key={assignment.id}
@@ -861,42 +1122,73 @@ export function ScheduleWorkspace({
                               </span>
                             </div>
                             <div className="mt-2 max-h-44 space-y-1 overflow-y-auto">
-                              {providerOptions.map((option) => {
-                                const isSelected =
-                                  option.provider.id === assignment.providerId;
-                                const firstReason = option.reasons.at(0);
-                                return (
-                                  <button
-                                    key={option.provider.id}
-                                    type="button"
-                                    onClick={() =>
-                                      handleProviderSelected(assignment, option)
-                                    }
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleProviderPickerToggled(assignment.id)
+                                }
+                                disabled={providerOptions.length === 0}
+                                aria-expanded={providerPickerIsOpen}
+                                className={
+                                  selectedOption === null
+                                    ? "w-full rounded-md border border-dashed border-slate-300 bg-white px-2 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                                    : "w-full rounded-md border border-teal-600 bg-teal-50 px-2 py-2 text-left"
+                                }
+                              >
+                                <span className="block text-sm font-semibold text-slate-950">
+                                  {providerPickerLabel}
+                                </span>
+                                {providerPickerStatus === null ? null : (
+                                  <span
                                     className={
-                                      isSelected
-                                        ? "w-full rounded-md border border-teal-600 bg-teal-50 px-2 py-2 text-left"
-                                        : "w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-left hover:bg-slate-50"
+                                      selectedOption?.isEligible
+                                        ? "block text-xs text-emerald-700"
+                                        : "block text-xs text-red-700"
                                     }
                                   >
-                                    <span className="block text-sm font-semibold text-slate-950">
-                                      {option.provider.display_name}
-                                    </span>
-                                    <span
-                                      className={
-                                        option.isEligible
-                                          ? "block text-xs text-emerald-700"
-                                          : "block text-xs text-red-700"
-                                      }
-                                    >
-                                      {option.isEligible
-                                        ? "Eligible"
-                                        : `Not eligible: ${
-                                            firstReason?.message ?? "Review required."
-                                          }`}
-                                    </span>
-                                  </button>
-                                );
-                              })}
+                                    {providerPickerStatus}
+                                  </span>
+                                )}
+                              </button>
+                              {providerPickerIsOpen
+                                ? providerOptions.map((option) => {
+                                    const isSelected =
+                                      option.provider.id === assignment.providerId;
+                                    const firstReason = option.reasons.at(0);
+                                    return (
+                                      <button
+                                        key={option.provider.id}
+                                        type="button"
+                                        onClick={() =>
+                                          handleProviderSelected(assignment, option)
+                                        }
+                                        className={
+                                          isSelected
+                                            ? "w-full rounded-md border border-teal-600 bg-teal-50 px-2 py-2 text-left"
+                                            : "w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-left hover:bg-slate-50"
+                                        }
+                                      >
+                                        <span className="block text-sm font-semibold text-slate-950">
+                                          {option.provider.display_name}
+                                        </span>
+                                        <span
+                                          className={
+                                            option.isEligible
+                                              ? "block text-xs text-emerald-700"
+                                              : "block text-xs text-red-700"
+                                          }
+                                        >
+                                          {option.isEligible
+                                            ? "Eligible"
+                                            : `Not eligible: ${
+                                                firstReason?.message ??
+                                                "Review required."
+                                              }`}
+                                        </span>
+                                      </button>
+                                    );
+                                  })
+                                : null}
                               {providerOptions.length === 0 ? (
                                 <p className="rounded-md border border-dashed border-slate-300 px-2 py-3 text-sm text-slate-500">
                                   Add providers before assigning this slot.

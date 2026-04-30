@@ -13,6 +13,19 @@ import {
   type RoomFormValues,
   type RoomTypeFormValues,
 } from "@/lib/schemas/room";
+import {
+  persistedScheduleVersionApiSchema,
+  scheduleDraftSaveResponseApiSchema,
+  schedulePeriodApiSchema,
+  schedulePeriodFormSchema,
+  schedulePublishResponseApiSchema,
+  scheduleVersionDetailApiSchema,
+  type ScheduleVersionDetailApi,
+  type SchedulePeriodApi,
+  type SchedulePeriodFormValues,
+  type PersistedScheduleVersionApi,
+  type SchedulePublishResponseApi,
+} from "@/lib/schemas/schedule";
 
 export type Center = {
   id: string;
@@ -50,6 +63,33 @@ export type RoomType = {
 };
 
 export type Provider = ProviderApiValues;
+
+export type SchedulePeriod = SchedulePeriodApi;
+
+export type PersistedScheduleVersion = PersistedScheduleVersionApi;
+
+export type ScheduleVersionDetail = ScheduleVersionDetailApi;
+
+export type SchedulePublishResponse = SchedulePublishResponseApi;
+
+export type ScheduleAssignmentSavePayload = {
+  provider_id: string;
+  center_id: string;
+  room_id: string | null;
+  shift_requirement_id: string | null;
+  required_provider_type: string | null;
+  start_time: string;
+  end_time: string;
+  source: string;
+  notes: string | null;
+};
+
+export type ScheduleDraftSavePayload = {
+  schedule_period_id: string;
+  parent_schedule_version_id: string | null;
+  notes: string | null;
+  assignments: ScheduleAssignmentSavePayload[];
+};
 
 async function requestJson<TResponse>(
   path: string,
@@ -269,4 +309,91 @@ export async function deactivateProvider(providerId: string): Promise<Provider> 
   });
   const provider = providerApiSchema.parse(responseJson);
   return provider;
+}
+
+export async function listSchedulePeriods(): Promise<SchedulePeriod[]> {
+  const responseJson = await requestJson<unknown[]>("/schedule-periods", {
+    cache: "no-store",
+  });
+  const periods = responseJson.map((periodJson) => {
+    const period = schedulePeriodApiSchema.parse(periodJson);
+    return period;
+  });
+  return periods;
+}
+
+function schedulePeriodPayload(values: SchedulePeriodFormValues) {
+  const payload = {
+    name: values.name,
+    start_date: values.startDate,
+    end_date: values.endDate,
+    status: "draft",
+  };
+  return payload;
+}
+
+export async function createSchedulePeriod(
+  values: SchedulePeriodFormValues,
+): Promise<SchedulePeriod> {
+  const parsedValues = schedulePeriodFormSchema.parse(values);
+  const payload = schedulePeriodPayload(parsedValues);
+  const init = jsonRequestInit("POST", payload);
+  const responseJson = await requestJson<unknown>("/schedule-periods", init);
+  const period = schedulePeriodApiSchema.parse(responseJson);
+  return period;
+}
+
+export async function getSchedulePeriod(periodId: string): Promise<SchedulePeriod> {
+  const responseJson = await requestJson<unknown>(`/schedule-periods/${periodId}`, {
+    cache: "no-store",
+  });
+  const period = schedulePeriodApiSchema.parse(responseJson);
+  return period;
+}
+
+export async function listScheduleVersions(
+  periodId: string,
+): Promise<PersistedScheduleVersion[]> {
+  const responseJson = await requestJson<unknown[]>(
+    `/schedule-periods/${periodId}/versions`,
+    { cache: "no-store" },
+  );
+  const versions = responseJson.map((versionJson) => {
+    const version = persistedScheduleVersionApiSchema.parse(versionJson);
+    return version;
+  });
+  return versions;
+}
+
+export async function getScheduleVersion(
+  versionId: string,
+): Promise<ScheduleVersionDetail> {
+  const responseJson = await requestJson<unknown>(`/schedule-versions/${versionId}`, {
+    cache: "no-store",
+  });
+  const detail = scheduleVersionDetailApiSchema.parse(responseJson);
+  return detail;
+}
+
+export async function saveDraftScheduleVersion(
+  payload: ScheduleDraftSavePayload,
+): Promise<ScheduleVersionDetail> {
+  const init = jsonRequestInit("POST", payload);
+  const responseJson = await requestJson<unknown>("/schedule-versions/draft", init);
+  const detail = scheduleDraftSaveResponseApiSchema.parse(responseJson);
+  return detail;
+}
+
+export async function publishScheduleVersion(
+  versionId: string,
+): Promise<SchedulePublishResponse> {
+  const responseJson = await requestJson<unknown>(
+    `/schedule-versions/${versionId}/publish`,
+    {
+      method: "POST",
+      cache: "no-store",
+    },
+  );
+  const response = schedulePublishResponseApiSchema.parse(responseJson);
+  return response;
 }

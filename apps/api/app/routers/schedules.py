@@ -14,9 +14,17 @@ from app.db.models import ScheduleVersion
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
 from app.schemas.schedule import ProviderEligibilityRequest
+from app.schemas.schedule import AssignmentRead
+from app.schemas.schedule import ConstraintViolationRead
 from app.schemas.schedule import ScheduleDraftSaveRequest
 from app.schemas.schedule import ScheduleDraftSaveResponse
+from app.schemas.schedule import ScheduleAssignmentCreate
+from app.schemas.schedule import SchedulePeriodCreate
+from app.schemas.schedule import SchedulePeriodRead
 from app.schemas.schedule import SchedulePublishResponse
+from app.schemas.schedule import ScheduleVersionDetailRead
+from app.schemas.schedule import ScheduleVersionRead
+from app.db.models.scheduling import current_utc_time
 from app.services.scheduling.provider_eligibility import check_provider_slot_eligibility
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityViolation
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityInput
@@ -162,27 +170,55 @@ def assignments_for_version(
     return assignments
 
 
-@router.post("/schedule-provider-eligibility", response_model=ProviderSlotEligibilityResult)
-def read_provider_eligibility(
-    request: ProviderEligibilityRequest,
-    session: Session = Depends(get_db),
-    organization_id: UUID = Depends(get_current_organization_id),
-) -> ProviderSlotEligibilityResult:
-    eligibility_input = eligibility_input_from_request(request, organization_id)
-
-    try:
-        result = check_provider_slot_eligibility(eligibility_input, session)
-    except ValueError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-
-    return result
+def violations_for_version(
+    schedule_version_id: UUID,
+    organization_id: UUID,
+    session: Session,
+) -> list[ConstraintViolation]:
+    statement = select(ConstraintViolation)
+    statement = statement.where(ConstraintViolation.schedule_version_id == schedule_version_id)
+    statement = statement.where(ConstraintViolation.organization_id == organization_id)
+    statement = statement.order_by(ConstraintViolation.created_at)
+    violations = list(session.scalars(statement))
+    return violations
 
 
-@router.post("/schedule-versions/draft", response_model=ScheduleDraftSaveResponse, status_code=201)
-def save_draft_schedule_version(
+def validate_schedule_period_dates(request: SchedulePeriodCreate) -> None:
+    end_is_before_start = request.end_date < request.start_date
+
+    if end_is_before_start:
+        raise HTTPException(status_code=400, detail="End date must be on or after start date")
+
+
+def create_assignment_from_request(
+    requested_assignment: ScheduleAssignmentCreate,
+    schedule_period_id: UUID,
+    schedule_version_id: UUID,
+    organization_id: UUID,
+) -> Assignment:
+    assignment = Assignment(
+        organization_id=organization_id,
+        schedule_version_id=schedule_version_id,
+        schedule_period_id=schedule_period_id,
+        provider_id=requested_assignment.provider_id,
+        center_id=requested_assignment.center_id,
+        room_id=requested_assignment.room_id,
+        shift_requirement_id=requested_assignment.shift_requirement_id,
+        required_provider_type=requested_assignment.required_provider_type,
+        start_time=requested_assignment.start_time,
+        end_time=requested_assignment.end_time,
+        assignment_status="draft",
+        source=requested_assignment.source,
+        notes=requested_assignment.notes,
+    )
+    return assignment
+
+
+def save_schedule_version(
     request: ScheduleDraftSaveRequest,
-    session: Session = Depends(get_db),
-    organization_id: UUID = Depends(get_current_organization_id),
+    source: str,
+    session: Session,
+    organization_id: UUID,
 ) -> ScheduleDraftSaveResponse:
     require_schedule_period(request.schedule_period_id, organization_id, session)
     validate_parent_version(
@@ -202,6 +238,11 @@ def save_draft_schedule_version(
         schedule_job_id=None,
         version_number=version_number,
         status="draft",
+        source=source,
+        parent_schedule_version_id=request.parent_schedule_version_id,
+        published_at=None,
+        published_by_user_id=None,
+        created_by_user_id=None,
         solver_score=None,
         notes=request.notes,
     )
@@ -210,20 +251,11 @@ def save_draft_schedule_version(
     assignments: list[Assignment] = []
 
     for requested_assignment in request.assignments:
-        assignment = Assignment(
-            organization_id=organization_id,
-            schedule_version_id=schedule_version.id,
-            schedule_period_id=request.schedule_period_id,
-            provider_id=requested_assignment.provider_id,
-            center_id=requested_assignment.center_id,
-            room_id=requested_assignment.room_id,
-            shift_requirement_id=requested_assignment.shift_requirement_id,
-            required_provider_type=requested_assignment.required_provider_type,
-            start_time=requested_assignment.start_time,
-            end_time=requested_assignment.end_time,
-            assignment_status="draft",
-            source=requested_assignment.source,
-            notes=requested_assignment.notes,
+        assignment = create_assignment_from_request(
+            requested_assignment,
+            request.schedule_period_id,
+            schedule_version.id,
+            organization_id,
         )
         session.add(assignment)
         assignments.append(assignment)
@@ -271,6 +303,184 @@ def save_draft_schedule_version(
     return response
 
 
+@router.get("/schedule-periods", response_model=list[SchedulePeriodRead])
+def list_schedule_periods(
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> list[SchedulePeriod]:
+    statement = select(SchedulePeriod).where(SchedulePeriod.organization_id == organization_id)
+    statement = statement.order_by(SchedulePeriod.start_date.desc())
+    periods = list(session.scalars(statement))
+    return periods
+
+
+@router.post("/schedule-periods", response_model=SchedulePeriodRead, status_code=201)
+def create_schedule_period(
+    request: SchedulePeriodCreate,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> SchedulePeriod:
+    validate_schedule_period_dates(request)
+    schedule_period = SchedulePeriod(
+        organization_id=organization_id,
+        name=request.name,
+        start_date=request.start_date,
+        end_date=request.end_date,
+        status=request.status,
+    )
+    session.add(schedule_period)
+    session.commit()
+    session.refresh(schedule_period)
+    return schedule_period
+
+
+@router.get("/schedule-periods/{period_id}", response_model=SchedulePeriodRead)
+def read_schedule_period(
+    period_id: UUID,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> SchedulePeriod:
+    schedule_period = require_schedule_period(period_id, organization_id, session)
+    return schedule_period
+
+
+@router.get("/schedule-periods/{period_id}/versions", response_model=list[ScheduleVersionRead])
+def list_schedule_versions(
+    period_id: UUID,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> list[ScheduleVersion]:
+    require_schedule_period(period_id, organization_id, session)
+    statement = select(ScheduleVersion).where(ScheduleVersion.schedule_period_id == period_id)
+    statement = statement.where(ScheduleVersion.organization_id == organization_id)
+    statement = statement.order_by(ScheduleVersion.version_number.desc())
+    versions = list(session.scalars(statement))
+    return versions
+
+
+@router.post("/schedule-provider-eligibility", response_model=ProviderSlotEligibilityResult)
+def read_provider_eligibility(
+    request: ProviderEligibilityRequest,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> ProviderSlotEligibilityResult:
+    eligibility_input = eligibility_input_from_request(request, organization_id)
+
+    try:
+        result = check_provider_slot_eligibility(eligibility_input, session)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+    return result
+
+
+@router.post("/schedule-versions/draft", response_model=ScheduleDraftSaveResponse, status_code=201)
+def save_draft_schedule_version(
+    request: ScheduleDraftSaveRequest,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> ScheduleDraftSaveResponse:
+    response = save_schedule_version(request, "manual", session, organization_id)
+    return response
+
+
+@router.post(
+    "/schedule-periods/{period_id}/versions",
+    response_model=ScheduleDraftSaveResponse,
+    status_code=201,
+)
+def save_period_schedule_version(
+    period_id: UUID,
+    request: ScheduleDraftSaveRequest,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> ScheduleDraftSaveResponse:
+    path_matches_body = period_id == request.schedule_period_id
+
+    if not path_matches_body:
+        raise HTTPException(status_code=400, detail="Path period does not match request period")
+
+    response = save_schedule_version(request, "manual", session, organization_id)
+    return response
+
+
+@router.get("/schedule-versions/{schedule_version_id}", response_model=ScheduleVersionDetailRead)
+def read_schedule_version(
+    schedule_version_id: UUID,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> ScheduleVersionDetailRead:
+    schedule_version = require_schedule_version(schedule_version_id, organization_id, session)
+    assignments = assignments_for_version(schedule_version_id, organization_id, session)
+    violations = violations_for_version(schedule_version_id, organization_id, session)
+    response = ScheduleVersionDetailRead(
+        version=schedule_version,
+        assignments=assignments,
+        violations=violations,
+    )
+    return response
+
+
+@router.get("/schedule-versions/{schedule_version_id}/assignments", response_model=list[AssignmentRead])
+def read_schedule_version_assignments(
+    schedule_version_id: UUID,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> list[Assignment]:
+    require_schedule_version(schedule_version_id, organization_id, session)
+    assignments = assignments_for_version(schedule_version_id, organization_id, session)
+    return assignments
+
+
+@router.get("/schedule-versions/{schedule_version_id}/violations", response_model=list[ConstraintViolationRead])
+def read_schedule_version_violations(
+    schedule_version_id: UUID,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> list[ConstraintViolation]:
+    require_schedule_version(schedule_version_id, organization_id, session)
+    violations = violations_for_version(schedule_version_id, organization_id, session)
+    return violations
+
+
+@router.post(
+    "/schedule-versions/{schedule_version_id}/duplicate",
+    response_model=ScheduleDraftSaveResponse,
+    status_code=201,
+)
+def duplicate_schedule_version(
+    schedule_version_id: UUID,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> ScheduleDraftSaveResponse:
+    schedule_version = require_schedule_version(schedule_version_id, organization_id, session)
+    assignments = assignments_for_version(schedule_version_id, organization_id, session)
+    requested_assignments: list[ScheduleAssignmentCreate] = []
+
+    for assignment in assignments:
+        requested_assignment = ScheduleAssignmentCreate(
+            provider_id=assignment.provider_id,
+            center_id=assignment.center_id,
+            room_id=assignment.room_id,
+            shift_requirement_id=assignment.shift_requirement_id,
+            required_provider_type=assignment.required_provider_type,
+            start_time=assignment.start_time,
+            end_time=assignment.end_time,
+            source="duplicate",
+            notes=assignment.notes,
+        )
+        requested_assignments.append(requested_assignment)
+
+    request = ScheduleDraftSaveRequest(
+        schedule_period_id=schedule_version.schedule_period_id,
+        parent_schedule_version_id=schedule_version.id,
+        notes=schedule_version.notes,
+        assignments=requested_assignments,
+    )
+    response = save_schedule_version(request, "duplicate", session, organization_id)
+    return response
+
+
 @router.post("/schedule-versions/{schedule_version_id}/publish", response_model=SchedulePublishResponse)
 def publish_schedule_version(
     schedule_version_id: UUID,
@@ -295,14 +505,42 @@ def publish_schedule_version(
 
         violations.extend(result.violations)
 
-    if len(violations) > 0:
+    hard_violations = [
+        violation
+        for violation in violations
+        if violation.severity == "hard_violation"
+    ]
+
+    if len(hard_violations) > 0:
         response = SchedulePublishResponse(
             version=schedule_version,
-            violations=violations,
+            violations=hard_violations,
         )
         raise HTTPException(status_code=409, detail=response.model_dump(mode="json"))
 
+    statement = select(ScheduleVersion)
+    statement = statement.where(ScheduleVersion.organization_id == organization_id)
+    statement = statement.where(ScheduleVersion.schedule_period_id == schedule_version.schedule_period_id)
+    statement = statement.where(ScheduleVersion.status == "published")
+    published_versions = list(session.scalars(statement))
+
+    for published_version in published_versions:
+        same_version = published_version.id == schedule_version.id
+
+        if same_version:
+            continue
+
+        published_version.status = "superseded"
+
+    schedule_period = require_schedule_period(
+        schedule_version.schedule_period_id,
+        organization_id,
+        session,
+    )
+    published_at = current_utc_time()
     schedule_version.status = "published"
+    schedule_version.published_at = published_at
+    schedule_period.status = "published"
     session.commit()
     session.refresh(schedule_version)
     response = SchedulePublishResponse(

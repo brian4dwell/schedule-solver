@@ -2,37 +2,26 @@ import Link from "next/link";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
-import {
-  schedulePeriodSummarySchema,
-  type SchedulePeriodSummary,
+import { listSchedulePeriods, listScheduleVersions } from "@/lib/api";
+import type {
+  PersistedScheduleVersionApi,
+  SchedulePeriodApi,
+  SchedulePeriodSummary,
 } from "@/lib/schemas/schedule";
+import { schedulePeriodSummarySchema } from "@/lib/schemas/schedule";
 
-function createSchedulePeriods(): SchedulePeriodSummary[] {
-  const periods = [
-    {
-      id: "week-of-may-4",
-      name: "Week of May 4",
-      dateRange: "May 4-10, 2026",
-      currentVersionName: "Working version",
-      lastEditedAt: "2026-04-30T14:41:00.000Z",
-      lastPublishedAt: "2026-04-30T09:12:00.000Z",
-      unpublishedChangeCount: 3,
-    },
-    {
-      id: "week-of-april-27",
-      name: "Week of April 27",
-      dateRange: "Apr 27-May 3, 2026",
-      currentVersionName: "Published version",
-      lastEditedAt: "2026-04-29T18:05:00.000Z",
-      lastPublishedAt: "2026-04-29T18:05:00.000Z",
-      unpublishedChangeCount: 0,
-    },
-  ];
-  const parsedPeriods = periods.map((period) => {
-    const parsedPeriod = schedulePeriodSummarySchema.parse(period);
-    return parsedPeriod;
+function formatDateRange(period: SchedulePeriodApi) {
+  const startDate = new Date(`${period.start_date}T00:00:00`);
+  const endDate = new Date(`${period.end_date}T00:00:00`);
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   });
-  return parsedPeriods;
+  const formattedStart = formatter.format(startDate);
+  const formattedEnd = formatter.format(endDate);
+  const range = `${formattedStart} - ${formattedEnd}`;
+  return range;
 }
 
 function formatScheduleDate(value: string) {
@@ -47,26 +36,91 @@ function formatScheduleDate(value: string) {
   return formattedValue;
 }
 
+function latestVersionName(version: PersistedScheduleVersionApi | undefined) {
+  if (version === undefined) {
+    return "No saved version";
+  }
+
+  const name = `Version ${version.version_number}`;
+  return name;
+}
+
+function latestPublishedAt(versions: PersistedScheduleVersionApi[]) {
+  const publishedVersions = versions.filter((version) => {
+    return version.published_at !== null;
+  });
+  const sortedVersions = publishedVersions.toSorted((first, second) => {
+    const firstValue = first.published_at ?? "";
+    const secondValue = second.published_at ?? "";
+    const comparison = firstValue.localeCompare(secondValue);
+    return comparison;
+  });
+  const latestVersion = sortedVersions.at(-1);
+  const publishedAt = latestVersion?.published_at ?? null;
+  return publishedAt;
+}
+
+function unpublishedChangeCount(versions: PersistedScheduleVersionApi[]) {
+  const draftVersions = versions.filter((version) => {
+    return version.status === "draft";
+  });
+  const count = draftVersions.length;
+  return count;
+}
+
+function createSchedulePeriodSummary(
+  period: SchedulePeriodApi,
+  versions: PersistedScheduleVersionApi[],
+): SchedulePeriodSummary {
+  const latestVersion = versions.at(0);
+  const lastEditedAt = latestVersion?.updated_at ?? period.updated_at;
+  const summary = {
+    id: period.id,
+    name: period.name,
+    dateRange: formatDateRange(period),
+    currentVersionName: latestVersionName(latestVersion),
+    lastEditedAt,
+    lastPublishedAt: latestPublishedAt(versions),
+    unpublishedChangeCount: unpublishedChangeCount(versions),
+  };
+  const parsedSummary = schedulePeriodSummarySchema.parse(summary);
+  return parsedSummary;
+}
+
 function publishStatus(period: SchedulePeriodSummary) {
   if (period.lastPublishedAt === null) {
     return "Never published";
   }
 
   if (period.unpublishedChangeCount > 0) {
-    return "Published with unpublished edits";
+    return "Published with draft versions";
   }
 
   return "Published";
 }
 
-export default function SchedulesPage() {
-  const periods = createSchedulePeriods();
+async function loadSchedulePeriodSummaries() {
+  const periods = await listSchedulePeriods();
+  const periodSummaries = await Promise.all(
+    periods.map(async (period) => {
+      const versions = await listScheduleVersions(period.id);
+      const summary = createSchedulePeriodSummary(period, versions);
+      return summary;
+    }),
+  );
+  return periodSummaries;
+}
+
+export default async function SchedulesPage() {
+  const periods = await loadSchedulePeriodSummaries();
 
   return (
     <AppShell>
       <PageHeader
         title="Schedules"
         description="Choose a schedule period, open it in its own workspace, and track publish history over time."
+        actionHref="/schedules/new"
+        actionLabel="New schedule"
       />
       <section className="rounded-md border border-slate-200 bg-white">
         <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(10rem,0.7fr)_minmax(9rem,0.6fr)_auto] border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase text-slate-500 lg:grid">
@@ -76,6 +130,11 @@ export default function SchedulesPage() {
           <span className="text-right">Action</span>
         </div>
         <div className="divide-y divide-slate-200">
+          {periods.length === 0 ? (
+            <div className="px-4 py-8 text-sm text-slate-500">
+              No schedule periods have been created yet.
+            </div>
+          ) : null}
           {periods.map((period) => {
             const status = publishStatus(period);
             const lastPublished =
@@ -103,7 +162,7 @@ export default function SchedulesPage() {
                   </span>
                   {period.unpublishedChangeCount > 0 ? (
                     <p className="mt-1 text-xs text-slate-500">
-                      {period.unpublishedChangeCount} unpublished edits
+                      {period.unpublishedChangeCount} draft versions
                     </p>
                   ) : null}
                 </div>

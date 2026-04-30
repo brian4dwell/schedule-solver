@@ -11,6 +11,7 @@ export const scheduleDayKeySchema = z.enum([
 ]);
 
 export const scheduleVersionStatusSchema = z.enum([
+  "archived",
   "draft",
   "published",
   "superseded",
@@ -57,6 +58,89 @@ export const scheduleVersionSchema = z.object({
   assignments: z.array(scheduleRoomAssignmentSchema),
 });
 
+export const schedulePeriodApiSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  start_date: z.string().min(1),
+  end_date: z.string().min(1),
+  status: z.string().min(1),
+  created_at: z.string().min(1),
+  updated_at: z.string().min(1),
+});
+
+export const schedulePeriodFormSchema = z.object({
+  name: z.string().min(1),
+  startDate: z.string().min(1),
+  endDate: z.string().min(1),
+});
+
+export const scheduleAssignmentApiSchema = z.object({
+  id: z.string().uuid(),
+  schedule_version_id: z.string().uuid(),
+  schedule_period_id: z.string().uuid(),
+  provider_id: z.string().uuid(),
+  center_id: z.string().uuid(),
+  room_id: z.string().uuid().nullable(),
+  shift_requirement_id: z.string().uuid().nullable(),
+  required_provider_type: z.string().nullable(),
+  start_time: z.string().min(1),
+  end_time: z.string().min(1),
+  assignment_status: z.string().min(1),
+  source: z.string().min(1),
+  notes: z.string().nullable(),
+  created_at: z.string().min(1),
+  updated_at: z.string().min(1),
+});
+
+export const constraintViolationApiSchema = z.object({
+  id: z.string().uuid(),
+  schedule_version_id: z.string().uuid(),
+  assignment_id: z.string().uuid().nullable(),
+  severity: z.string().min(1),
+  constraint_type: z.string().min(1),
+  message: z.string().min(1),
+  metadata_json: z.record(z.string(), z.unknown()).nullable(),
+  created_at: z.string().min(1),
+  updated_at: z.string().min(1),
+});
+
+export const persistedScheduleVersionApiSchema = z.object({
+  id: z.string().uuid(),
+  schedule_period_id: z.string().uuid(),
+  schedule_job_id: z.string().uuid().nullable(),
+  version_number: z.number().int().min(1),
+  status: z.string().min(1),
+  source: z.string().min(1),
+  parent_schedule_version_id: z.string().uuid().nullable(),
+  published_at: z.string().min(1).nullable(),
+  published_by_user_id: z.string().uuid().nullable(),
+  created_by_user_id: z.string().uuid().nullable(),
+  solver_score: z.number().nullable(),
+  notes: z.string().nullable(),
+  created_at: z.string().min(1),
+  updated_at: z.string().min(1),
+});
+
+export const scheduleVersionDetailApiSchema = z.object({
+  version: persistedScheduleVersionApiSchema,
+  assignments: z.array(scheduleAssignmentApiSchema),
+  violations: z.array(constraintViolationApiSchema),
+});
+
+export const scheduleDraftSaveResponseApiSchema = scheduleVersionDetailApiSchema;
+
+export const providerEligibilityViolationApiSchema = z.object({
+  severity: z.string().min(1),
+  constraint_type: z.string().min(1),
+  category: z.string().min(1),
+  message: z.string().min(1),
+});
+
+export const schedulePublishResponseApiSchema = z.object({
+  version: persistedScheduleVersionApiSchema,
+  violations: z.array(providerEligibilityViolationApiSchema),
+});
+
 export const schedulePublishEventSchema = z.object({
   id: z.string().min(1),
   versionId: z.string().min(1),
@@ -65,7 +149,7 @@ export const schedulePublishEventSchema = z.object({
 });
 
 export const schedulePeriodSummarySchema = z.object({
-  id: z.string().min(1),
+  id: z.string().uuid(),
   name: z.string().min(1),
   dateRange: z.string().min(1),
   currentVersionName: z.string().min(1),
@@ -93,3 +177,23 @@ export type ScheduleVersion = z.infer<typeof scheduleVersionSchema>;
 export type SchedulePublishEvent = z.infer<typeof schedulePublishEventSchema>;
 
 export type SchedulePeriodSummary = z.infer<typeof schedulePeriodSummarySchema>;
+
+export type SchedulePeriodApi = z.infer<typeof schedulePeriodApiSchema>;
+
+export type SchedulePeriodFormValues = z.infer<typeof schedulePeriodFormSchema>;
+
+export type ScheduleAssignmentApi = z.infer<typeof scheduleAssignmentApiSchema>;
+
+export type ConstraintViolationApi = z.infer<typeof constraintViolationApiSchema>;
+
+export type PersistedScheduleVersionApi = z.infer<
+  typeof persistedScheduleVersionApiSchema
+>;
+
+export type ScheduleVersionDetailApi = z.infer<
+  typeof scheduleVersionDetailApiSchema
+>;
+
+export type SchedulePublishResponseApi = z.infer<
+  typeof schedulePublishResponseApiSchema
+>;

@@ -1,3 +1,4 @@
+from datetime import date
 from datetime import datetime
 from uuid import UUID
 
@@ -39,6 +40,22 @@ class ScheduleDraftSaveRequest(BaseModel):
     assignments: list[ScheduleAssignmentCreate] = Field(default_factory=list)
 
 
+class SchedulePeriodCreate(BaseModel):
+    name: str
+    start_date: date
+    end_date: date
+    status: str = "draft"
+
+
+class SchedulePeriodRead(TimestampedSchema):
+    name: str
+    start_date: date
+    end_date: date
+    status: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AssignmentRead(TimestampedSchema):
     schedule_version_id: UUID
     schedule_period_id: UUID
@@ -72,10 +89,21 @@ class ScheduleVersionRead(TimestampedSchema):
     schedule_job_id: UUID | None
     version_number: int
     status: str
+    source: str
+    parent_schedule_version_id: UUID | None
+    published_at: datetime | None
+    published_by_user_id: UUID | None
+    created_by_user_id: UUID | None
     solver_score: float | None
     notes: str | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ScheduleVersionDetailRead(BaseModel):
+    version: ScheduleVersionRead
+    assignments: list[AssignmentRead]
+    violations: list[ConstraintViolationRead]
 
 
 class ScheduleDraftSaveResponse(BaseModel):
