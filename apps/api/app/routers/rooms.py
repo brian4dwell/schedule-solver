@@ -31,6 +31,7 @@ def find_room(
 ) -> Room:
     statement = select(Room).where(Room.id == room_id)
     statement = statement.where(Room.organization_id == organization_id)
+    statement = statement.where(Room.is_active.is_(True))
     room = session.scalar(statement)
 
     if room is None:
@@ -46,6 +47,7 @@ def require_center(
 ) -> Center:
     statement = select(Center).where(Center.id == center_id)
     statement = statement.where(Center.organization_id == organization_id)
+    statement = statement.where(Center.is_active.is_(True))
     center = session.scalar(statement)
 
     if center is None:
@@ -61,6 +63,7 @@ def find_room_type(
 ) -> RoomType:
     statement = select(RoomType).where(RoomType.id == room_type_id)
     statement = statement.where(RoomType.organization_id == organization_id)
+    statement = statement.where(RoomType.is_active.is_(True))
     room_type = session.scalar(statement)
 
     if room_type is None:
@@ -74,6 +77,7 @@ def room_types_for_organization(
     session: Session,
 ) -> list[RoomType]:
     statement = select(RoomType).where(RoomType.organization_id == organization_id)
+    statement = statement.where(RoomType.is_active.is_(True))
     statement = statement.order_by(RoomType.display_order, RoomType.name)
     room_types = list(session.scalars(statement))
     return room_types
@@ -88,6 +92,7 @@ def room_types_for_room(
     statement = statement.join(RoomRoomType, RoomRoomType.room_type_id == RoomType.id)
     statement = statement.where(RoomRoomType.organization_id == organization_id)
     statement = statement.where(RoomRoomType.room_id == room_id)
+    statement = statement.where(RoomType.is_active.is_(True))
     statement = statement.order_by(RoomType.display_order, RoomType.name)
     room_types = list(session.scalars(statement))
     return room_types
@@ -279,6 +284,7 @@ def list_rooms_for_center(
     require_center(center_id, organization_id, session)
     statement = select(Room).where(Room.organization_id == organization_id)
     statement = statement.where(Room.center_id == center_id)
+    statement = statement.where(Room.is_active.is_(True))
     statement = statement.order_by(Room.display_order, Room.name)
     rooms = list(session.scalars(statement))
     room_reads = [

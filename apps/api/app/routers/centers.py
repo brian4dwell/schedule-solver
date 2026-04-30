@@ -23,6 +23,7 @@ def find_center(
 ) -> Center:
     statement = select(Center).where(Center.id == center_id)
     statement = statement.where(Center.organization_id == organization_id)
+    statement = statement.where(Center.is_active.is_(True))
     center = session.scalar(statement)
 
     if center is None:
@@ -37,6 +38,7 @@ def list_centers(
     organization_id: UUID = Depends(get_current_organization_id),
 ) -> list[Center]:
     statement = select(Center).where(Center.organization_id == organization_id)
+    statement = statement.where(Center.is_active.is_(True))
     statement = statement.order_by(Center.name)
     centers = list(session.scalars(statement))
     return centers
@@ -83,25 +85,25 @@ def update_center(
 ) -> Center:
     center = find_center(center_id, organization_id, session)
 
-    if request.name is not None:
+    if "name" in request.model_fields_set:
         center.name = request.name
 
-    if request.address_line_1 is not None:
+    if "address_line_1" in request.model_fields_set:
         center.address_line_1 = request.address_line_1
 
-    if request.address_line_2 is not None:
+    if "address_line_2" in request.model_fields_set:
         center.address_line_2 = request.address_line_2
 
-    if request.city is not None:
+    if "city" in request.model_fields_set:
         center.city = request.city
 
-    if request.state is not None:
+    if "state" in request.model_fields_set:
         center.state = request.state
 
-    if request.postal_code is not None:
+    if "postal_code" in request.model_fields_set:
         center.postal_code = request.postal_code
 
-    if request.timezone is not None:
+    if "timezone" in request.model_fields_set:
         center.timezone = request.timezone
 
     session.commit()

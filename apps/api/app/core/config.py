@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     environment: str = "development"
     local_organization_name: str = "Local Scheduling Organization"
+    auth_mode: str = "local"
 
     model_config = SettingsConfigDict(
         env_file=environment_file_path,
@@ -41,6 +42,12 @@ class Settings(BaseSettings):
 
         normalized_database_url = database_url
         return normalized_database_url
+
+    @field_validator("auth_mode")
+    @classmethod
+    def normalize_auth_mode(cls, auth_mode: str) -> str:
+        normalized_auth_mode = auth_mode.strip().lower()
+        return normalized_auth_mode
 
 
 @lru_cache
