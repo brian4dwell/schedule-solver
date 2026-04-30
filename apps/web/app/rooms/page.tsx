@@ -5,8 +5,11 @@ import { RoomsTable } from "@/components/rooms/rooms-table";
 import { listCenters, listRoomsForCenter, listRoomTypes } from "@/lib/api";
 
 export default async function RoomsPage() {
-  const centers = await listCenters();
-  const roomTypes = await listRoomTypes();
+  const centersPromise = listCenters();
+  const roomTypesPromise = listRoomTypes();
+  const pageData = await Promise.all([centersPromise, roomTypesPromise]);
+  const centers = pageData[0];
+  const roomTypes = pageData[1];
   const roomGroups = await Promise.all(
     centers.map(async (center) => {
       const rooms = await listRoomsForCenter(center.id);

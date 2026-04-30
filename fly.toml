@@ -20,8 +20,13 @@ primary_region = "ord"
   processes = ["app"]
 
   [[http_service.checks]]
-    grace_period = "30s"
+    grace_period = "120s"
     interval = "30s"
     method = "GET"
     path = "/health"
     timeout = "5s"
+
+[vm]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "512mb"

@@ -13,10 +13,21 @@ type CenterDetailPageProps = {
 
 export default async function CenterDetailPage({ params }: CenterDetailPageProps) {
   const resolvedParams = await params;
-  const center = await getCenter(resolvedParams.centerId);
-  const centers = await listCenters();
-  const rooms = await listRoomsForCenter(resolvedParams.centerId);
-  const roomTypes = await listRoomTypes();
+  const centerId = resolvedParams.centerId;
+  const centerPromise = getCenter(centerId);
+  const centersPromise = listCenters();
+  const roomsPromise = listRoomsForCenter(centerId);
+  const roomTypesPromise = listRoomTypes();
+  const pageData = await Promise.all([
+    centerPromise,
+    centersPromise,
+    roomsPromise,
+    roomTypesPromise,
+  ]);
+  const center = pageData[0];
+  const centers = pageData[1];
+  const rooms = pageData[2];
+  const roomTypes = pageData[3];
   const rows = rooms.map((room) => {
     return { room, center };
   });
