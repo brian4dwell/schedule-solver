@@ -1,0 +1,10 @@
+.git
+.vscode
+**/.env
+**/.env.*
+**/.next
+**/.venv
+**/__pycache__
+**/node_modules
+**/.pytest_cache
+debug*.log

@@ -1,0 +1,50 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Docker: Postgres + Redis",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "docker compose up postgres redis",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Next.js: dev",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}/apps/web",
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/apps/web/**",
+        "!${workspaceFolder}/apps/web/.next/**",
+        "!**/node_modules/**"
+      ]
+    },
+    {
+      "name": "FastAPI: dev",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "uv run uvicorn app.main:app --reload --port 8000",
+      "cwd": "${workspaceFolder}/apps/api"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Dev: Next.js + FastAPI",
+      "configurations": [
+        "Next.js: dev",
+        "FastAPI: dev"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Dev: Full Stack",
+      "configurations": [
+        "Docker: Postgres + Redis",
+        "FastAPI: dev",
+        "Next.js: dev"
+      ],
+      "stopAll": true
+    }
+  ]
+}

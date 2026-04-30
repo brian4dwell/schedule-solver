@@ -1,7 +1,10 @@
+from pathlib import Path
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings
 from pydantic_settings import SettingsConfigDict
+
+environment_file_path = Path(__file__).resolve().parent.parent / ".env"
 
 
 class Settings(BaseSettings):
@@ -11,7 +14,7 @@ class Settings(BaseSettings):
     local_organization_name: str = "Local Scheduling Organization"
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=environment_file_path,
         env_file_encoding="utf-8",
         extra="ignore",
     )

@@ -1,0 +1,27 @@
+app = "bespoke-web"
+primary_region = "ord"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ENVIRONMENT = "production"
+  HOSTNAME = "0.0.0.0"
+  INTERNAL_API_BASE_URL = "http://127.0.0.1:8000"
+  NEXT_PUBLIC_API_BASE_URL = "/api"
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "15s"
+    method = "GET"
+    path = "/api/health"
+    timeout = "2s"
