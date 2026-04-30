@@ -4,9 +4,12 @@ This app deploys to Fly.io as a single machine named `bespoke-web` in the `ord`
 region. The Docker image runs both services:
 
 - Next.js listens on port `3000`.
+- The Fly health check uses the Next.js `/health` endpoint.
 - FastAPI listens inside the container on `127.0.0.1:8000`.
 - Next.js proxies browser requests from `/api/*` to FastAPI.
 - Alembic migrations run during container startup before the services boot.
+- Fly keeps one machine running so health checks do not flap while all machines
+  are stopped.
 
 ## Prerequisites
 
@@ -88,13 +91,19 @@ The deploy uses:
 Open the health endpoint:
 
 ```powershell
-fly open /api/health --app bespoke-web
+fly open /health --app bespoke-web
 ```
 
 Expected response:
 
 ```json
 { "status": "ok" }
+```
+
+Confirm the API proxy is also healthy:
+
+```powershell
+fly open /api/health --app bespoke-web
 ```
 
 Check logs if startup fails:

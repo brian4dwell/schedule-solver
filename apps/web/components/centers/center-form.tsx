@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { createCenter, type Center, updateCenter } from "@/lib/api";
 import type { CenterFormValues } from "@/lib/schemas/center";
+import { parseUsTimezone, usTimezoneOptions } from "@/lib/timezones";
 
 type CenterFormProps = {
   center?: Center;
@@ -18,6 +19,8 @@ export function CenterForm({ center }: CenterFormProps) {
   async function handleSubmit(formData: FormData) {
     setErrorMessage(null);
 
+    const timezoneValue = String(formData.get("timezone") ?? "");
+    const timezone = parseUsTimezone(timezoneValue);
     const values: CenterFormValues = {
       name: String(formData.get("name") ?? ""),
       addressLine1: String(formData.get("addressLine1") ?? ""),
@@ -25,7 +28,7 @@ export function CenterForm({ center }: CenterFormProps) {
       city: String(formData.get("city") ?? ""),
       state: String(formData.get("state") ?? ""),
       postalCode: String(formData.get("postalCode") ?? ""),
-      timezone: String(formData.get("timezone") ?? ""),
+      timezone,
     };
 
     try {
@@ -62,12 +65,20 @@ export function CenterForm({ center }: CenterFormProps) {
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
           Timezone
-          <input
+          <select
             name="timezone"
             required
             defaultValue={center?.timezone ?? "America/New_York"}
             className="h-10 rounded-md border border-slate-300 px-3 text-slate-950"
-          />
+          >
+            {usTimezoneOptions.map((timezoneOption) => {
+              return (
+                <option key={timezoneOption.value} value={timezoneOption.value}>
+                  {timezoneOption.label}
+                </option>
+              );
+            })}
+          </select>
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
           Address line 1

@@ -15,9 +15,19 @@ const dashboardLinks = [
     description: "Add rooms inside each center for coverage planning.",
   },
   {
+    href: "/room-types",
+    title: "Room Types",
+    description: "Manage the room types assigned to rooms for scheduling context.",
+  },
+  {
     href: "/providers",
     title: "Providers",
     description: "Maintain the people available for anesthesia coverage.",
+  },
+  {
+    href: "/schedules",
+    title: "Schedules",
+    description: "Build draft schedules and review completed schedule versions.",
   },
 ];
 
@@ -28,7 +38,7 @@ export default function DashboardPage() {
         title="Dashboard"
         description="Start with the core scheduling entities for the first operational slice."
       />
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-5">
         {dashboardLinks.map((item) => {
           return (
             <Link

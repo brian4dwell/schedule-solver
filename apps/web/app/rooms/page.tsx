@@ -2,10 +2,11 @@ import { PageHeader } from "@/components/layout/page-header";
 import { AppShell } from "@/components/layout/app-shell";
 import { RoomForm } from "@/components/rooms/room-form";
 import { RoomsTable } from "@/components/rooms/rooms-table";
-import { listCenters, listRoomsForCenter } from "@/lib/api";
+import { listCenters, listRoomsForCenter, listRoomTypes } from "@/lib/api";
 
 export default async function RoomsPage() {
   const centers = await listCenters();
+  const roomTypes = await listRoomTypes();
   const roomGroups = await Promise.all(
     centers.map(async (center) => {
       const rooms = await listRoomsForCenter(center.id);
@@ -24,8 +25,8 @@ export default async function RoomsPage() {
         description="Rooms belong to centers and become the scheduling coverage targets."
       />
       <div className="space-y-6">
-        <RoomForm centers={centers} />
-        <RoomsTable rows={rows} />
+        <RoomsTable rows={rows} roomTypes={roomTypes} />
+        <RoomForm centers={centers} roomTypes={roomTypes} />
       </div>
     </AppShell>
   );

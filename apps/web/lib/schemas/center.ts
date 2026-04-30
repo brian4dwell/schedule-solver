@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { usTimezoneSchema } from "@/lib/timezones";
+
 export const centerSchema = z.object({
   name: z.string().min(1),
   addressLine1: z.string().optional(),
@@ -7,7 +9,7 @@ export const centerSchema = z.object({
   city: z.string().optional(),
   state: z.string().optional(),
   postalCode: z.string().optional(),
-  timezone: z.string().min(1),
+  timezone: usTimezoneSchema,
 });
 
 export type CenterFormValues = z.infer<typeof centerSchema>;

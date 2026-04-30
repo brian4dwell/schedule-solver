@@ -4,13 +4,30 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { deactivateProvider, type Provider } from "@/lib/api";
+import { deactivateProvider, type Center, type Provider } from "@/lib/api";
 
 type ProvidersTableProps = {
+  centers: Center[];
   providers: Provider[];
 };
 
-export function ProvidersTable({ providers }: ProvidersTableProps) {
+function centerNameForId(centers: Center[], centerId: string) {
+  const center = centers.find((item) => {
+    return item.id === centerId;
+  });
+  const centerName = center?.name ?? "Unknown center";
+  return centerName;
+}
+
+function credentialedCenterNames(provider: Provider, centers: Center[]) {
+  const names = provider.credentialed_center_ids.map((centerId) => {
+    const centerName = centerNameForId(centers, centerId);
+    return centerName;
+  });
+  return names;
+}
+
+export function ProvidersTable({ centers, providers }: ProvidersTableProps) {
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -40,6 +57,7 @@ export function ProvidersTable({ providers }: ProvidersTableProps) {
               <th className="px-4 py-3 font-semibold">Provider</th>
               <th className="px-4 py-3 font-semibold">Type</th>
               <th className="px-4 py-3 font-semibold">Employment</th>
+              <th className="px-4 py-3 font-semibold">Credentialed centers</th>
               <th className="px-4 py-3 font-semibold">Status</th>
               <th className="px-4 py-3 font-semibold">Actions</th>
             </tr>
@@ -47,6 +65,9 @@ export function ProvidersTable({ providers }: ProvidersTableProps) {
           <tbody className="divide-y divide-slate-100">
             {providers.map((provider) => {
               const status = provider.is_active ? "Active" : "Inactive";
+              const centerNames = credentialedCenterNames(provider, centers);
+              const credentialedCenters = centerNames.join(", ");
+              const credentialedCenterLabel = credentialedCenters || "None";
 
               return (
                 <tr key={provider.id}>
@@ -61,6 +82,7 @@ export function ProvidersTable({ providers }: ProvidersTableProps) {
                   </td>
                   <td className="px-4 py-3 text-slate-600">{provider.provider_type}</td>
                   <td className="px-4 py-3 text-slate-600">{provider.employment_type}</td>
+                  <td className="px-4 py-3 text-slate-600">{credentialedCenterLabel}</td>
                   <td className="px-4 py-3 text-slate-600">{status}</td>
                   <td className="px-4 py-3">
                     <button

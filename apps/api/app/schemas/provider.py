@@ -1,8 +1,10 @@
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import EmailStr
+from pydantic import Field
 
 from app.schemas.common import TimestampedSchema
 
@@ -19,6 +21,7 @@ class ProviderBase(BaseModel):
     provider_type: ProviderType
     employment_type: EmploymentType
     notes: str | None = None
+    credentialed_center_ids: list[UUID] = Field(default_factory=list)
 
 
 class ProviderCreate(ProviderBase):
@@ -34,6 +37,7 @@ class ProviderUpdate(BaseModel):
     provider_type: ProviderType | None = None
     employment_type: EmploymentType | None = None
     notes: str | None = None
+    credentialed_center_ids: list[UUID] | None = None
 
 
 class ProviderRead(TimestampedSchema, ProviderBase):

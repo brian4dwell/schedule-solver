@@ -3,14 +3,25 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { createProvider, type Provider, updateProvider } from "@/lib/api";
+import { createProvider, type Center, type Provider, updateProvider } from "@/lib/api";
 import type { ProviderFormValues } from "@/lib/schemas/provider";
 
 type ProviderFormProps = {
+  centers: Center[];
   provider?: Provider;
 };
 
-export function ProviderForm({ provider }: ProviderFormProps) {
+function providerIsCredentialedForCenter(provider: Provider | undefined, centerId: string) {
+  if (provider === undefined) {
+    return false;
+  }
+
+  const providerCenterIds = provider.credentialed_center_ids;
+  const isCredentialed = providerCenterIds.includes(centerId);
+  return isCredentialed;
+}
+
+export function ProviderForm({ centers, provider }: ProviderFormProps) {
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const isEditing = provider !== undefined;
@@ -27,6 +38,10 @@ export function ProviderForm({ provider }: ProviderFormProps) {
       providerType: String(formData.get("providerType") ?? "crna") as ProviderFormValues["providerType"],
       employmentType: String(formData.get("employmentType") ?? "employee") as ProviderFormValues["employmentType"],
       notes: String(formData.get("notes") ?? ""),
+      credentialedCenterIds: formData.getAll("credentialedCenterIds").map((centerId) => {
+        const credentialedCenterId = String(centerId);
+        return credentialedCenterId;
+      }),
     };
 
     try {
@@ -132,6 +147,36 @@ export function ProviderForm({ provider }: ProviderFormProps) {
           className="min-h-24 rounded-md border border-slate-300 px-3 py-2 text-slate-950"
         />
       </label>
+      <fieldset className="space-y-3 rounded-md border border-slate-200 p-4">
+        <legend className="px-1 text-sm font-semibold text-slate-950">
+          Credentialed centers
+        </legend>
+        {centers.length === 0 ? (
+          <p className="text-sm leading-6 text-slate-500">Add centers before credentialing providers.</p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {centers.map((center) => {
+              const isCredentialed = providerIsCredentialedForCenter(provider, center.id);
+
+              return (
+                <label
+                  key={center.id}
+                  className="flex items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700"
+                >
+                  <input
+                    name="credentialedCenterIds"
+                    type="checkbox"
+                    value={center.id}
+                    defaultChecked={isCredentialed}
+                    className="h-4 w-4 rounded border-slate-300 text-teal-700"
+                  />
+                  <span>{center.name}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </fieldset>
       <button
         type="submit"
         className="inline-flex h-10 items-center justify-center rounded-md bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800"

@@ -5,8 +5,12 @@ from fastapi import Depends
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import selectinload
 
+from app.db.models import Assignment
+from app.db.models import Center
 from app.db.models import Provider
+from app.db.models import ProviderCenterCredential
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
 from app.schemas.provider import ProviderCreate
@@ -23,12 +27,114 @@ def find_provider(
 ) -> Provider:
     statement = select(Provider).where(Provider.id == provider_id)
     statement = statement.where(Provider.organization_id == organization_id)
+    statement = statement.options(selectinload(Provider.center_credentials))
     provider = session.scalar(statement)
 
     if provider is None:
         raise HTTPException(status_code=404, detail="Provider not found")
 
     return provider
+
+
+def distinct_center_ids(center_ids: list[UUID]) -> list[UUID]:
+    seen_center_ids: set[UUID] = set()
+    distinct_ids: list[UUID] = []
+
+    for center_id in center_ids:
+        if center_id in seen_center_ids:
+            continue
+
+        seen_center_ids.add(center_id)
+        distinct_ids.append(center_id)
+
+    return distinct_ids
+
+
+def validate_centers(
+    center_ids: list[UUID],
+    organization_id: UUID,
+    session: Session,
+) -> list[UUID]:
+    credentialed_center_ids = distinct_center_ids(center_ids)
+
+    if len(credentialed_center_ids) == 0:
+        return credentialed_center_ids
+
+    statement = select(Center.id).where(Center.organization_id == organization_id)
+    statement = statement.where(Center.id.in_(credentialed_center_ids))
+    valid_center_ids = list(session.scalars(statement))
+
+    if len(valid_center_ids) != len(credentialed_center_ids):
+        raise HTTPException(status_code=400, detail="Credentialed center not found")
+
+    return credentialed_center_ids
+
+
+def provider_has_assignments_for_center(
+    provider: Provider,
+    center_id: UUID,
+    organization_id: UUID,
+    session: Session,
+) -> bool:
+    statement = select(Assignment.id).where(Assignment.organization_id == organization_id)
+    statement = statement.where(Assignment.provider_id == provider.id)
+    statement = statement.where(Assignment.center_id == center_id)
+    statement = statement.limit(1)
+    assignment_id = session.scalar(statement)
+    has_assignment = assignment_id is not None
+    return has_assignment
+
+
+def replace_provider_center_credentials(
+    provider: Provider,
+    center_ids: list[UUID],
+    organization_id: UUID,
+    session: Session,
+) -> None:
+    credentialed_center_ids = validate_centers(center_ids, organization_id, session)
+    current_center_ids = [
+        credential.center_id
+        for credential in provider.center_credentials
+    ]
+    removed_center_ids = [
+        center_id
+        for center_id in current_center_ids
+        if center_id not in credentialed_center_ids
+    ]
+    added_center_ids = [
+        center_id
+        for center_id in credentialed_center_ids
+        if center_id not in current_center_ids
+    ]
+
+    for removed_center_id in removed_center_ids:
+        has_assignment = provider_has_assignments_for_center(
+            provider,
+            removed_center_id,
+            organization_id,
+            session,
+        )
+
+        if has_assignment:
+            raise HTTPException(
+                status_code=409,
+                detail="Provider has existing assignments at a removed credentialed center",
+            )
+
+    remaining_credentials = [
+        credential
+        for credential in provider.center_credentials
+        if credential.center_id not in removed_center_ids
+    ]
+    provider.center_credentials = remaining_credentials
+
+    for center_id in added_center_ids:
+        credential = ProviderCenterCredential(
+            organization_id=organization_id,
+            provider_id=provider.id,
+            center_id=center_id,
+        )
+        provider.center_credentials.append(credential)
 
 
 @router.get("", response_model=list[ProviderRead])
@@ -38,6 +144,7 @@ def list_providers(
 ) -> list[Provider]:
     statement = select(Provider).where(Provider.organization_id == organization_id)
     statement = statement.order_by(Provider.display_name)
+    statement = statement.options(selectinload(Provider.center_credentials))
     providers = list(session.scalars(statement))
     return providers
 
@@ -60,6 +167,13 @@ def create_provider(
         notes=request.notes,
     )
     session.add(provider)
+    session.flush()
+    replace_provider_center_credentials(
+        provider,
+        request.credentialed_center_ids,
+        organization_id,
+        session,
+    )
     session.commit()
     session.refresh(provider)
     return provider
@@ -107,6 +221,14 @@ def update_provider(
 
     if request.notes is not None:
         provider.notes = request.notes
+
+    if request.credentialed_center_ids is not None:
+        replace_provider_center_credentials(
+            provider,
+            request.credentialed_center_ids,
+            organization_id,
+            session,
+        )
 
     session.commit()
     session.refresh(provider)

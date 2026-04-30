@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { AppShell } from "@/components/layout/app-shell";
 import { RoomForm } from "@/components/rooms/room-form";
 import { RoomsTable } from "@/components/rooms/rooms-table";
-import { getCenter, listCenters, listRoomsForCenter } from "@/lib/api";
+import { getCenter, listCenters, listRoomsForCenter, listRoomTypes } from "@/lib/api";
 
 type CenterDetailPageProps = {
   params: Promise<{
@@ -16,6 +16,7 @@ export default async function CenterDetailPage({ params }: CenterDetailPageProps
   const center = await getCenter(resolvedParams.centerId);
   const centers = await listCenters();
   const rooms = await listRoomsForCenter(resolvedParams.centerId);
+  const roomTypes = await listRoomTypes();
   const rows = rooms.map((room) => {
     return { room, center };
   });
@@ -28,8 +29,12 @@ export default async function CenterDetailPage({ params }: CenterDetailPageProps
       />
       <div className="space-y-6">
         <CenterForm center={center} />
-        <RoomForm centers={centers} selectedCenterId={center.id} />
-        <RoomsTable rows={rows} />
+        <RoomsTable rows={rows} roomTypes={roomTypes} />
+        <RoomForm
+          centers={centers}
+          roomTypes={roomTypes}
+          selectedCenterId={center.id}
+        />
       </div>
     </AppShell>
   );

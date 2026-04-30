@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { deactivateCenter, type Center } from "@/lib/api";
+import { formatTimezone } from "@/lib/timezones";
 
 type CentersTableProps = {
   centers: Center[];
@@ -48,6 +49,7 @@ export function CentersTable({ centers }: CentersTableProps) {
             {centers.map((center) => {
               const location = [center.city, center.state].filter(Boolean).join(", ");
               const status = center.is_active ? "Active" : "Inactive";
+              const timezone = formatTimezone(center.timezone);
 
               return (
                 <tr key={center.id}>
@@ -57,7 +59,7 @@ export function CentersTable({ centers }: CentersTableProps) {
                     </Link>
                   </td>
                   <td className="px-4 py-3 text-slate-600">{location}</td>
-                  <td className="px-4 py-3 text-slate-600">{center.timezone}</td>
+                  <td className="px-4 py-3 text-slate-600">{timezone}</td>
                   <td className="px-4 py-3 text-slate-600">{status}</td>
                   <td className="px-4 py-3">
                     <button

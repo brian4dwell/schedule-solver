@@ -1,7 +1,18 @@
 import { centerSchema, type CenterFormValues } from "@/lib/schemas/center";
 import { nextPublicApiBaseUrl } from "@/lib/env";
-import { providerSchema, type ProviderFormValues } from "@/lib/schemas/provider";
-import { roomSchema, type RoomFormValues } from "@/lib/schemas/room";
+import {
+  providerApiSchema,
+  providerSchema,
+  providersApiSchema,
+  type ProviderApiValues,
+  type ProviderFormValues,
+} from "@/lib/schemas/provider";
+import {
+  roomSchema,
+  roomTypeSchema,
+  type RoomFormValues,
+  type RoomTypeFormValues,
+} from "@/lib/schemas/room";
 
 export type Center = {
   id: string;
@@ -22,25 +33,23 @@ export type Room = {
   center_id: string;
   name: string;
   display_order: number;
+  md_only: boolean;
+  is_active: boolean;
+  room_types: RoomType[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type RoomType = {
+  id: string;
+  name: string;
+  display_order: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;
 };
 
-export type Provider = {
-  id: string;
-  first_name: string;
-  last_name: string;
-  display_name: string;
-  email: string | null;
-  phone: string | null;
-  provider_type: string;
-  employment_type: string;
-  notes: string | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-};
+export type Provider = ProviderApiValues;
 
 async function requestJson<TResponse>(
   path: string,
@@ -88,6 +97,16 @@ function roomPayload(values: RoomFormValues) {
   const payload = {
     name: values.name,
     display_order: values.displayOrder,
+    md_only: values.mdOnly,
+    room_type_ids: values.roomTypeIds,
+  };
+  return payload;
+}
+
+function roomTypePayload(values: RoomTypeFormValues) {
+  const payload = {
+    name: values.name,
+    display_order: values.displayOrder,
   };
   return payload;
 }
@@ -103,6 +122,7 @@ function providerPayload(values: ProviderFormValues) {
     provider_type: values.providerType,
     employment_type: values.employmentType,
     notes: values.notes || null,
+    credentialed_center_ids: values.credentialedCenterIds,
   };
   return payload;
 }
@@ -149,6 +169,38 @@ export async function listRoomsForCenter(centerId: string): Promise<Room[]> {
   return rooms;
 }
 
+export async function listRoomTypes(): Promise<RoomType[]> {
+  const roomTypes = await requestJson<RoomType[]>("/room-types", { cache: "no-store" });
+  return roomTypes;
+}
+
+export async function createRoomType(values: RoomTypeFormValues): Promise<RoomType> {
+  const parsedValues = roomTypeSchema.parse(values);
+  const payload = roomTypePayload(parsedValues);
+  const init = jsonRequestInit("POST", payload);
+  const roomType = await requestJson<RoomType>("/room-types", init);
+  return roomType;
+}
+
+export async function updateRoomType(
+  roomTypeId: string,
+  values: RoomTypeFormValues,
+): Promise<RoomType> {
+  const parsedValues = roomTypeSchema.parse(values);
+  const payload = roomTypePayload(parsedValues);
+  const init = jsonRequestInit("PATCH", payload);
+  const roomType = await requestJson<RoomType>(`/room-types/${roomTypeId}`, init);
+  return roomType;
+}
+
+export async function deactivateRoomType(roomTypeId: string): Promise<RoomType> {
+  const roomType = await requestJson<RoomType>(`/room-types/${roomTypeId}`, {
+    method: "DELETE",
+    cache: "no-store",
+  });
+  return roomType;
+}
+
 export async function createRoom(values: RoomFormValues): Promise<Room> {
   const parsedValues = roomSchema.parse(values);
   const payload = roomPayload(parsedValues);
@@ -168,7 +220,7 @@ export async function updateRoom(
   return room;
 }
 
-export async function deactivateRoom(roomId: string): Promise<Room> {
+export async function deleteRoom(roomId: string): Promise<Room> {
   const room = await requestJson<Room>(`/rooms/${roomId}`, {
     method: "DELETE",
     cache: "no-store",
@@ -177,12 +229,14 @@ export async function deactivateRoom(roomId: string): Promise<Room> {
 }
 
 export async function listProviders(): Promise<Provider[]> {
-  const providers = await requestJson<Provider[]>("/providers", { cache: "no-store" });
+  const responseJson = await requestJson<unknown[]>("/providers", { cache: "no-store" });
+  const providers = providersApiSchema.parse(responseJson);
   return providers;
 }
 
 export async function getProvider(providerId: string): Promise<Provider> {
-  const provider = await requestJson<Provider>(`/providers/${providerId}`, { cache: "no-store" });
+  const responseJson = await requestJson<unknown>(`/providers/${providerId}`, { cache: "no-store" });
+  const provider = providerApiSchema.parse(responseJson);
   return provider;
 }
 
@@ -190,7 +244,8 @@ export async function createProvider(values: ProviderFormValues): Promise<Provid
   const parsedValues = providerSchema.parse(values);
   const payload = providerPayload(parsedValues);
   const init = jsonRequestInit("POST", payload);
-  const provider = await requestJson<Provider>("/providers", init);
+  const responseJson = await requestJson<unknown>("/providers", init);
+  const provider = providerApiSchema.parse(responseJson);
   return provider;
 }
 
@@ -201,14 +256,16 @@ export async function updateProvider(
   const parsedValues = providerSchema.parse(values);
   const payload = providerPayload(parsedValues);
   const init = jsonRequestInit("PATCH", payload);
-  const provider = await requestJson<Provider>(`/providers/${providerId}`, init);
+  const responseJson = await requestJson<unknown>(`/providers/${providerId}`, init);
+  const provider = providerApiSchema.parse(responseJson);
   return provider;
 }
 
 export async function deactivateProvider(providerId: string): Promise<Provider> {
-  const provider = await requestJson<Provider>(`/providers/${providerId}`, {
+  const responseJson = await requestJson<unknown>(`/providers/${providerId}`, {
     method: "DELETE",
     cache: "no-store",
   });
+  const provider = providerApiSchema.parse(responseJson);
   return provider;
 }

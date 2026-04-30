@@ -1,6 +1,7 @@
 from pathlib import Path
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from pydantic_settings import SettingsConfigDict
 
@@ -18,6 +19,28 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @field_validator("database_url")
+    @classmethod
+    def normalize_database_url(cls, database_url: str) -> str:
+        postgres_scheme = "postgres://"
+        postgresql_scheme = "postgresql://"
+        psycopg_scheme = "postgresql+psycopg://"
+
+        if database_url.startswith(psycopg_scheme):
+            normalized_database_url = database_url
+            return normalized_database_url
+
+        if database_url.startswith(postgres_scheme):
+            normalized_database_url = database_url.replace(postgres_scheme, psycopg_scheme, 1)
+            return normalized_database_url
+
+        if database_url.startswith(postgresql_scheme):
+            normalized_database_url = database_url.replace(postgresql_scheme, psycopg_scheme, 1)
+            return normalized_database_url
+
+        normalized_database_url = database_url
+        return normalized_database_url
 
 
 @lru_cache

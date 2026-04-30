@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import Boolean
 from sqlalchemy import Date
 from sqlalchemy import DateTime
+from sqlalchemy import ForeignKeyConstraint
 from sqlalchemy import ForeignKey
 from sqlalchemy import Integer
 from sqlalchemy import Numeric
@@ -17,6 +18,7 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import registry
+from sqlalchemy.orm import relationship
 
 mapper_registry = registry()
 
@@ -89,7 +91,29 @@ class Room(Base, TimestampMixin):
     center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("centers.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    md_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class RoomType(Base, TimestampMixin):
+    __tablename__ = "room_types"
+    __table_args__ = (UniqueConstraint("organization_id", "name"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class RoomRoomType(Base, TimestampMixin):
+    __tablename__ = "room_room_types"
+    __table_args__ = (UniqueConstraint("organization_id", "room_id", "room_type_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    room_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("rooms.id"), nullable=False)
+    room_type_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("room_types.id"), nullable=False)
 
 
 class Provider(Base, TimestampMixin):
@@ -106,6 +130,29 @@ class Provider(Base, TimestampMixin):
     employment_type: Mapped[str] = mapped_column(String(40), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    center_credentials: Mapped[list["ProviderCenterCredential"]] = relationship(
+        back_populates="provider",
+        cascade="all, delete-orphan",
+    )
+
+    @property
+    def credentialed_center_ids(self) -> list[uuid.UUID]:
+        credentialed_center_ids = [
+            credential.center_id
+            for credential in self.center_credentials
+        ]
+        return credentialed_center_ids
+
+
+class ProviderCenterCredential(Base, TimestampMixin):
+    __tablename__ = "provider_center_credentials"
+    __table_args__ = (UniqueConstraint("organization_id", "provider_id", "center_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
+    center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("centers.id"), nullable=False)
+    provider: Mapped[Provider] = relationship(back_populates="center_credentials")
 
 
 class ProviderAvailability(Base, TimestampMixin):
@@ -173,6 +220,17 @@ class ScheduleVersion(Base, TimestampMixin):
 
 class Assignment(Base, TimestampMixin):
     __tablename__ = "assignments"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "provider_id", "center_id"],
+            [
+                "provider_center_credentials.organization_id",
+                "provider_center_credentials.provider_id",
+                "provider_center_credentials.center_id",
+            ],
+            name="fk_assignments_provider_center_credential",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)

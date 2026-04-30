@@ -1,9 +1,10 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { AppShell } from "@/components/layout/app-shell";
 import { ProvidersTable } from "@/components/providers/providers-table";
-import { listProviders } from "@/lib/api";
+import { listCenters, listProviders } from "@/lib/api";
 
 export default async function ProvidersPage() {
+  const centers = await listCenters();
   const providers = await listProviders();
 
   return (
@@ -14,7 +15,7 @@ export default async function ProvidersPage() {
         actionHref="/providers/new"
         actionLabel="Add provider"
       />
-      <ProvidersTable providers={providers} />
+      <ProvidersTable centers={centers} providers={providers} />
     </AppShell>
   );
 }

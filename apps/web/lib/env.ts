@@ -5,7 +5,7 @@ const apiBaseUrlSchema = z.union([z.url(), relativeApiBaseUrlSchema]);
 
 const webEnvironmentSchema = z.object({
   INTERNAL_API_BASE_URL: z.url().default("http://127.0.0.1:8000"),
-  NEXT_PUBLIC_API_BASE_URL: apiBaseUrlSchema.default("http://127.0.0.1:8000"),
+  NEXT_PUBLIC_API_BASE_URL: apiBaseUrlSchema.default("/api"),
 });
 
 const webEnvironment = webEnvironmentSchema.parse({
