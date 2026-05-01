@@ -258,7 +258,7 @@ class Assignment(Base, TimestampMixin):
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
     schedule_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("schedule_versions.id"), nullable=False)
     schedule_period_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("schedule_periods.id"), nullable=False)
-    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
+    provider_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("providers.id"), nullable=True)
     center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("centers.id"), nullable=False)
     room_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("rooms.id"), nullable=True)
     shift_requirement_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("shift_requirements.id"), nullable=True)

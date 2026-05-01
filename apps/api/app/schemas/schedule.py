@@ -22,7 +22,7 @@ class ProviderEligibilityRequest(BaseModel):
 
 
 class ScheduleAssignmentCreate(BaseModel):
-    provider_id: UUID
+    provider_id: UUID | None
     center_id: UUID
     room_id: UUID | None = None
     shift_requirement_id: UUID | None = None
@@ -59,7 +59,7 @@ class SchedulePeriodRead(TimestampedSchema):
 class AssignmentRead(TimestampedSchema):
     schedule_version_id: UUID
     schedule_period_id: UUID
-    provider_id: UUID
+    provider_id: UUID | None
     center_id: UUID
     room_id: UUID | None
     shift_requirement_id: UUID | None

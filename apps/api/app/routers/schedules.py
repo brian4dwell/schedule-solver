@@ -103,11 +103,16 @@ def eligibility_input_from_assignment(
     required_provider_type: str | None,
     organization_id: UUID,
 ) -> ProviderSlotEligibilityInput:
+    provider_id = assignment.provider_id
+
+    if provider_id is None:
+        raise ValueError("Provider is required for eligibility checks")
+
     eligibility_input = ProviderSlotEligibilityInput(
         organization_id=organization_id,
         schedule_version_id=assignment.schedule_version_id,
         assignment_id=assignment.id,
-        provider_id=assignment.provider_id,
+        provider_id=provider_id,
         center_id=assignment.center_id,
         room_id=assignment.room_id,
         required_provider_type=required_provider_type,
@@ -139,6 +144,16 @@ def constraint_violation_from_result(
     return constraint_violation
 
 
+def unassigned_provider_violation() -> ProviderEligibilityViolation:
+    violation = ProviderEligibilityViolation(
+        severity="hard_violation",
+        constraint_type="provider_assignment_required",
+        category="other_hard_constraint",
+        message="Assign a provider before publishing this slot.",
+    )
+    return violation
+
+
 def validate_parent_version(
     parent_schedule_version_id: UUID | None,
     schedule_period_id: UUID,
@@ -166,6 +181,7 @@ def assignments_for_version(
 ) -> list[Assignment]:
     statement = select(Assignment).where(Assignment.schedule_version_id == schedule_version_id)
     statement = statement.where(Assignment.organization_id == organization_id)
+    statement = statement.order_by(Assignment.start_time, Assignment.created_at, Assignment.id)
     assignments = list(session.scalars(statement))
     return assignments
 
@@ -264,6 +280,11 @@ def save_schedule_version(
     violations: list[ConstraintViolation] = []
 
     for assignment_index, assignment in enumerate(assignments):
+        assignment_has_provider = assignment.provider_id is not None
+
+        if not assignment_has_provider:
+            continue
+
         requested_assignment = request.assignments[assignment_index]
         eligibility_input = eligibility_input_from_assignment(
             assignment,
@@ -492,6 +513,13 @@ def publish_schedule_version(
     violations: list[ProviderEligibilityViolation] = []
 
     for assignment in assignments:
+        assignment_has_provider = assignment.provider_id is not None
+
+        if not assignment_has_provider:
+            violation = unassigned_provider_violation()
+            violations.append(violation)
+            continue
+
         eligibility_input = eligibility_input_from_assignment(
             assignment,
             assignment.required_provider_type,

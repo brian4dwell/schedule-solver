@@ -608,11 +608,7 @@ export function ScheduleWorkspace({
   function savePayloadFromAssignments(
     assignments: ScheduleRoomAssignment[],
   ): ScheduleAssignmentSavePayload[] {
-    const payload = assignments.flatMap((assignment) => {
-      if (assignment.providerId === null) {
-        return [];
-      }
-
+    const payload = assignments.map((assignment) => {
       const startTime = dateTimeForAssignment(
         schedulePeriod,
         assignment.dayKey,
@@ -634,7 +630,7 @@ export function ScheduleWorkspace({
         source: "manual",
         notes: null,
       };
-      return [assignmentPayload];
+      return assignmentPayload;
     });
     return payload;
   }
@@ -907,6 +903,31 @@ export function ScheduleWorkspace({
     setOpenProviderAssignmentId(null);
   }
 
+  function handleProviderCleared(assignment: ScheduleRoomAssignment) {
+    const option = null;
+    const validationStatus = validationStatusForSelection(option);
+    const validationMessages = validationMessagesForSelection(option);
+    const assignments = workingVersion.assignments.map((currentAssignment) => {
+      if (currentAssignment.id !== assignment.id) {
+        return currentAssignment;
+      }
+
+      const nextAssignment = {
+        ...currentAssignment,
+        providerId: null,
+        validationStatus,
+        validationMessages,
+      };
+      return nextAssignment;
+    });
+    const nextVersion = scheduleVersionSchema.parse({
+      ...workingVersion,
+      assignments,
+    });
+    updateWorkingVersion(nextVersion);
+    setOpenProviderAssignmentId(null);
+  }
+
   function handleProviderPickerToggled(assignmentId: string) {
     setOpenProviderAssignmentId((currentAssignmentId) => {
       const assignmentIsOpen = currentAssignmentId === assignmentId;
@@ -1122,34 +1143,45 @@ export function ScheduleWorkspace({
                               </span>
                             </div>
                             <div className="mt-2 max-h-44 space-y-1 overflow-y-auto">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleProviderPickerToggled(assignment.id)
-                                }
-                                disabled={providerOptions.length === 0}
-                                aria-expanded={providerPickerIsOpen}
-                                className={
-                                  selectedOption === null
-                                    ? "w-full rounded-md border border-dashed border-slate-300 bg-white px-2 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
-                                    : "w-full rounded-md border border-teal-600 bg-teal-50 px-2 py-2 text-left"
-                                }
-                              >
-                                <span className="block text-sm font-semibold text-slate-950">
-                                  {providerPickerLabel}
-                                </span>
-                                {providerPickerStatus === null ? null : (
-                                  <span
-                                    className={
-                                      selectedOption?.isEligible
-                                        ? "block text-xs text-emerald-700"
-                                        : "block text-xs text-red-700"
-                                    }
-                                  >
-                                    {providerPickerStatus}
+                              <div className="flex items-stretch gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleProviderPickerToggled(assignment.id)
+                                  }
+                                  disabled={providerOptions.length === 0}
+                                  aria-expanded={providerPickerIsOpen}
+                                  className={
+                                    selectedOption === null
+                                      ? "min-w-0 flex-1 rounded-md border border-dashed border-slate-300 bg-white px-2 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                                      : "min-w-0 flex-1 rounded-md border border-teal-600 bg-teal-50 px-2 py-2 text-left"
+                                  }
+                                >
+                                  <span className="block truncate text-sm font-semibold text-slate-950">
+                                    {providerPickerLabel}
                                   </span>
+                                  {providerPickerStatus === null ? null : (
+                                    <span
+                                      className={
+                                        selectedOption?.isEligible
+                                          ? "block text-xs text-emerald-700"
+                                          : "block text-xs text-red-700"
+                                      }
+                                    >
+                                      {providerPickerStatus}
+                                    </span>
+                                  )}
+                                </button>
+                                {selectedOption === null ? null : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleProviderCleared(assignment)}
+                                    className="rounded-md border border-slate-300 px-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                                  >
+                                    Clear
+                                  </button>
                                 )}
-                              </button>
+                              </div>
                               {providerPickerIsOpen
                                 ? providerOptions.map((option) => {
                                     const isSelected =
@@ -1251,9 +1283,9 @@ export function ScheduleWorkspace({
                     className="cursor-grab rounded-md border border-slate-200 bg-white p-3 shadow-sm active:cursor-grabbing"
                   >
                     <p className="text-sm font-semibold text-slate-950">
-                      {room.name}
+                      {room.centerName}
                     </p>
-                    <p className="text-xs text-slate-500">{room.centerName}</p>
+                    <p className="text-xs text-slate-500">{room.name}</p>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {room.mdOnly ? (
                         <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">

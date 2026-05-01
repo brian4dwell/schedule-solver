@@ -73,7 +73,7 @@ export type ScheduleVersionDetail = ScheduleVersionDetailApi;
 export type SchedulePublishResponse = SchedulePublishResponseApi;
 
 export type ScheduleAssignmentSavePayload = {
-  provider_id: string;
+  provider_id: string | null;
   center_id: string;
   room_id: string | null;
   shift_requirement_id: string | null;

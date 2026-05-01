@@ -78,7 +78,7 @@ export const scheduleAssignmentApiSchema = z.object({
   id: z.string().uuid(),
   schedule_version_id: z.string().uuid(),
   schedule_period_id: z.string().uuid(),
-  provider_id: z.string().uuid(),
+  provider_id: z.string().uuid().nullable(),
   center_id: z.string().uuid(),
   room_id: z.string().uuid().nullable(),
   shift_requirement_id: z.string().uuid().nullable(),
