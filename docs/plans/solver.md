@@ -4,41 +4,61 @@
 
 Use Google OR-Tools to auto-populate schedule periods with proposed provider assignments.
 
-The solver should run in the background worker, create a new draft `schedule_versions` row, and write proposed `assignments` rows for review.
+The first implementation should run inside the normal FastAPI server request lifecycle.
+
+The first implementation should create a new draft `schedule_versions` row.
+
+The first implementation should write proposed `assignments` rows for review.
 
 The solver should not publish schedules directly.
 
 The solver should not mutate older schedule versions.
 
-## High-Level Flow
+We can introduce an RQ worker later if request duration or operational load proves the solve path is truly long running.
+
+## Delivery Phases
+
+### Phase 1: In-Process Solver In FastAPI
+
+Keep orchestration in the API process to reduce debugging complexity.
+
+Use this flow:
 
 ```text
 User clicks Generate Schedule
   ↓
-API creates schedule_job with pending status
+FastAPI endpoint loads schedule data from Postgres
   ↓
-API enqueues worker job
+FastAPI endpoint builds typed solver input
   ↓
-Worker loads schedule data from Postgres
+FastAPI endpoint runs OR-Tools CP-SAT
   ↓
-Worker builds typed solver input
+FastAPI endpoint writes a draft schedule version
   ↓
-Worker runs OR-Tools CP-SAT
+FastAPI endpoint writes proposed assignments
   ↓
-Worker writes a draft schedule version
-  ↓
-Worker writes proposed assignments
-  ↓
-Worker writes constraint violations and warnings
+FastAPI endpoint writes constraint violations and warnings
   ↓
 UI displays the generated draft for review
 ```
+
+Add instrumentation for solve duration and payload size.
+
+Define an explicit threshold for "too long" based on observed timings in production-like data.
+
+### Phase 2: Optional Background Execution
+
+Only start this phase when Phase 1 shows the solve path is consistently long running or degrades API reliability.
+
+Introduce `schedule_jobs` and RQ processing when there is evidence that async execution is needed.
+
+Keep solver contracts and persistence logic unchanged while moving orchestration to a worker.
 
 ## Package
 
 Add OR-Tools to the Python environment that owns scheduling generation.
 
-For the current repo shape, that is likely `apps/api` until `apps/worker` has its own package.
+For the current repo shape, that is `apps/api`.
 
 ```bash
 cd apps/api
@@ -61,9 +81,12 @@ apps/api/app/services/scheduling/
   solver_contracts.py
   solver_input_builder.py
   solver_persistence.py
+  solver_service.py
 ```
 
 `solver_contracts.py` should contain the Pydantic models or dataclasses used between the database loader, solver, and persistence layer.
+
+`solver_service.py` should orchestrate the full end-to-end solve flow for Phase 1.
 
 ## Solver Input Contracts
 
@@ -114,11 +137,12 @@ class SolverProvider(BaseModel):
 class SolverInput(BaseModel):
     organization_id: UUID
     schedule_period_id: UUID
-    schedule_job_id: UUID
     rooms: list[SolverRoom]
     providers: list[SolverProvider]
     shift_requirements: list[SolverShiftRequirement]
 ```
+
+Add `schedule_job_id` only in Phase 2 when background jobs are introduced.
 
 ## Solver Output Contracts
 
@@ -154,9 +178,9 @@ class SolverResult(BaseModel):
 
 Add `metadata_json` later only when a violation needs structured debugging details.
 
-## Data Loaded For A Job
+## Data Loaded For A Solve Request
 
-For one `schedule_job`, the worker should load:
+For one schedule generation request, load:
 
 - The `schedule_period`.
 - Shift requirements inside the schedule period.
@@ -206,7 +230,7 @@ Start with:
 - A provider cannot be assigned to a room type they cannot cover.
 - A non-MD provider cannot be assigned to an MD-only room.
 
-If exact coverage makes the model infeasible, the worker should record constraint violations and fail the job clearly.
+If exact coverage makes the model infeasible, record constraint violations and fail the request clearly.
 
 Do not silently relax hard constraints.
 
@@ -238,116 +262,3 @@ ASSIGNMENT_IMBALANCE_PENALTY = 3
 ## Persistence
 
 Solver output should be saved using the schedule version model from `docs/plans/save_schedules.md`.
-
-When the solver succeeds:
-
-1. Create a new `schedule_versions` row.
-2. Set `status` to `draft`.
-3. Set `source` to `solver` after the version metadata migration exists.
-4. Set `schedule_job_id` to the current job.
-5. Set `solver_score` from the solver objective value when available.
-6. Insert one `assignments` row for each solver assignment.
-7. Set every generated assignment `assignment_status` to `proposed`.
-8. Set every generated assignment `source` to `solver`.
-9. Insert any warnings into `constraint_violations`.
-10. Mark the `schedule_job` as `succeeded`.
-
-When the solver cannot create a valid schedule:
-
-1. Insert available hard-constraint violations when possible.
-2. Mark the `schedule_job` as `failed`.
-3. Store a clear `error_message`.
-4. Do not create a partial schedule version unless the API explicitly supports partial drafts.
-
-## API Surface
-
-Use the existing async generation shape.
-
-```http
-POST /schedule-periods/{period_id}/generate
-```
-
-Creates a `schedule_job` with `pending` status and enqueues the worker job.
-
-```http
-GET /schedule-jobs/{job_id}
-```
-
-Returns the job status.
-
-```http
-GET /schedule-periods/{period_id}/versions
-```
-
-Returns generated and manually saved versions.
-
-```http
-GET /schedule-versions/{version_id}/assignments
-```
-
-Returns proposed assignments for review.
-
-## Frontend Review Flow
-
-The schedule workspace should load saved versions instead of relying only on local mock state.
-
-The generated schedule should appear as a draft version.
-
-The user should be able to:
-
-- Generate a draft.
-- Watch job status.
-- Open the generated draft.
-- Manually adjust assignments.
-- Save manual edits as a new version.
-- Publish a reviewed version.
-
-Publishing should remain separate from solving.
-
-## First Implementation Slice
-
-Implement the first useful solver with a small constraint set.
-
-1. Add schedule version read and write endpoints.
-2. Add `ortools`.
-3. Add typed solver contracts.
-4. Add `SolverInput` builder from database rows.
-5. Generate candidates for provider type, center credential, unavailable blocks, room types, and MD-only rooms.
-6. Add exact shift coverage constraints.
-7. Add no-overlapping-provider-shifts constraints.
-8. Run CP-SAT.
-9. Persist generated assignments into a new draft version.
-10. Add job status updates.
-11. Add tests for the simple solver cases.
-
-## Tests
-
-Add focused tests for:
-
-- A simple one-shift schedule is filled.
-- Unavailable providers are not assigned.
-- Providers are not assigned to unauthorized centers.
-- Providers are not assigned to unsupported room types.
-- Non-MD providers are not assigned to MD-only rooms.
-- A provider is not double-booked across overlapping shifts.
-- An unfillable shift creates a clear violation.
-- A generated schedule creates a new version.
-- Older versions are not mutated.
-
-Use `uv run pytest`.
-
-Do not invoke bare `pytest`.
-
-## Later Enhancements
-
-After the first solver works:
-
-- Add configurable constraint weights.
-- Add provider weekly hour limits.
-- Add maximum consecutive day rules.
-- Add fair distribution by provider type.
-- Add continuity with prior published schedules.
-- Add center-switching penalties.
-- Add explanation text for each unfilled shift.
-- Add a solver preview endpoint for diagnostics.
-- Add an admin page for tuning solver weights.
