@@ -14,6 +14,8 @@ import {
   type RoomTypeFormValues,
 } from "@/lib/schemas/room";
 import {
+  providerWeeklyAvailabilitySchema,
+  type ProviderWeeklyAvailability,
   persistedScheduleVersionApiSchema,
   scheduleDraftSaveResponseApiSchema,
   scheduleGenerateResponseApiSchema,
@@ -28,6 +30,7 @@ import {
   type ScheduleGenerateResponseApi,
   type SchedulePublishResponseApi,
 } from "@/lib/schemas/schedule";
+import { providerWeeklyAvailabilityApiSchema } from "@/lib/schemas/provider-weekly-availability";
 
 export type Center = {
   id: string;
@@ -75,6 +78,7 @@ export type ScheduleVersionDetail = ScheduleVersionDetailApi;
 export type ScheduleGenerateResponse = ScheduleGenerateResponseApi;
 
 export type SchedulePublishResponse = SchedulePublishResponseApi;
+export type ProviderWeeklyAvailabilityRecord = ProviderWeeklyAvailability;
 
 export type ScheduleAssignmentSavePayload = {
   provider_id: string | null;
@@ -419,4 +423,38 @@ export async function publishScheduleVersion(
   );
   const response = schedulePublishResponseApiSchema.parse(responseJson);
   return response;
+}
+
+export async function getProviderWeeklyAvailability(
+  scheduleWeekId: string,
+  providerId: string,
+): Promise<ProviderWeeklyAvailabilityRecord> {
+  const path = `/schedule-weeks/${scheduleWeekId}/providers/${providerId}/availability`;
+  const responseJson = await requestJson<unknown>(path, { cache: "no-store" });
+  const availabilityApi = providerWeeklyAvailabilityApiSchema.parse(responseJson);
+  const availability = providerWeeklyAvailabilitySchema.parse(availabilityApi);
+  return availability;
+}
+
+export async function saveProviderWeeklyAvailability(
+  scheduleWeekId: string,
+  providerId: string,
+  availability: ProviderWeeklyAvailabilityRecord,
+): Promise<ProviderWeeklyAvailabilityRecord> {
+  const parsedAvailability = providerWeeklyAvailabilitySchema.parse(availability);
+  const payload = providerWeeklyAvailabilityApiSchema.parse(parsedAvailability);
+  const path = `/schedule-weeks/${scheduleWeekId}/providers/${providerId}/availability`;
+  const init = jsonRequestInit("PUT", payload);
+  const responseJson = await requestJson<unknown>(path, init);
+  const availabilityApi = providerWeeklyAvailabilityApiSchema.parse(responseJson);
+  const savedAvailability = providerWeeklyAvailabilitySchema.parse(availabilityApi);
+  return savedAvailability;
+}
+
+export async function deleteProviderWeeklyAvailability(
+  scheduleWeekId: string,
+  providerId: string,
+): Promise<void> {
+  const path = `/schedule-weeks/${scheduleWeekId}/providers/${providerId}/availability`;
+  await requestJson<unknown>(path, { method: "DELETE", cache: "no-store" });
 }
