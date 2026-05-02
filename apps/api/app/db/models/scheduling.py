@@ -212,6 +212,8 @@ class ProviderScheduleWeekAvailability(Base, TimestampMixin):
     provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
     weekday: Mapped[str] = mapped_column(String(20), nullable=False)
     availability_options: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    min_shifts_requested: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_shifts_requested: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class ShiftRequirement(Base, TimestampMixin):

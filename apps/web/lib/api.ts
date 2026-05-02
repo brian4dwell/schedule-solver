@@ -445,6 +445,8 @@ export async function saveProviderWeeklyAvailability(
 ): Promise<ProviderWeeklyAvailabilityRecord> {
   const parsedAvailability = providerWeeklyAvailabilitySchema.parse(availability);
   const payloadData = {
+    min_shifts_requested: parsedAvailability.minShiftsRequested,
+    max_shifts_requested: parsedAvailability.maxShiftsRequested,
     days: parsedAvailability.days,
   };
   const payload = providerWeeklyAvailabilityReplaceApiSchema.parse(payloadData);

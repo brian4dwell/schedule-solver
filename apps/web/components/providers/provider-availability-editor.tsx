@@ -34,9 +34,17 @@ const availabilityOptions: AvailabilityOption[] = [
   "unset",
 ];
 
+const weekendWeekdays: Weekday[] = ["saturday", "sunday"];
+
 function labelForWeekday(weekday: Weekday) {
   const label = weekday.charAt(0).toUpperCase() + weekday.slice(1);
   return label;
+}
+
+function defaultOptionsForWeekday(weekday: Weekday) {
+  const weekdayIsWeekend = weekendWeekdays.includes(weekday);
+  const defaultOptions: AvailabilityOption[] = weekdayIsWeekend ? ["none"] : ["unset"];
+  return defaultOptions;
 }
 
 function labelForOption(option: AvailabilityOption) {
@@ -60,6 +68,37 @@ function optionIsExclusive(option: AvailabilityOption) {
   return isExclusive;
 }
 
+function optionIsWorkAvailability(option: AvailabilityOption) {
+  const optionIsFullShift = option === "full_shift";
+  const optionIsFirstHalf = option === "first_half";
+  const optionIsSecondHalf = option === "second_half";
+  const optionIsShortShift = option === "short_shift";
+  const isWorkAvailability = optionIsFullShift || optionIsFirstHalf || optionIsSecondHalf || optionIsShortShift;
+  return isWorkAvailability;
+}
+
+function dayHasWorkAvailability(day: { options: AvailabilityOption[] }) {
+  const hasWorkAvailability = day.options.some(optionIsWorkAvailability);
+  return hasWorkAvailability;
+}
+
+function countWorkAvailableDays(days: { options: AvailabilityOption[] }[]) {
+  const workAvailableDays = days.filter(dayHasWorkAvailability);
+  const workAvailableDayCount = workAvailableDays.length;
+  return workAvailableDayCount;
+}
+
+function parseShiftCountInput(value: string) {
+  const parsedValue = Number.parseInt(value, 10);
+  return parsedValue;
+}
+
+function clampShiftCount(value: number, minimum: number, maximum: number) {
+  const valueAtLeastMinimum = Math.max(value, minimum);
+  const clampedValue = Math.min(valueAtLeastMinimum, maximum);
+  return clampedValue;
+}
+
 export function ProviderAvailabilityEditor(props: {
   periods: SchedulePeriod[];
   providers: Provider[];
@@ -75,6 +114,8 @@ export function ProviderAvailabilityEditor(props: {
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [minShiftsWasEdited, setMinShiftsWasEdited] = useState(false);
+  const [maxShiftsWasEdited, setMaxShiftsWasEdited] = useState(false);
 
   useEffect(() => {
     if (scheduleWeekId === "") {
@@ -97,7 +138,12 @@ export function ProviderAvailabilityEditor(props: {
           providerId,
         );
         if (isMounted) {
+          const workAvailableDayCount = countWorkAvailableDays(loadedRecord.days);
+          const loadedMinimumWasEdited = loadedRecord.minShiftsRequested !== 0;
+          const loadedMaximumWasEdited = loadedRecord.maxShiftsRequested !== workAvailableDayCount;
           setRecord(loadedRecord);
+          setMinShiftsWasEdited(loadedMinimumWasEdited);
+          setMaxShiftsWasEdited(loadedMaximumWasEdited);
         }
       } catch (error) {
         if (isMounted) {
@@ -129,6 +175,33 @@ export function ProviderAvailabilityEditor(props: {
   }, [record]);
 
   const isLocked = record?.isLocked ?? false;
+  const workAvailableDayCount = record === null ? 0 : countWorkAvailableDays(record.days);
+  const minShiftInputMaximum = record === null
+    ? 0
+    : Math.min(record.maxShiftsRequested, workAvailableDayCount);
+  const maxShiftInputMinimum = record?.minShiftsRequested ?? 0;
+
+  function normalizeShiftRequests(
+    days: ProviderWeeklyAvailabilityRecord["days"],
+    requestedMinimum: number,
+    requestedMaximum: number,
+    minimumWasEdited: boolean,
+    maximumWasEdited: boolean,
+  ) {
+    const workAvailableDayCount = countWorkAvailableDays(days);
+    const defaultMinimum = 0;
+    const defaultMaximum = workAvailableDayCount;
+    const selectedMinimum = minimumWasEdited ? requestedMinimum : defaultMinimum;
+    const selectedMaximum = maximumWasEdited ? requestedMaximum : defaultMaximum;
+    const clampedMinimum = clampShiftCount(selectedMinimum, 0, workAvailableDayCount);
+    const minimumForMaximum = Math.min(clampedMinimum, workAvailableDayCount);
+    const clampedMaximum = clampShiftCount(selectedMaximum, minimumForMaximum, workAvailableDayCount);
+    const shiftRequests = {
+      minShiftsRequested: clampedMinimum,
+      maxShiftsRequested: clampedMaximum,
+    };
+    return shiftRequests;
+  }
 
   function updateDay(weekday: Weekday, option: AvailabilityOption, isChecked: boolean) {
     if (record === null) {
@@ -153,7 +226,7 @@ export function ProviderAvailabilityEditor(props: {
         return keepOption;
       });
       const uniqueOptions = Array.from(new Set(optionsWithExclusiveRule));
-      const defaultOptions: AvailabilityOption[] = ["unset"];
+      const defaultOptions = defaultOptionsForWeekday(weekday);
       const optionsWithDefault = uniqueOptions.length > 0 ? uniqueOptions : defaultOptions;
       const nextDay = {
         weekday: day.weekday,
@@ -162,12 +235,83 @@ export function ProviderAvailabilityEditor(props: {
       return nextDay;
     });
 
+    const nextShiftRequests = normalizeShiftRequests(
+      nextDays,
+      record.minShiftsRequested,
+      record.maxShiftsRequested,
+      minShiftsWasEdited,
+      maxShiftsWasEdited,
+    );
     const nextRecord = {
       scheduleWeekId: record.scheduleWeekId,
       providerId: record.providerId,
       isLocked: record.isLocked,
+      minShiftsRequested: nextShiftRequests.minShiftsRequested,
+      maxShiftsRequested: nextShiftRequests.maxShiftsRequested,
       days: nextDays,
     };
+    setRecord(nextRecord);
+  }
+
+  function updateMinShiftsRequested(value: string) {
+    if (record === null) {
+      return;
+    }
+
+    const parsedValue = parseShiftCountInput(value);
+    const parsedValueIsInvalid = Number.isNaN(parsedValue);
+
+    if (parsedValueIsInvalid) {
+      return;
+    }
+
+    const nextShiftRequests = normalizeShiftRequests(
+      record.days,
+      parsedValue,
+      record.maxShiftsRequested,
+      true,
+      maxShiftsWasEdited,
+    );
+    const nextRecord = {
+      scheduleWeekId: record.scheduleWeekId,
+      providerId: record.providerId,
+      isLocked: record.isLocked,
+      minShiftsRequested: nextShiftRequests.minShiftsRequested,
+      maxShiftsRequested: nextShiftRequests.maxShiftsRequested,
+      days: record.days,
+    };
+    setMinShiftsWasEdited(true);
+    setRecord(nextRecord);
+  }
+
+  function updateMaxShiftsRequested(value: string) {
+    if (record === null) {
+      return;
+    }
+
+    const parsedValue = parseShiftCountInput(value);
+    const parsedValueIsInvalid = Number.isNaN(parsedValue);
+
+    if (parsedValueIsInvalid) {
+      return;
+    }
+
+    const nextShiftRequests = normalizeShiftRequests(
+      record.days,
+      record.minShiftsRequested,
+      parsedValue,
+      minShiftsWasEdited,
+      true,
+    );
+    const nextRecord = {
+      scheduleWeekId: record.scheduleWeekId,
+      providerId: record.providerId,
+      isLocked: record.isLocked,
+      minShiftsRequested: nextShiftRequests.minShiftsRequested,
+      maxShiftsRequested: nextShiftRequests.maxShiftsRequested,
+      days: record.days,
+    };
+    setMaxShiftsWasEdited(true);
     setRecord(nextRecord);
   }
 
@@ -185,7 +329,12 @@ export function ProviderAvailabilityEditor(props: {
         providerId,
         record,
       );
+      const workAvailableDayCount = countWorkAvailableDays(savedRecord.days);
+      const savedMinimumWasEdited = savedRecord.minShiftsRequested !== 0;
+      const savedMaximumWasEdited = savedRecord.maxShiftsRequested !== workAvailableDayCount;
       setRecord(savedRecord);
+      setMinShiftsWasEdited(savedMinimumWasEdited);
+      setMaxShiftsWasEdited(savedMaximumWasEdited);
       setSuccessMessage("Availability saved.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save availability.";
@@ -202,7 +351,12 @@ export function ProviderAvailabilityEditor(props: {
     try {
       await deleteProviderWeeklyAvailability(scheduleWeekId, providerId);
       const loadedRecord = await getProviderWeeklyAvailability(scheduleWeekId, providerId);
+      const workAvailableDayCount = countWorkAvailableDays(loadedRecord.days);
+      const loadedMinimumWasEdited = loadedRecord.minShiftsRequested !== 0;
+      const loadedMaximumWasEdited = loadedRecord.maxShiftsRequested !== workAvailableDayCount;
       setRecord(loadedRecord);
+      setMinShiftsWasEdited(loadedMinimumWasEdited);
+      setMaxShiftsWasEdited(loadedMaximumWasEdited);
       setSuccessMessage("Availability deleted.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to delete availability.";
@@ -264,8 +418,34 @@ export function ProviderAvailabilityEditor(props: {
 
       {record !== null ? (
         <div className="mt-4 grid gap-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3">
+              <span className="text-sm font-medium text-slate-700">Min shifts requested</span>
+              <input
+                className="w-24 rounded-md border border-slate-300 px-3 py-2 text-sm"
+                type="number"
+                min={0}
+                max={minShiftInputMaximum}
+                value={record.minShiftsRequested}
+                disabled={isLocked}
+                onChange={(event) => updateMinShiftsRequested(event.target.value)}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3">
+              <span className="text-sm font-medium text-slate-700">Max shifts requested</span>
+              <input
+                className="w-24 rounded-md border border-slate-300 px-3 py-2 text-sm"
+                type="number"
+                min={maxShiftInputMinimum}
+                max={workAvailableDayCount}
+                value={record.maxShiftsRequested}
+                disabled={isLocked}
+                onChange={(event) => updateMaxShiftsRequested(event.target.value)}
+              />
+            </label>
+          </div>
           {weekdayOrder.map((weekday) => {
-            const options = dayMap.get(weekday) ?? ["unset"];
+            const options = dayMap.get(weekday) ?? defaultOptionsForWeekday(weekday);
             return (
               <label
                 key={weekday}

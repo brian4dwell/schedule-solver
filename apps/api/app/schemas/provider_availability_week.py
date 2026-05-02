@@ -23,6 +23,29 @@ AVAILABILITY_OPTION_VALUES = [
     "unset",
 ]
 
+WORK_AVAILABILITY_OPTION_VALUES = [
+    "full_shift",
+    "first_half",
+    "second_half",
+    "short_shift",
+]
+
+
+def options_include_work_availability(options: list[str]) -> bool:
+    has_work_option = any(option in WORK_AVAILABILITY_OPTION_VALUES for option in options)
+    return has_work_option
+
+
+def day_has_work_availability(day: "ProviderAvailabilityDayInput") -> bool:
+    has_work_option = options_include_work_availability(day.options)
+    return has_work_option
+
+
+def count_work_available_days(days: list["ProviderAvailabilityDayInput"]) -> int:
+    work_available_days = [day for day in days if day_has_work_availability(day)]
+    work_available_day_count = len(work_available_days)
+    return work_available_day_count
+
 
 class ProviderAvailabilityDayInput(BaseModel):
     weekday: str
@@ -58,11 +81,28 @@ class ProviderAvailabilityDayInput(BaseModel):
 
 
 class ProviderWeeklyAvailabilityReplaceRequest(BaseModel):
+    min_shifts_requested: int = Field(ge=0, le=14)
+    max_shifts_requested: int = Field(ge=0, le=14)
     days: list[ProviderAvailabilityDayInput] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_days(self) -> "ProviderWeeklyAvailabilityReplaceRequest":
+        minimum = self.min_shifts_requested
+        maximum = self.max_shifts_requested
+        range_is_valid = minimum <= maximum
+        work_available_day_count = count_work_available_days(self.days)
+        minimum_fits_available_days = minimum <= work_available_day_count
+        maximum_fits_available_days = maximum <= work_available_day_count
         day_count = len(self.days)
+
+        if not range_is_valid:
+            raise ValueError("Minimum shifts requested must be less than or equal to maximum shifts requested")
+
+        if not minimum_fits_available_days:
+            raise ValueError("Minimum shifts requested cannot exceed available work days")
+
+        if not maximum_fits_available_days:
+            raise ValueError("Maximum shifts requested cannot exceed available work days")
 
         if day_count != 7:
             raise ValueError("Exactly seven day rows are required")
@@ -85,4 +125,6 @@ class ProviderWeeklyAvailabilityRead(BaseModel):
     schedule_week_id: UUID
     provider_id: UUID
     is_locked: bool
+    min_shifts_requested: int
+    max_shifts_requested: int
     days: list[ProviderAvailabilityDayRead]
