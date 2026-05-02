@@ -213,6 +213,7 @@ function versionFromDetail(
       dayKey: dayKeyForAssignment(schedulePeriod, assignment.start_time),
       centerId: assignment.center_id,
       roomId: assignment.room_id,
+      shiftType: "full_shift",
       providerId: assignment.provider_id,
       startTime: timeLabelFromDateTime(assignment.start_time),
       endTime: timeLabelFromDateTime(assignment.end_time),
@@ -446,6 +447,38 @@ function providerPickerStatusLabel(option: ProviderPickerOption | null): string 
   return "Eligible";
 }
 
+function shiftTypeLabel(shiftType: ScheduleRoomAssignment["shiftType"]) {
+  if (shiftType === "full_shift") {
+    return "Full shift";
+  }
+
+  if (shiftType === "first_half") {
+    return "1st half";
+  }
+
+  if (shiftType === "second_half") {
+    return "2nd half";
+  }
+
+  return "Short";
+}
+
+function shiftTypeContainerClassName(shiftType: ScheduleRoomAssignment["shiftType"]) {
+  if (shiftType === "full_shift") {
+    return "rounded-md border border-slate-200 bg-white p-3 shadow-sm";
+  }
+
+  if (shiftType === "first_half") {
+    return "rounded-md border border-blue-200 bg-blue-50 p-3 shadow-sm";
+  }
+
+  if (shiftType === "second_half") {
+    return "rounded-md border border-violet-200 bg-violet-50 p-3 shadow-sm";
+  }
+
+  return "rounded-md border border-amber-200 bg-amber-50 p-3 shadow-sm";
+}
+
 function parseDragPayload(data: string): DragPayload | null {
   try {
     const parsedData = JSON.parse(data) as DragPayload;
@@ -556,6 +589,7 @@ function createRoomAssignment(
     dayKey,
     centerId: room.centerId,
     roomId: room.id,
+    shiftType: "full_shift",
     providerId: null,
     startTime: "07:00",
     endTime: "15:00",
@@ -918,6 +952,28 @@ export function ScheduleWorkspace({
     updateWorkingVersion(nextVersion);
   }
 
+  function handleShiftTypeChanged(
+    assignmentId: string,
+    shiftType: ScheduleRoomAssignment["shiftType"],
+  ) {
+    const assignments = workingVersion.assignments.map((assignment) => {
+      if (assignment.id !== assignmentId) {
+        return assignment;
+      }
+
+      const nextAssignment = {
+        ...assignment,
+        shiftType,
+      };
+      return nextAssignment;
+    });
+    const nextVersion = scheduleVersionSchema.parse({
+      ...workingVersion,
+      assignments,
+    });
+    updateWorkingVersion(nextVersion);
+  }
+
   function handleProviderSelected(
     assignment: ScheduleRoomAssignment,
     option: ProviderPickerOption,
@@ -1120,6 +1176,12 @@ export function ScheduleWorkspace({
                         providerPickerButtonLabel(selectedOption);
                       const providerPickerStatus =
                         providerPickerStatusLabel(selectedOption);
+                      const assignmentContainerClassName = shiftTypeContainerClassName(
+                        assignment.shiftType,
+                      );
+                      const assignmentShiftTypeLabel = shiftTypeLabel(
+                        assignment.shiftType,
+                      );
                       return (
                         <div
                           key={assignment.id}
@@ -1135,7 +1197,7 @@ export function ScheduleWorkspace({
                           onDrop={(event) =>
                             handleDropOnAssignment(event, column.key, index)
                           }
-                          className="rounded-md border border-slate-200 bg-white p-3 shadow-sm"
+                          className={assignmentContainerClassName}
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div>
@@ -1154,6 +1216,9 @@ export function ScheduleWorkspace({
                             </button>
                           </div>
                           <div className="mt-2 flex flex-wrap gap-1">
+                            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                              {assignmentShiftTypeLabel}
+                            </span>
                             {mdOnly ? (
                               <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
                                 MDs Only
@@ -1174,6 +1239,26 @@ export function ScheduleWorkspace({
                                 </span>
                               );
                             })}
+                          </div>
+                          <div className="mt-2">
+                            <label className="text-xs font-semibold uppercase text-slate-500">
+                              Shift type
+                            </label>
+                            <select
+                              value={assignment.shiftType}
+                              onChange={(event) =>
+                                handleShiftTypeChanged(
+                                  assignment.id,
+                                  event.target.value as ScheduleRoomAssignment["shiftType"],
+                                )
+                              }
+                              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-700"
+                            >
+                              <option value="full_shift">Full shift</option>
+                              <option value="first_half">1st half</option>
+                              <option value="second_half">2nd half</option>
+                              <option value="short_shift">Short</option>
+                            </select>
                           </div>
                           <div className="mt-3 border-t border-slate-100 pt-3">
                             <div className="flex items-center justify-between gap-2">
