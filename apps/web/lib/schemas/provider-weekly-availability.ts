@@ -24,35 +24,52 @@ export const providerWeeklyAvailabilityDaySchema = z.object({
   options: z.array(availabilityOptionSchema).min(1),
 });
 
+function hasOneRowPerWeekday(value: { days: { weekday: Weekday }[] }) {
+  const weekdays = value.days.map((day) => day.weekday);
+  const uniqueWeekdays = new Set(weekdays);
+  const uniqueCount = uniqueWeekdays.size;
+  const hasEveryWeekday = uniqueCount === 7;
+  return hasEveryWeekday;
+}
+
 export const providerWeeklyAvailabilitySchema = z
   .object({
     scheduleWeekId: z.string().uuid(),
     providerId: z.string().uuid(),
     isLocked: z.boolean(),
-    minShiftsRequested: z.number().int().min(0).max(14),
-    maxShiftsRequested: z.number().int().min(0).max(14),
     days: z.array(providerWeeklyAvailabilityDaySchema).length(7),
   })
   .refine(
-    (value) => {
-      const minimum = value.minShiftsRequested;
-      const maximum = value.maxShiftsRequested;
-      const isValidRange = minimum <= maximum;
-      return isValidRange;
-    },
-    { message: "Minimum shifts requested must be less than or equal to maximum shifts requested." },
-  )
-  .refine(
-    (value) => {
-      const weekdays = value.days.map((day) => day.weekday);
-      const uniqueWeekdays = new Set(weekdays);
-      const uniqueCount = uniqueWeekdays.size;
-      return uniqueCount === 7;
-    },
+    hasOneRowPerWeekday,
     { message: "Each weekday must appear exactly once." },
   );
 
-export const providerWeeklyAvailabilityApiSchema = providerWeeklyAvailabilitySchema;
+export const providerWeeklyAvailabilityReadApiSchema = z
+  .object({
+    schedule_week_id: z.string().uuid(),
+    provider_id: z.string().uuid(),
+    is_locked: z.boolean(),
+    days: z.array(providerWeeklyAvailabilityDaySchema).length(7),
+  })
+  .transform((value) => {
+    const availability = {
+      scheduleWeekId: value.schedule_week_id,
+      providerId: value.provider_id,
+      isLocked: value.is_locked,
+      days: value.days,
+    };
+    const parsedAvailability = providerWeeklyAvailabilitySchema.parse(availability);
+    return parsedAvailability;
+  });
+
+export const providerWeeklyAvailabilityReplaceApiSchema = z
+  .object({
+    days: z.array(providerWeeklyAvailabilityDaySchema).length(7),
+  })
+  .refine(
+    hasOneRowPerWeekday,
+    { message: "Each weekday must appear exactly once." },
+  );
 
 export type ProviderWeeklyAvailability = z.infer<
   typeof providerWeeklyAvailabilitySchema

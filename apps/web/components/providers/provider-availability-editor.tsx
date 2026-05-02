@@ -53,9 +53,11 @@ function createDayMap(record: ProviderWeeklyAvailabilityRecord) {
   return dayMap;
 }
 
-function parseShiftCountInput(value: string) {
-  const parsedValue = Number.parseInt(value, 10);
-  return parsedValue;
+function optionIsExclusive(option: AvailabilityOption) {
+  const optionIsUnset = option === "unset";
+  const optionIsNone = option === "none";
+  const isExclusive = optionIsUnset || optionIsNone;
+  return isExclusive;
 }
 
 export function ProviderAvailabilityEditor(props: {
@@ -140,18 +142,19 @@ export function ProviderAvailabilityEditor(props: {
 
       const currentOptions = day.options;
       const optionsWithoutSelectedOption = currentOptions.filter((value) => value !== option);
-      const checkedOptions = isChecked ? [...currentOptions, option] : optionsWithoutSelectedOption;
-      const uniqueOptions = Array.from(new Set(checkedOptions));
-      const selectedUnsetOption = uniqueOptions.includes("unset");
-      const selectedNoneOption = uniqueOptions.includes("none");
-      const selectedExclusiveOption = selectedUnsetOption || selectedNoneOption;
-      const selectedWorkOptions = uniqueOptions.filter((value) => value !== "unset" && value !== "none");
-      const selectedExclusiveOptions = uniqueOptions.filter((value) => value === "unset" || value === "none");
-      const lastExclusiveOption = selectedExclusiveOptions.at(-1);
-      const optionsWithExclusiveRule = selectedExclusiveOption
-        ? [lastExclusiveOption ?? "unset"]
-        : selectedWorkOptions;
-      const optionsWithDefault = optionsWithExclusiveRule.length > 0 ? optionsWithExclusiveRule : ["unset"];
+      const selectedExclusiveOption = optionIsExclusive(option);
+      const workOptions = currentOptions.filter((value) => !optionIsExclusive(value));
+      const checkedExclusiveOptions: AvailabilityOption[] = [option];
+      const checkedWorkOptions = [...workOptions, option];
+      const checkedOptions = selectedExclusiveOption ? checkedExclusiveOptions : checkedWorkOptions;
+      const optionsWithClickedChoice = isChecked ? checkedOptions : optionsWithoutSelectedOption;
+      const optionsWithExclusiveRule = optionsWithClickedChoice.filter((value) => {
+        const keepOption = isChecked || !optionIsExclusive(value);
+        return keepOption;
+      });
+      const uniqueOptions = Array.from(new Set(optionsWithExclusiveRule));
+      const defaultOptions: AvailabilityOption[] = ["unset"];
+      const optionsWithDefault = uniqueOptions.length > 0 ? uniqueOptions : defaultOptions;
       const nextDay = {
         weekday: day.weekday,
         options: optionsWithDefault,
@@ -163,49 +166,7 @@ export function ProviderAvailabilityEditor(props: {
       scheduleWeekId: record.scheduleWeekId,
       providerId: record.providerId,
       isLocked: record.isLocked,
-      minShiftsRequested: record.minShiftsRequested,
-      maxShiftsRequested: record.maxShiftsRequested,
       days: nextDays,
-    };
-    setRecord(nextRecord);
-  }
-
-  function updateMinShiftsRequested(value: string) {
-    if (record === null) {
-      return;
-    }
-    const parsedValue = parseShiftCountInput(value);
-    const parsedValueIsInvalid = Number.isNaN(parsedValue);
-    if (parsedValueIsInvalid) {
-      return;
-    }
-    const nextRecord = {
-      scheduleWeekId: record.scheduleWeekId,
-      providerId: record.providerId,
-      isLocked: record.isLocked,
-      minShiftsRequested: parsedValue,
-      maxShiftsRequested: record.maxShiftsRequested,
-      days: record.days,
-    };
-    setRecord(nextRecord);
-  }
-
-  function updateMaxShiftsRequested(value: string) {
-    if (record === null) {
-      return;
-    }
-    const parsedValue = parseShiftCountInput(value);
-    const parsedValueIsInvalid = Number.isNaN(parsedValue);
-    if (parsedValueIsInvalid) {
-      return;
-    }
-    const nextRecord = {
-      scheduleWeekId: record.scheduleWeekId,
-      providerId: record.providerId,
-      isLocked: record.isLocked,
-      minShiftsRequested: record.minShiftsRequested,
-      maxShiftsRequested: parsedValue,
-      days: record.days,
     };
     setRecord(nextRecord);
   }
@@ -293,7 +254,7 @@ export function ProviderAvailabilityEditor(props: {
         <span
           className={`ml-2 inline-flex rounded-md px-2 py-1 text-xs font-semibold ${isLocked ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}
         >
-          {isLocked ? "Locked (Drafted)" : "Editable"}
+          {isLocked ? "Locked (Published)" : "Editable"}
         </span>
       </div>
 
@@ -303,30 +264,6 @@ export function ProviderAvailabilityEditor(props: {
 
       {record !== null ? (
         <div className="mt-4 grid gap-3">
-          <label className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3">
-            <span className="text-sm font-medium text-slate-700">Min shifts requested</span>
-            <input
-              className="w-24 rounded-md border border-slate-300 px-3 py-2 text-sm"
-              type="number"
-              min={0}
-              max={14}
-              value={record.minShiftsRequested}
-              disabled={isLocked}
-              onChange={(event) => updateMinShiftsRequested(event.target.value)}
-            />
-          </label>
-          <label className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3">
-            <span className="text-sm font-medium text-slate-700">Max shifts requested</span>
-            <input
-              className="w-24 rounded-md border border-slate-300 px-3 py-2 text-sm"
-              type="number"
-              min={0}
-              max={14}
-              value={record.maxShiftsRequested}
-              disabled={isLocked}
-              onChange={(event) => updateMaxShiftsRequested(event.target.value)}
-            />
-          </label>
           {weekdayOrder.map((weekday) => {
             const options = dayMap.get(weekday) ?? ["unset"];
             return (

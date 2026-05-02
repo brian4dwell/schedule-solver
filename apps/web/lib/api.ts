@@ -14,8 +14,6 @@ import {
   type RoomTypeFormValues,
 } from "@/lib/schemas/room";
 import {
-  providerWeeklyAvailabilitySchema,
-  type ProviderWeeklyAvailability,
   persistedScheduleVersionApiSchema,
   scheduleDraftSaveResponseApiSchema,
   scheduleGenerateResponseApiSchema,
@@ -30,7 +28,12 @@ import {
   type ScheduleGenerateResponseApi,
   type SchedulePublishResponseApi,
 } from "@/lib/schemas/schedule";
-import { providerWeeklyAvailabilityApiSchema } from "@/lib/schemas/provider-weekly-availability";
+import {
+  providerWeeklyAvailabilityReadApiSchema,
+  providerWeeklyAvailabilityReplaceApiSchema,
+  providerWeeklyAvailabilitySchema,
+  type ProviderWeeklyAvailability,
+} from "@/lib/schemas/provider-weekly-availability";
 
 export type Center = {
   id: string;
@@ -431,8 +434,7 @@ export async function getProviderWeeklyAvailability(
 ): Promise<ProviderWeeklyAvailabilityRecord> {
   const path = `/schedule-weeks/${scheduleWeekId}/providers/${providerId}/availability`;
   const responseJson = await requestJson<unknown>(path, { cache: "no-store" });
-  const availabilityApi = providerWeeklyAvailabilityApiSchema.parse(responseJson);
-  const availability = providerWeeklyAvailabilitySchema.parse(availabilityApi);
+  const availability = providerWeeklyAvailabilityReadApiSchema.parse(responseJson);
   return availability;
 }
 
@@ -442,12 +444,14 @@ export async function saveProviderWeeklyAvailability(
   availability: ProviderWeeklyAvailabilityRecord,
 ): Promise<ProviderWeeklyAvailabilityRecord> {
   const parsedAvailability = providerWeeklyAvailabilitySchema.parse(availability);
-  const payload = providerWeeklyAvailabilityApiSchema.parse(parsedAvailability);
+  const payloadData = {
+    days: parsedAvailability.days,
+  };
+  const payload = providerWeeklyAvailabilityReplaceApiSchema.parse(payloadData);
   const path = `/schedule-weeks/${scheduleWeekId}/providers/${providerId}/availability`;
   const init = jsonRequestInit("PUT", payload);
   const responseJson = await requestJson<unknown>(path, init);
-  const availabilityApi = providerWeeklyAvailabilityApiSchema.parse(responseJson);
-  const savedAvailability = providerWeeklyAvailabilitySchema.parse(availabilityApi);
+  const savedAvailability = providerWeeklyAvailabilityReadApiSchema.parse(responseJson);
   return savedAvailability;
 }
 

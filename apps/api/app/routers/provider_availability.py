@@ -43,8 +43,8 @@ def require_provider(provider_id: UUID, organization_id: UUID, session: Session)
 
 def schedule_week_is_locked(schedule_week: SchedulePeriod) -> bool:
     week_status = schedule_week.status
-    week_is_draft = week_status == "draft"
-    is_locked = not week_is_draft
+    week_is_published = week_status == "published"
+    is_locked = week_is_published
     return is_locked
 
 
@@ -66,9 +66,7 @@ def build_read_response(schedule_week: SchedulePeriod, provider_id: UUID, rows: 
         options = ["unset"]
 
         if row is not None:
-            options_text = row.availability_option
-            parsed_options = [value for value in options_text.split(",") if value != ""]
-            options = parsed_options
+            options = row.availability_options
 
         day_values.append(ProviderAvailabilityDayRead(weekday=weekday, options=options))
 
@@ -97,7 +95,7 @@ def replace_provider_weekly_availability(schedule_week_id: UUID, provider_id: UU
     require_provider(provider_id, organization_id, session)
 
     if schedule_week_is_locked(schedule_week):
-        raise HTTPException(status_code=409, detail="Availability is locked for drafted weeks")
+        raise HTTPException(status_code=409, detail="Availability is locked for published weeks")
 
     existing_rows = rows_for_provider_week(schedule_week_id, provider_id, organization_id, session)
 
@@ -105,13 +103,12 @@ def replace_provider_weekly_availability(schedule_week_id: UUID, provider_id: UU
         session.delete(row)
 
     for day in request.days:
-        serialized_options = ",".join(day.options)
         created_row = ProviderScheduleWeekAvailability(
             organization_id=organization_id,
             schedule_week_id=schedule_week_id,
             provider_id=provider_id,
             weekday=day.weekday,
-            availability_option=serialized_options,
+            availability_options=day.options,
         )
         session.add(created_row)
 
@@ -127,7 +124,7 @@ def delete_provider_weekly_availability(schedule_week_id: UUID, provider_id: UUI
     require_provider(provider_id, organization_id, session)
 
     if schedule_week_is_locked(schedule_week):
-        raise HTTPException(status_code=409, detail="Availability is locked for drafted weeks")
+        raise HTTPException(status_code=409, detail="Availability is locked for published weeks")
 
     rows = rows_for_provider_week(schedule_week_id, provider_id, organization_id, session)
 
