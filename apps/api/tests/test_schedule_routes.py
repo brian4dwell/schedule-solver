@@ -41,6 +41,7 @@ def test_create_assignment_from_request_maps_provider_slot_fields() -> None:
         room_id=room_id,
         shift_requirement_id=None,
         required_provider_type="doctor",
+        shift_type="first_half",
         start_time=start_time,
         end_time=end_time,
         source="manual",
@@ -61,6 +62,7 @@ def test_create_assignment_from_request_maps_provider_slot_fields() -> None:
     assert assignment.center_id == center_id
     assert assignment.room_id == room_id
     assert assignment.required_provider_type == "doctor"
+    assert assignment.shift_type == "first_half"
     assert assignment.assignment_status == "draft"
     assert assignment.source == "manual"
 

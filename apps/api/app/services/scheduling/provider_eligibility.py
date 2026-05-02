@@ -1,14 +1,15 @@
 from datetime import datetime
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Assignment
 from app.db.models import Provider
-from app.db.models import ProviderAvailability
 from app.db.models import ProviderCenterCredential
 from app.db.models import ProviderRoomTypeSkill
+from app.db.models import ProviderScheduleWeekAvailability
 from app.db.models import Room
 from app.db.models import RoomRoomType
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityContext
@@ -16,7 +17,19 @@ from app.services.scheduling.provider_eligibility_contracts import ProviderEligi
 from app.services.scheduling.provider_eligibility_contracts import ProviderRoomTypeSkillSummary
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityInput
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityResult
+from app.services.scheduling.provider_eligibility_contracts import ProviderWeeklyAvailabilitySummary
 from app.services.scheduling.provider_eligibility_contracts import RequiredRoomTypeSkill
+
+
+WEEKDAY_VALUES = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+]
 
 
 def create_violation(
@@ -26,6 +39,20 @@ def create_violation(
 ) -> ProviderEligibilityViolation:
     violation = ProviderEligibilityViolation(
         severity="hard_violation",
+        constraint_type=constraint_type,
+        category=category,
+        message=message,
+    )
+    return violation
+
+
+def create_warning(
+    constraint_type: str,
+    category: str,
+    message: str,
+) -> ProviderEligibilityViolation:
+    violation = ProviderEligibilityViolation(
+        severity="warning",
         constraint_type=constraint_type,
         category=category,
         message=message,
@@ -126,13 +153,47 @@ def evaluate_provider_slot_eligibility(
             )
             violations.append(violation)
 
-    if context.has_availability_conflict:
+    weekly_availability = context.weekly_availability
+    availability_is_missing = not weekly_availability.has_row
+    availability_is_unset = "unset" in weekly_availability.options
+
+    if availability_is_missing or availability_is_unset:
         violation = create_violation(
-            "provider_unavailable",
+            "provider_availability_unset",
             "availability_conflict",
-            "Provider has an availability conflict during this slot.",
+            "Provider has not supplied availability for this slot day.",
         )
         violations.append(violation)
+    else:
+        provider_is_unavailable = "none" in weekly_availability.options
+
+        if provider_is_unavailable:
+            violation = create_violation(
+                "provider_unavailable",
+                "availability_conflict",
+                "Provider is unavailable on this slot day.",
+            )
+            violations.append(violation)
+        else:
+            shift_type_is_available = request.shift_type in weekly_availability.options
+
+            if not shift_type_is_available:
+                violation = create_violation(
+                    "provider_shift_type_unavailable",
+                    "availability_conflict",
+                    "Provider availability does not include this slot shift type.",
+                )
+                violations.append(violation)
+
+        exceeds_maximum_shifts = context.schedule_week_assignment_count > weekly_availability.max_shifts_requested
+
+        if exceeds_maximum_shifts:
+            violation = create_warning(
+                "provider_max_shifts_exceeded",
+                "shift_request_conflict",
+                "Provider is over the maximum requested shifts for this schedule week.",
+            )
+            violations.append(violation)
 
     if context.has_double_booking:
         violation = create_violation(
@@ -142,7 +203,12 @@ def evaluate_provider_slot_eligibility(
         )
         violations.append(violation)
 
-    is_eligible = len(violations) == 0
+    hard_violations = [
+        violation
+        for violation in violations
+        if violation.severity == "hard_violation"
+    ]
+    is_eligible = len(hard_violations) == 0
     result = ProviderSlotEligibilityResult(
         provider_id=request.provider_id,
         is_eligible=is_eligible,
@@ -256,25 +322,65 @@ def load_provider_room_type_skills(
     return skill_summaries
 
 
-def overlapping_times_filter(statement, start_time: datetime, end_time: datetime):
-    statement = statement.where(ProviderAvailability.start_time < end_time)
-    statement = statement.where(ProviderAvailability.end_time > start_time)
-    return statement
+def weekday_for_start_time(start_time: datetime) -> str:
+    weekday_index = start_time.weekday()
+    weekday = WEEKDAY_VALUES[weekday_index]
+    return weekday
 
 
-def has_availability_conflict(
+def load_weekly_availability(
     request: ProviderSlotEligibilityInput,
     session: Session,
-) -> bool:
-    statement = select(ProviderAvailability.id)
-    statement = statement.where(ProviderAvailability.organization_id == request.organization_id)
-    statement = statement.where(ProviderAvailability.provider_id == request.provider_id)
-    statement = statement.where(ProviderAvailability.availability_type == "unavailable")
-    statement = overlapping_times_filter(statement, request.start_time, request.end_time)
-    statement = statement.limit(1)
-    availability_id = session.scalar(statement)
-    has_conflict = availability_id is not None
-    return has_conflict
+) -> ProviderWeeklyAvailabilitySummary:
+    weekday = weekday_for_start_time(request.start_time)
+    statement = select(ProviderScheduleWeekAvailability)
+    statement = statement.where(ProviderScheduleWeekAvailability.organization_id == request.organization_id)
+    statement = statement.where(ProviderScheduleWeekAvailability.schedule_week_id == request.schedule_period_id)
+    statement = statement.where(ProviderScheduleWeekAvailability.provider_id == request.provider_id)
+    statement = statement.where(ProviderScheduleWeekAvailability.weekday == weekday)
+    availability = session.scalar(statement)
+
+    if availability is None:
+        summary = ProviderWeeklyAvailabilitySummary(
+            has_row=False,
+            weekday=weekday,
+            options=["unset"],
+        )
+        return summary
+
+    summary = ProviderWeeklyAvailabilitySummary(
+        has_row=True,
+        weekday=availability.weekday,
+        options=availability.availability_options,
+        min_shifts_requested=availability.min_shifts_requested,
+        max_shifts_requested=availability.max_shifts_requested,
+    )
+    return summary
+
+
+def provider_assignment_count_for_week(
+    request: ProviderSlotEligibilityInput,
+    session: Session,
+) -> int:
+    if request.schedule_version_id is None:
+        return 1
+
+    statement = select(func.count(Assignment.id))
+    statement = statement.where(Assignment.organization_id == request.organization_id)
+    statement = statement.where(Assignment.schedule_period_id == request.schedule_period_id)
+    statement = statement.where(Assignment.schedule_version_id == request.schedule_version_id)
+    statement = statement.where(Assignment.provider_id == request.provider_id)
+    assignment_count = session.scalar(statement)
+
+    if assignment_count is None:
+        return 0
+
+    count = int(assignment_count)
+
+    if request.assignment_id is None:
+        count = count + 1
+
+    return count
 
 
 def has_double_booking(
@@ -324,7 +430,8 @@ def load_provider_eligibility_context(
     if room is not None:
         room_md_only = room.md_only
 
-    availability_conflict = has_availability_conflict(request, session)
+    weekly_availability = load_weekly_availability(request, session)
+    schedule_week_assignment_count = provider_assignment_count_for_week(request, session)
     double_booking = has_double_booking(request, session)
     context = ProviderEligibilityContext(
         provider_id=provider.id,
@@ -335,7 +442,8 @@ def load_provider_eligibility_context(
         room_md_only=room_md_only,
         required_room_type_skills=required_skills,
         provider_room_type_skills=provider_skills,
-        has_availability_conflict=availability_conflict,
+        weekly_availability=weekly_availability,
+        schedule_week_assignment_count=schedule_week_assignment_count,
         has_double_booking=double_booking,
     )
     return context

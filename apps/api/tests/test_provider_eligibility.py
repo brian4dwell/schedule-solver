@@ -13,6 +13,7 @@ from app.services.scheduling.provider_eligibility import evaluate_provider_slot_
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityContext
 from app.services.scheduling.provider_eligibility_contracts import ProviderRoomTypeSkillSummary
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityInput
+from app.services.scheduling.provider_eligibility_contracts import ProviderWeeklyAvailabilitySummary
 from app.services.scheduling.provider_eligibility_contracts import RequiredRoomTypeSkill
 
 
@@ -24,6 +25,7 @@ def create_request(provider_id=None, room_id=None) -> ProviderSlotEligibilityInp
     end_time = datetime(2026, 5, 4, 15, 0, tzinfo=UTC)
     request = ProviderSlotEligibilityInput(
         organization_id=organization_id,
+        schedule_period_id=uuid4(),
         provider_id=request_provider_id,
         center_id=uuid4(),
         room_id=request_room_id,
@@ -58,6 +60,14 @@ def create_context(provider_id, room_type_id=None) -> ProviderEligibilityContext
         room_md_only=False,
         required_room_type_skills=required_skills,
         provider_room_type_skills=provider_skills,
+        weekly_availability=ProviderWeeklyAvailabilitySummary(
+            has_row=True,
+            weekday="monday",
+            options=["full_shift"],
+            min_shifts_requested=0,
+            max_shifts_requested=5,
+        ),
+        schedule_week_assignment_count=1,
     )
     return context
 
@@ -173,6 +183,55 @@ def test_multiple_failed_constraints_are_returned_together() -> None:
     assert result.is_eligible is False
     assert "missing_center_credential" in constraint_types
     assert "md_requirement_not_met" in constraint_types
+
+
+def test_unset_weekly_availability_creates_visible_reason() -> None:
+    provider_id = uuid4()
+    request = create_request(provider_id)
+    context = create_context(provider_id)
+    context.weekly_availability = ProviderWeeklyAvailabilitySummary(
+        has_row=True,
+        weekday="monday",
+        options=["unset"],
+    )
+
+    result = evaluate_provider_slot_eligibility(request, context)
+
+    assert result.is_eligible is False
+    assert result.violations[0].constraint_type == "provider_availability_unset"
+    assert result.violations[0].category == "availability_conflict"
+
+
+def test_missing_shift_type_availability_creates_visible_reason() -> None:
+    provider_id = uuid4()
+    request = create_request(provider_id)
+    context = create_context(provider_id)
+    context.weekly_availability = ProviderWeeklyAvailabilitySummary(
+        has_row=True,
+        weekday="monday",
+        options=["first_half"],
+        max_shifts_requested=5,
+    )
+
+    result = evaluate_provider_slot_eligibility(request, context)
+
+    assert result.is_eligible is False
+    assert result.violations[0].constraint_type == "provider_shift_type_unavailable"
+    assert result.violations[0].category == "availability_conflict"
+
+
+def test_max_shift_request_creates_visible_reason() -> None:
+    provider_id = uuid4()
+    request = create_request(provider_id)
+    context = create_context(provider_id)
+    context.schedule_week_assignment_count = 6
+
+    result = evaluate_provider_slot_eligibility(request, context)
+
+    assert result.is_eligible is True
+    assert result.violations[0].severity == "warning"
+    assert result.violations[0].constraint_type == "provider_max_shifts_exceeded"
+    assert result.violations[0].category == "shift_request_conflict"
 
 
 def test_credential_date_range_must_cover_slot() -> None:

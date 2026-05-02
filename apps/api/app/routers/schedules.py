@@ -89,12 +89,14 @@ def eligibility_input_from_request(
 ) -> ProviderSlotEligibilityInput:
     eligibility_input = ProviderSlotEligibilityInput(
         organization_id=organization_id,
+        schedule_period_id=request.schedule_period_id,
         schedule_version_id=request.schedule_version_id,
         assignment_id=request.assignment_id,
         provider_id=request.provider_id,
         center_id=request.center_id,
         room_id=request.room_id,
         required_provider_type=request.required_provider_type,
+        shift_type=request.shift_type,
         start_time=request.start_time,
         end_time=request.end_time,
     )
@@ -113,12 +115,14 @@ def eligibility_input_from_assignment(
 
     eligibility_input = ProviderSlotEligibilityInput(
         organization_id=organization_id,
+        schedule_period_id=assignment.schedule_period_id,
         schedule_version_id=assignment.schedule_version_id,
         assignment_id=assignment.id,
         provider_id=provider_id,
         center_id=assignment.center_id,
         room_id=assignment.room_id,
         required_provider_type=required_provider_type,
+        shift_type=assignment.shift_type,
         start_time=assignment.start_time,
         end_time=assignment.end_time,
     )
@@ -224,6 +228,7 @@ def create_assignment_from_request(
         room_id=requested_assignment.room_id,
         shift_requirement_id=requested_assignment.shift_requirement_id,
         required_provider_type=requested_assignment.required_provider_type,
+        shift_type=requested_assignment.shift_type,
         start_time=requested_assignment.start_time,
         end_time=requested_assignment.end_time,
         assignment_status="draft",
@@ -534,6 +539,7 @@ def duplicate_schedule_version(
             room_id=assignment.room_id,
             shift_requirement_id=assignment.shift_requirement_id,
             required_provider_type=assignment.required_provider_type,
+            shift_type=assignment.shift_type,
             start_time=assignment.start_time,
             end_time=assignment.end_time,
             source="duplicate",

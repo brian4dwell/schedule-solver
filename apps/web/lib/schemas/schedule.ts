@@ -26,6 +26,7 @@ export const providerIneligibilityReasonSchema = z.object({
     "missing_skill",
     "md_requirement_not_met",
     "availability_conflict",
+    "shift_request_conflict",
     "other_hard_constraint",
   ]),
   message: z.string().min(1),
@@ -35,6 +36,19 @@ export const providerPickerEligibilitySchema = z.object({
   providerId: z.string().uuid(),
   isEligible: z.boolean(),
   reasons: z.array(providerIneligibilityReasonSchema),
+});
+
+export const providerEligibilityViolationApiSchema = z.object({
+  severity: z.string().min(1),
+  constraint_type: z.string().min(1),
+  category: z.string().min(1),
+  message: z.string().min(1),
+});
+
+export const providerSlotEligibilityApiSchema = z.object({
+  provider_id: z.string().uuid(),
+  is_eligible: z.boolean(),
+  violations: z.array(providerEligibilityViolationApiSchema),
 });
 
 export const scheduleRoomAssignmentSchema = z.object({
@@ -84,6 +98,7 @@ export const scheduleAssignmentApiSchema = z.object({
   room_id: z.string().uuid().nullable(),
   shift_requirement_id: z.string().uuid().nullable(),
   required_provider_type: z.string().nullable(),
+  shift_type: z.enum(["full_shift", "first_half", "second_half", "short_shift"]),
   start_time: z.string().min(1),
   end_time: z.string().min(1),
   assignment_status: z.string().min(1),
@@ -143,13 +158,6 @@ export const scheduleGenerateResponseApiSchema =
     is_feasible: z.boolean(),
   });
 
-export const providerEligibilityViolationApiSchema = z.object({
-  severity: z.string().min(1),
-  constraint_type: z.string().min(1),
-  category: z.string().min(1),
-  message: z.string().min(1),
-});
-
 export const schedulePublishResponseApiSchema = z.object({
   version: persistedScheduleVersionApiSchema,
   violations: z.array(providerEligibilityViolationApiSchema),
@@ -182,6 +190,10 @@ export type ProviderIneligibilityReason = z.infer<
 
 export type ProviderPickerEligibility = z.infer<
   typeof providerPickerEligibilitySchema
+>;
+
+export type ProviderSlotEligibilityApi = z.infer<
+  typeof providerSlotEligibilityApiSchema
 >;
 
 export type ScheduleRoomAssignment = z.infer<typeof scheduleRoomAssignmentSchema>;

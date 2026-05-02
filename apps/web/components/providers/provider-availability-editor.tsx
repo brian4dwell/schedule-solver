@@ -175,6 +175,11 @@ export function ProviderAvailabilityEditor(props: {
   }, [record]);
 
   const isLocked = record?.isLocked ?? false;
+  const statusLabel = isLocked ? "Locked (Published)" : "Editable";
+  const statusToneClassName = isLocked
+    ? "bg-amber-100 text-amber-900"
+    : "bg-emerald-100 text-emerald-900";
+  const statusBadgeClassName = `inline-flex rounded-md px-3 py-1 text-sm font-semibold ${statusToneClassName}`;
   const workAvailableDayCount = record === null ? 0 : countWorkAvailableDays(record.days);
   const minShiftInputMaximum = record === null
     ? 0
@@ -368,48 +373,50 @@ export function ProviderAvailabilityEditor(props: {
 
   return (
     <section className="rounded-md border border-slate-200 bg-white p-4">
-      <div className="grid gap-3 md:grid-cols-2">
-        <label className="flex flex-col gap-1 text-sm text-slate-700">
-          <span className="font-medium">Schedule week</span>
-          <select
-            className="rounded-md border border-slate-300 px-3 py-2"
-            value={scheduleWeekId}
-            onChange={(event) => setScheduleWeekId(event.target.value)}
-          >
-            {periods.map((period) => {
-              return (
-                <option key={period.id} value={period.id}>
-                  {period.name}
-                </option>
-              );
-            })}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm text-slate-700">
-          <span className="font-medium">Provider</span>
-          <select
-            className="rounded-md border border-slate-300 px-3 py-2"
-            value={providerId}
-            onChange={(event) => setProviderId(event.target.value)}
-          >
-            {providers.map((provider) => {
-              return (
-                <option key={provider.id} value={provider.id}>
-                  {provider.display_name}
-                </option>
-              );
-            })}
-          </select>
-        </label>
-      </div>
-
-      <div className="mt-4">
-        <span className="text-sm font-medium text-slate-700">Status</span>
-        <span
-          className={`ml-2 inline-flex rounded-md px-2 py-1 text-xs font-semibold ${isLocked ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}
-        >
-          {isLocked ? "Locked (Published)" : "Editable"}
-        </span>
+      <div className="rounded-md border border-teal-200 bg-teal-50/60 p-4 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-slate-950">
+            Availability selection
+          </h2>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-700">Status</span>
+            <span className={statusBadgeClassName}>{statusLabel}</span>
+          </div>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="flex flex-col gap-2 text-sm text-slate-700">
+            <span className="font-semibold text-slate-950">Schedule week</span>
+            <select
+              className="h-12 rounded-md border border-slate-400 bg-white px-3 text-base font-semibold text-slate-950 shadow-sm focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
+              value={scheduleWeekId}
+              onChange={(event) => setScheduleWeekId(event.target.value)}
+            >
+              {periods.map((period) => {
+                return (
+                  <option key={period.id} value={period.id}>
+                    {period.name}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+          <label className="flex flex-col gap-2 text-sm text-slate-700">
+            <span className="font-semibold text-slate-950">Provider</span>
+            <select
+              className="h-12 rounded-md border border-slate-400 bg-white px-3 text-base font-semibold text-slate-950 shadow-sm focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
+              value={providerId}
+              onChange={(event) => setProviderId(event.target.value)}
+            >
+              {providers.map((provider) => {
+                return (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.display_name}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+        </div>
       </div>
 
       {isLoading ? <p className="mt-4 text-sm text-slate-500">Loading availability…</p> : null}

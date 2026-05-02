@@ -15,6 +15,7 @@ import {
 } from "@/lib/schemas/room";
 import {
   persistedScheduleVersionApiSchema,
+  providerSlotEligibilityApiSchema,
   scheduleDraftSaveResponseApiSchema,
   scheduleGenerateResponseApiSchema,
   schedulePeriodApiSchema,
@@ -27,6 +28,7 @@ import {
   type PersistedScheduleVersionApi,
   type ScheduleGenerateResponseApi,
   type SchedulePublishResponseApi,
+  type ProviderSlotEligibilityApi,
 } from "@/lib/schemas/schedule";
 import {
   providerWeeklyAvailabilityReadApiSchema,
@@ -81,6 +83,7 @@ export type ScheduleVersionDetail = ScheduleVersionDetailApi;
 export type ScheduleGenerateResponse = ScheduleGenerateResponseApi;
 
 export type SchedulePublishResponse = SchedulePublishResponseApi;
+export type ProviderSlotEligibility = ProviderSlotEligibilityApi;
 export type ProviderWeeklyAvailabilityRecord = ProviderWeeklyAvailability;
 
 export type ScheduleAssignmentSavePayload = {
@@ -89,6 +92,7 @@ export type ScheduleAssignmentSavePayload = {
   room_id: string | null;
   shift_requirement_id: string | null;
   required_provider_type: string | null;
+  shift_type: "full_shift" | "first_half" | "second_half" | "short_shift";
   start_time: string;
   end_time: string;
   source: string;
@@ -106,6 +110,19 @@ export type ScheduleGeneratePayload = {
   parent_schedule_version_id: string | null;
   notes: string | null;
   assignments: ScheduleAssignmentSavePayload[];
+};
+
+export type ProviderSlotEligibilityPayload = {
+  schedule_period_id: string;
+  schedule_version_id: string | null;
+  assignment_id: string | null;
+  provider_id: string;
+  center_id: string;
+  room_id: string | null;
+  required_provider_type: string | null;
+  shift_type: "full_shift" | "first_half" | "second_half" | "short_shift";
+  start_time: string;
+  end_time: string;
 };
 
 async function requestJson<TResponse>(
@@ -436,6 +453,15 @@ export async function getProviderWeeklyAvailability(
   const responseJson = await requestJson<unknown>(path, { cache: "no-store" });
   const availability = providerWeeklyAvailabilityReadApiSchema.parse(responseJson);
   return availability;
+}
+
+export async function checkProviderSlotEligibility(
+  payload: ProviderSlotEligibilityPayload,
+): Promise<ProviderSlotEligibility> {
+  const init = jsonRequestInit("POST", payload);
+  const responseJson = await requestJson<unknown>("/schedule-provider-eligibility", init);
+  const response = providerSlotEligibilityApiSchema.parse(responseJson);
+  return response;
 }
 
 export async function saveProviderWeeklyAvailability(

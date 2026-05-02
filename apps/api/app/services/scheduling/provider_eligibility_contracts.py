@@ -7,12 +7,14 @@ from pydantic import Field
 
 class ProviderSlotEligibilityInput(BaseModel):
     organization_id: UUID
+    schedule_period_id: UUID
     schedule_version_id: UUID | None = None
     assignment_id: UUID | None = None
     provider_id: UUID
     center_id: UUID
     room_id: UUID | None = None
     required_provider_type: str | None = None
+    shift_type: str = "full_shift"
     start_time: datetime
     end_time: datetime
 
@@ -27,6 +29,14 @@ class ProviderRoomTypeSkillSummary(BaseModel):
     proficiency_level: int = 1
 
 
+class ProviderWeeklyAvailabilitySummary(BaseModel):
+    has_row: bool = False
+    weekday: str
+    options: list[str] = Field(default_factory=list)
+    min_shifts_requested: int = 0
+    max_shifts_requested: int = 0
+
+
 class ProviderEligibilityContext(BaseModel):
     provider_id: UUID
     provider_is_active: bool
@@ -36,7 +46,8 @@ class ProviderEligibilityContext(BaseModel):
     room_md_only: bool
     required_room_type_skills: list[RequiredRoomTypeSkill] = Field(default_factory=list)
     provider_room_type_skills: list[ProviderRoomTypeSkillSummary] = Field(default_factory=list)
-    has_availability_conflict: bool = False
+    weekly_availability: ProviderWeeklyAvailabilitySummary
+    schedule_week_assignment_count: int = 0
     has_double_booking: bool = False
 
 

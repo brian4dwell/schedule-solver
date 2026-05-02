@@ -12,12 +12,14 @@ from app.services.scheduling.solver_contracts import SolverRunMetrics
 
 
 class ProviderEligibilityRequest(BaseModel):
+    schedule_period_id: UUID
     schedule_version_id: UUID | None = None
     assignment_id: UUID | None = None
     provider_id: UUID
     center_id: UUID
     room_id: UUID | None = None
     required_provider_type: str | None = None
+    shift_type: str = "full_shift"
     start_time: datetime
     end_time: datetime
 
@@ -28,6 +30,7 @@ class ScheduleAssignmentCreate(BaseModel):
     room_id: UUID | None = None
     shift_requirement_id: UUID | None = None
     required_provider_type: str | None = None
+    shift_type: str = "full_shift"
     start_time: datetime
     end_time: datetime
     source: str = "manual"
@@ -71,6 +74,7 @@ class AssignmentRead(TimestampedSchema):
     room_id: UUID | None
     shift_requirement_id: UUID | None
     required_provider_type: str | None
+    shift_type: str
     start_time: datetime
     end_time: datetime
     assignment_status: str
