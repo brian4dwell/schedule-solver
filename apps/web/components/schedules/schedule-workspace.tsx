@@ -127,27 +127,31 @@ function dateAtUtcMidnight(value: string) {
   return date;
 }
 
+function dayIndexForDayKey(dayKey: ScheduleDayKey) {
+  const dayIndex = dayColumns.findIndex((column) => {
+    return column.key === dayKey;
+  });
+
+  if (dayIndex === -1) {
+    throw new Error("Schedule day key must resolve to a day index.");
+  }
+
+  return dayIndex;
+}
+
 function dayKeyForAssignment(
   schedulePeriod: SchedulePeriod,
   startTime: string,
 ): ScheduleDayKey {
   const periodStart = dateAtUtcMidnight(schedulePeriod.start_date);
+  const periodStartWeekday = periodStart.getUTCDay();
   const assignmentDate = new Date(startTime);
-  const assignmentMidnight = Date.UTC(
-    assignmentDate.getUTCFullYear(),
-    assignmentDate.getUTCMonth(),
-    assignmentDate.getUTCDate(),
-  );
-  const millisecondsPerDay = 24 * 60 * 60 * 1000;
-  const dayOffset = Math.floor(
-    (assignmentMidnight - periodStart.getTime()) / millisecondsPerDay,
-  );
-  const boundedOffset = ((dayOffset % dayColumns.length) + dayColumns.length) %
-    dayColumns.length;
-  const dayColumn = dayColumns[boundedOffset];
+  const assignmentWeekday = assignmentDate.getUTCDay();
+  const weekdayOffset = (assignmentWeekday - periodStartWeekday + 7) % 7;
+  const dayColumn = dayColumns[weekdayOffset];
 
   if (dayColumn === undefined) {
-    throw new Error("Schedule day offset must resolve to a day column.");
+    throw new Error("Schedule weekday offset must resolve to a day column.");
   }
 
   const dayKey = dayColumn.key;
@@ -164,11 +168,11 @@ function timeLabelFromDateTime(value: string) {
 
 function dateForDayKey(schedulePeriod: SchedulePeriod, dayKey: ScheduleDayKey) {
   const periodStart = dateAtUtcMidnight(schedulePeriod.start_date);
-  const dayIndex = dayColumns.findIndex((column) => {
-    return column.key === dayKey;
-  });
+  const periodStartWeekday = periodStart.getUTCDay();
+  const targetDayIndex = dayIndexForDayKey(dayKey);
+  const weekdayOffset = (targetDayIndex - periodStartWeekday + 7) % 7;
   const millisecondsPerDay = 24 * 60 * 60 * 1000;
-  const dateTime = periodStart.getTime() + dayIndex * millisecondsPerDay;
+  const dateTime = periodStart.getTime() + weekdayOffset * millisecondsPerDay;
   const date = new Date(dateTime);
   return date;
 }
