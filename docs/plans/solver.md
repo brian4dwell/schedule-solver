@@ -84,9 +84,11 @@ apps/api/app/services/scheduling/
   solver_service.py
 ```
 
-`solver_contracts.py` should contain the Pydantic models or dataclasses used between the database loader, solver, and persistence layer.
+`solver_contracts.py` should contain the Pydantic models or dataclasses used between the database loader, Provider eligibility service, solver, and persistence layer.
 
 `solver_service.py` should orchestrate the full end-to-end solve flow for Phase 1.
+
+The solver should reuse the backend Provider eligibility service for hard eligibility decisions instead of duplicating those rules.
 
 ## Solver Input Contracts
 
@@ -101,37 +103,61 @@ from uuid import UUID
 from pydantic import BaseModel
 
 
-class SolverTimeBlock(BaseModel):
-    start_time: datetime
-    end_time: datetime
-    availability_type: str
+class SolverWeeklyAvailabilityDay(BaseModel):
+    weekday: str
+    options: list[str]
+
+
+class SolverProviderWeekAvailability(BaseModel):
+    provider_id: UUID
+    min_shifts_requested: int
+    max_shifts_requested: int
+    days: list[SolverWeeklyAvailabilityDay]
+
+
+class SolverRequiredRoomTypeSkill(BaseModel):
+    room_type_id: UUID
+    required_proficiency_level: int = 1
 
 
 class SolverRoom(BaseModel):
     id: UUID
     center_id: UUID
     md_only: bool
-    room_type_ids: list[UUID]
+    is_active: bool
+    required_room_type_skills: list[SolverRequiredRoomTypeSkill]
 
 
 class SolverShiftRequirement(BaseModel):
     id: UUID
     center_id: UUID
     room_id: UUID | None
+    shift_type: str
     start_time: datetime
     end_time: datetime
     required_provider_count: int
     required_provider_type: str | None
 
 
+class SolverProviderRoomTypeSkill(BaseModel):
+    room_type_id: UUID
+    proficiency_level: int = 1
+
+
 class SolverProvider(BaseModel):
     id: UUID
+    is_active: bool
     provider_type: str
-    credentialed_center_ids: list[UUID]
-    skill_room_type_ids: list[UUID]
-    unavailable_blocks: list[SolverTimeBlock]
-    preferred_blocks: list[SolverTimeBlock]
-    avoid_blocks: list[SolverTimeBlock]
+    provider_room_type_skills: list[SolverProviderRoomTypeSkill]
+    week_availability: SolverProviderWeekAvailability
+
+
+class SolverCenterCredential(BaseModel):
+    provider_id: UUID
+    center_id: UUID
+    starts_at: datetime | None
+    expires_at: datetime | None
+    is_active: bool
 
 
 class SolverInput(BaseModel):
@@ -139,10 +165,13 @@ class SolverInput(BaseModel):
     schedule_period_id: UUID
     rooms: list[SolverRoom]
     providers: list[SolverProvider]
+    center_credentials: list[SolverCenterCredential]
     shift_requirements: list[SolverShiftRequirement]
 ```
 
 Add `schedule_job_id` only in Phase 2 when background jobs are introduced.
+
+Keep ad hoc `provider_availability` time blocks out of the first availability-aware solver pass unless a later product decision reintroduces them as preference data.
 
 ## Solver Output Contracts
 
@@ -160,6 +189,8 @@ class SolverAssignment(BaseModel):
     shift_requirement_id: UUID
     center_id: UUID
     room_id: UUID | None
+    required_provider_type: str | None
+    shift_type: str
     start_time: datetime
     end_time: datetime
 
@@ -174,6 +205,7 @@ class SolverResult(BaseModel):
     assignments: list[SolverAssignment]
     violations: list[SolverViolation]
     solver_score: float | None
+    is_feasible: bool
 ```
 
 Add `metadata_json` later only when a violation needs structured debugging details.
@@ -184,9 +216,9 @@ For one schedule generation request, load:
 
 - The `schedule_period`.
 - Shift requirements inside the schedule period.
-- Active providers.
-- Provider availability blocks overlapping the schedule period.
-- Provider center credentials.
+- Providers in scheduling scope, including active status.
+- Provider schedule-week availability for the schedule period.
+- Provider center credentials, including active flags and credential date windows.
 - Provider room type skills.
 - Rooms and room types.
 - Existing assignments only when the solver needs continuity or conflict checks.
@@ -197,14 +229,24 @@ Keep the first solver focused on generating one clean draft from the current dem
 
 Before creating OR-Tools variables, build valid candidate assignments.
 
+For each provider and shift pair, build a `ProviderSlotEligibilityInput` and ask the backend Provider eligibility service whether the provider is eligible.
+
+Only eligible provider and shift pairs should become solver candidates.
+
 A provider can be a candidate for a shift when:
 
 - The provider is active.
+- The room is active when the shift targets a room.
 - The provider type matches `required_provider_type` when one is set.
-- The provider is credentialed for the shift center.
-- The provider is not explicitly unavailable during the shift.
-- The provider can cover the room's room types when a room is set.
-- The provider can cover `md_only` rooms only when the provider type allows it.
+- The provider has an active credential for the shift center and schedule date.
+- The provider has submitted schedule-week availability for the shift weekday.
+- The provider's weekday availability is not `unset`.
+- The provider's weekday availability is not `none`.
+- The provider's weekday availability includes the shift's `shift_type`.
+- The provider can cover all required room type skills when a room is set.
+- The provider meets the required room type proficiency levels.
+- The provider can cover `md_only` rooms or other MD-specific requirements only when the provider type allows it.
+- The provider is not already assigned to an overlapping shift in the same generated schedule.
 
 Each valid candidate becomes one boolean decision variable.
 
@@ -217,6 +259,10 @@ If a shift has no valid candidates, create a solver violation.
 
 Do not create a fake assignment for an unfillable shift.
 
+Do not silently substitute one `shift_type` for another during candidate generation.
+
+If the product later allows a half or short shift to satisfy a full-shift request, model that as an explicit candidate type with a named soft penalty.
+
 ## Initial Hard Constraints
 
 Hard constraints define what the solver must obey.
@@ -225,14 +271,21 @@ Start with:
 
 - Each shift requirement receives exactly `required_provider_count` assignments.
 - A provider cannot be assigned to overlapping shifts.
-- A provider cannot be assigned during explicit unavailable blocks.
-- A provider cannot be assigned to a center they are not credentialed for.
-- A provider cannot be assigned to a room type they cannot cover.
-- A non-MD provider cannot be assigned to an MD-only room.
+- A shift cannot target a missing or inactive room.
+- A provider cannot be assigned when they are inactive.
+- A provider cannot be assigned when their provider type does not match the required provider type.
+- A provider cannot be assigned to a center without an active credential for the shift date.
+- A provider cannot be assigned without compatible schedule-week availability.
+- A provider cannot be assigned when weekday availability is missing, `unset`, `none`, or missing the slot `shift_type`.
+- A provider cannot be assigned to a required room type they cannot cover.
+- A provider cannot be assigned when they do not meet the required room type proficiency level.
+- A non-MD provider cannot be assigned to an MD-only room or MD-specific requirement.
 
 If exact coverage makes the model infeasible, record constraint violations and fail the request clearly.
 
 Do not silently relax hard constraints.
+
+Hard solver constraints should match the manual Provider eligibility service. When the eligibility service adds or changes a hard constraint, update solver candidate generation in the same change.
 
 ## Initial Soft Constraints
 
@@ -240,10 +293,14 @@ Soft constraints should affect the objective score.
 
 Start with:
 
-- Prefer assignments inside `preferred` availability blocks.
-- Penalize assignments inside `avoid_if_possible` blocks.
-- Balance total assignment counts across providers.
+- Keep providers at or above `min_shifts_requested` when enough eligible demand exists.
+- Keep providers at or below `max_shifts_requested` when enough eligible supply exists.
+- Balance total assignment counts across providers after min/max requests are considered.
 - Prefer continuity with the previous draft or published version later.
+- Prefer assignments inside future `preferred` availability or preference data later.
+- Penalize assignments inside future `avoid_if_possible` availability or preference data later.
+- Prefer exact shift-type matches if the product later allows substitution.
+- Penalize full-shift requests fulfilled by half or short shifts later, only after that substitution is explicitly allowed.
 - Penalize center switching on the same day later.
 - Penalize too many consecutive work days later.
 
@@ -254,11 +311,18 @@ Keep weights named constants so they can be tuned without digging through solver
 Example:
 
 ```python
-PREFERRED_BLOCK_REWARD = 10
-AVOID_BLOCK_PENALTY = 25
+BELOW_MIN_SHIFT_REQUEST_PENALTY = 20
+ABOVE_MAX_SHIFT_REQUEST_PENALTY = 30
 ASSIGNMENT_IMBALANCE_PENALTY = 3
+SHIFT_TYPE_SUBSTITUTION_PENALTY = 50
 ```
+
+Solver output should include warning-level constraint rows for providers below `min_shifts_requested` or above `max_shifts_requested`.
+
+These warning rows should not block publish.
+
+Do not turn `min_shifts_requested` or `max_shifts_requested` into hard constraints unless product direction explicitly changes them.
 
 ## Persistence
 
-Solver output should be saved using the schedule version model from `docs/plans/save_schedules.md`.
+Solver output should be saved using the schedule version, assignment, and constraint violation models described in `docs/project.md`.

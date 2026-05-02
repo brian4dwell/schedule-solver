@@ -4,7 +4,9 @@
 
 Each scheduled room slot should support selecting a specific Provider.
 
-The selected Provider must be validated against credentialing, room skills, provider type, MD-specific requirements, weekly availability, min/max shift requests, and overlapping assignments before the schedule can be published.
+The selected Provider must be validated against credentialing, room skills, provider type, MD-specific requirements, weekly availability, and overlapping assignments before the schedule can be published.
+
+Provider min/max shift requests are soft scheduling constraints. They should be visible as warnings, but they should not make a Provider ineligible and should not block publishing.
 
 Draft schedules may keep complete Provider assignments even when one or more assignments currently have unresolved eligibility warnings or hard-constraint violations.
 
@@ -47,8 +49,7 @@ Hard constraints to validate:
 - MD-specific requirements are satisfied for the assigned shift or service type.
 - The Provider is active.
 - The Provider type matches the slot requirement when one is set.
-- The Provider has submitted compatible weekly availability for the slot day and shift type when availability is treated as a hard constraint.
-- Assigning the slot would not put the Provider over the maximum requested shift count for the schedule week.
+- The Provider has submitted compatible weekly availability for the slot day and shift type.
 - The Provider is not already assigned to another overlapping slot in the same schedule version.
 
 Filtering rule:
@@ -68,8 +69,7 @@ A Provider can cover a room slot when:
 - The Provider has the skills required by the Room's room types.
 - Each required skill meets the required proficiency or certification level.
 - The Provider can cover MD-specific shifts, services, or `md_only` Rooms when applicable.
-- The Provider's weekly availability for the slot weekday is compatible with the slot shift type when availability is a hard constraint.
-- The Provider's assignment count for the schedule week, including the candidate slot, does not exceed `max_shifts_requested`.
+- The Provider's weekly availability for the slot weekday is compatible with the slot shift type.
 - The Provider is not already assigned to another overlapping slot in the same schedule version.
 
 If any rule fails, the slot may keep the selected Provider as an invalid draft assignment until the user changes it or publish validation blocks the schedule.
@@ -128,10 +128,10 @@ Min/max shift request rules:
 - Both values must be integers from `0` through `14`.
 - `min_shifts_requested` must be less than or equal to `max_shifts_requested`.
 - Both values must be less than or equal to the count of weekdays with work availability selected.
-- `max_shifts_requested` is a hard cap for publish validation and solver candidate generation.
-- `min_shifts_requested` is a schedule-level target, not a per-slot eligibility rule.
+- `min_shifts_requested` and `max_shifts_requested` are schedule-level targets, not per-slot eligibility rules.
 - A Provider below `min_shifts_requested` should produce a schedule-level warning or solver objective signal.
-- Do not block assigning one otherwise eligible slot only because the Provider is currently below `min_shifts_requested`.
+- A Provider above `max_shifts_requested` should produce a schedule-level warning or solver objective signal.
+- Do not block assigning one otherwise eligible slot only because the Provider is currently below `min_shifts_requested` or above `max_shifts_requested`.
 - Count a Provider's assigned shifts once per scheduled slot in the schedule week.
 
 Published schedule weeks lock availability edits.
@@ -148,10 +148,14 @@ Minimum reason categories:
 - Credential expired or inactive.
 - Missing required skill.
 - MD requirement not met.
-- Availability not supplied, if availability is treated as a hard constraint.
-- Availability incompatible with the slot shift type, if availability is treated as a hard constraint.
+- Availability not supplied.
+- Availability incompatible with the slot shift type.
+
+Minimum schedule constraint warning categories:
+
 - Weekly maximum shift request exceeded.
-- Weekly minimum shift request not met for schedule-level validation.
+- Weekly minimum shift request not met.
+- Future provider preference or schedule quality rule missed.
 
 UI display behavior:
 
@@ -294,29 +298,42 @@ Provider picker behavior:
 - Display at least one reason for every ineligible Provider.
 - Display multiple reasons when more than one hard constraint fails.
 - Display availability status for the slot weekday and shift type.
-- Display weekly shift count against min/max requested shifts when it affects eligibility or warnings.
+- Display weekly shift count against min/max requested shifts when it creates a warning.
 - Apply the existing secondary sort within the eligible and ineligible sections.
+
+The schedule header should summarize incomplete availability as:
+
+```text
+X out of Y Providers have unset availability.
+```
+
+When one or more Providers have unset availability, the header should expose a compact toggle that reveals the Provider names.
+
+The schedule workspace should show a `Schedule constraints` table directly underneath the calendar. The table should list hard blockers, min/max shift request warnings, and future soft constraints in one place.
+
+Recommended table columns:
+
+- Severity.
+- Scope.
+- Subject.
+- Constraint.
+- Message.
+
+Hard rows count toward publish blockers.
+
+Warning and soft rows do not count toward publish blockers.
 
 The frontend may run lightweight local checks for responsive UI, but the backend remains the source of truth.
 
 ## UI Implementation TODOs
 
-The availability editor and basic schedule Provider picker exist. The remaining UI work is to connect them through the backend eligibility contract.
+The availability editor, schedule Provider picker, schedule-week availability loading, backend selection verification, unset-availability header summary, and schedule constraints table exist.
 
-TODO:
+Remaining TODO:
 
-- Load Provider weekly availability for the active schedule week into the schedule workspace.
-- Include slot `shiftType`, start time, end time, and schedule week in Provider eligibility requests.
-- Show a distinct reason when a Provider has `unset` availability for the slot weekday.
-- Show a distinct reason when a Provider has `none` availability for the slot weekday.
-- Show a distinct reason when the slot shift type is not included in the Provider's weekday options.
-- Show the Provider's assigned shift count against `min_shifts_requested` and `max_shifts_requested`.
-- Mark Providers at or over `max_shifts_requested` as ineligible for additional slots.
-- Surface `min_shifts_requested` misses as schedule-level warnings instead of per-slot blockers.
-- Recompute picker eligibility when a slot's day, shift type, time, Room, or Provider changes.
-- Recompute picker eligibility after availability is saved or deleted.
-- Use the backend eligibility response for final picker reason codes instead of only local room/provider checks.
-- Keep the local checks only as optimistic UI hints while backend validation is loading.
+- Add preference-driven soft constraint rows when Provider preferences exist.
+- Add schedule-quality soft constraint rows when the solver accepts a half or short shift to satisfy a full-shift request.
+- Recompute picker eligibility after availability is saved or deleted from another page without requiring a route refresh.
 - Disable availability editing for published weeks in the UI, matching the API lock behavior.
 
 ## Backend Validation Contract
@@ -398,7 +415,7 @@ Before persisting assignments:
 3. Validate every submitted Provider assignment through the eligibility service.
 4. Create the new schedule version in draft state.
 5. Insert assignments.
-6. Insert constraint violations for invalid or warning-level assignments.
+6. Insert constraint violations for invalid assignments and persist warning-level rows when the warning is produced by backend validation.
 7. Return the new version and its validation summary.
 
 Do not mutate assignments from previous versions.
@@ -407,11 +424,11 @@ Draft save should not remove Provider assignments just because a Provider is cur
 
 ## Publishing Manual Assignments
 
-Publish should re-run Provider eligibility against the latest credential, skill, MD status, weekly availability, min/max shift requests, and assignment state.
+Publish should re-run Provider eligibility against the latest credential, skill, MD status, weekly availability, and assignment state.
 
 Publish must fail when any assigned Provider has a hard-constraint violation.
 
-Publish should return schedule-level warnings when a Provider is assigned fewer than `min_shifts_requested` shifts.
+Publish may return schedule-level warnings when a Provider is assigned fewer than `min_shifts_requested` shifts or more than `max_shifts_requested` shifts.
 
 Publish validation should return a structured summary that identifies each invalid assignment and its reason codes.
 
@@ -421,7 +438,7 @@ The solver should reuse the eligibility rules during candidate generation.
 
 For each shift requirement, create Provider candidates only when the eligibility result is valid.
 
-The solver should use `min_shifts_requested` as an objective signal and `max_shifts_requested` as a hard upper bound.
+The solver should use `min_shifts_requested` and `max_shifts_requested` as objective signals unless product direction explicitly changes them into hard solver constraints.
 
 Do not create solver decision variables for invalid Provider-room-slot combinations.
 
@@ -489,10 +506,10 @@ The interactive endpoint is only a convenience for better UI feedback.
 5. Compute Provider eligibility summaries when Providers are loaded for a slot.
 6. Add a Provider picker to each room slot.
 7. Sort eligible Providers before ineligible Providers.
-8. Display availability and min/max shift reasons in the picker.
+8. Display availability reasons in the picker.
 9. Add backend Provider eligibility contracts.
 10. Add the Provider eligibility service.
-11. Add schedule-week availability and min/max shift checks to the eligibility service.
+11. Add schedule-week availability checks to the eligibility service.
 12. Add tests for Provider eligibility rules.
 13. Add schedule version draft save validation.
 14. Persist violations for invalid saved draft assignments.
@@ -512,10 +529,10 @@ Add focused backend tests for:
 - A Provider missing a required room type skill is rejected.
 - A Provider with insufficient skill level is rejected.
 - A non-MD Provider is rejected for an MD-specific Room, shift, or service.
-- A Provider with `unset` availability is rejected when availability is a hard constraint.
-- A Provider with `none` availability is rejected when availability is a hard constraint.
-- A Provider without the slot shift type in weekday availability is rejected when availability is a hard constraint.
-- A Provider at `max_shifts_requested` is rejected for an additional slot.
+- A Provider with `unset` availability is rejected.
+- A Provider with `none` availability is rejected.
+- A Provider without the slot shift type in weekday availability is rejected.
+- A Provider above `max_shifts_requested` creates a warning and remains eligible.
 - A Provider below `min_shifts_requested` creates a schedule-level warning.
 - A Provider already assigned to an overlapping slot is rejected.
 - An invalid manual draft save creates a new schedule version and records constraint violations.
@@ -541,8 +558,9 @@ This plan is complete when:
 - Every ineligible Provider has at least one visible reason explaining why they are not eligible.
 - Provider rows can show multiple ineligibility reasons.
 - Provider picker reflects weekly availability for the slot weekday and shift type.
-- Provider picker reflects `max_shifts_requested` as a hard cap.
-- Schedule-level validation reports Providers below `min_shifts_requested` without blocking individual slot assignment.
+- Schedule constraints table reports Providers below `min_shifts_requested` or above `max_shifts_requested` without blocking individual slot assignment or publish.
+- Schedule constraints table lists hard blockers, min/max warnings, and future soft constraints in one place.
+- Schedule header summarizes how many Providers still have unset availability and can reveal the Provider names.
 - If eligibility changes through credentials, skills, MD status, or availability updates, the picker and publish eligibility reflect the latest state.
 - The backend validates Provider eligibility with typed contracts.
 - Manual schedule saves validate every Provider assignment and record violations.
