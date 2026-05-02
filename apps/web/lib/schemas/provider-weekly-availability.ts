@@ -29,8 +29,19 @@ export const providerWeeklyAvailabilitySchema = z
     scheduleWeekId: z.string().uuid(),
     providerId: z.string().uuid(),
     isLocked: z.boolean(),
+    minShiftsRequested: z.number().int().min(0).max(14),
+    maxShiftsRequested: z.number().int().min(0).max(14),
     days: z.array(providerWeeklyAvailabilityDaySchema).length(7),
   })
+  .refine(
+    (value) => {
+      const minimum = value.minShiftsRequested;
+      const maximum = value.maxShiftsRequested;
+      const isValidRange = minimum <= maximum;
+      return isValidRange;
+    },
+    { message: "Minimum shifts requested must be less than or equal to maximum shifts requested." },
+  )
   .refine(
     (value) => {
       const weekdays = value.days.map((day) => day.weekday);
