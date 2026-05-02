@@ -42,6 +42,7 @@ export const scheduleRoomAssignmentSchema = z.object({
   dayKey: scheduleDayKeySchema,
   centerId: z.string().uuid(),
   roomId: z.string().uuid(),
+  shiftType: z.enum(["full_shift", "first_half", "second_half", "short_shift"]),
   providerId: z.string().uuid().nullable(),
   startTime: z.string().min(1),
   endTime: z.string().min(1),
