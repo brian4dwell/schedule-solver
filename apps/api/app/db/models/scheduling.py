@@ -195,6 +195,25 @@ class ProviderAvailability(Base, TimestampMixin):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ProviderScheduleWeekAvailability(Base, TimestampMixin):
+    __tablename__ = "provider_schedule_week_availability"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "schedule_week_id",
+            "provider_id",
+            "weekday",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    schedule_week_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("schedule_periods.id"), nullable=False)
+    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
+    weekday: Mapped[str] = mapped_column(String(20), nullable=False)
+    availability_option: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
 class ShiftRequirement(Base, TimestampMixin):
     __tablename__ = "shift_requirements"
 
