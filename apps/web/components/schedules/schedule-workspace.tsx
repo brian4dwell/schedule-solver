@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import {
+  generateScheduleVersion,
   publishScheduleVersion,
   saveDraftScheduleVersion,
   type Center,
@@ -584,6 +585,7 @@ export function ScheduleWorkspace({
     return publishEventsFromDetail(initialVersionDetail);
   });
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [showWeekends, setShowWeekends] = useState(false);
@@ -741,6 +743,42 @@ export function ScheduleWorkspace({
       setActionMessage("Draft save failed.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleGenerateSchedule() {
+    const parentVersionId =
+      savedVersionDetail === null ? null : savedVersionDetail.version.id;
+    const payload = {
+      parent_schedule_version_id: parentVersionId,
+      notes: null,
+      assignments: savePayloadFromAssignments(workingVersion.assignments),
+    };
+
+    setIsGenerating(true);
+    setActionMessage(null);
+
+    try {
+      const detail = await generateScheduleVersion(scheduleId, payload);
+      const generatedAssignmentCount = detail.assignments.length;
+      const currentAssignmentCount = workingVersion.assignments.length;
+      const wouldClearWorkingSchedule =
+        generatedAssignmentCount === 0 && currentAssignmentCount > 0;
+
+      if (wouldClearWorkingSchedule) {
+        setActionMessage("Generation produced no assignments, so the current board was kept.");
+        return;
+      }
+
+      const nextVersion = versionFromDetail(schedulePeriod, detail);
+      const duration = detail.metrics.solve_duration_ms;
+      setSavedVersionDetail(detail);
+      updateWorkingVersion(nextVersion);
+      setActionMessage(`Generated draft in ${duration} ms.`);
+    } catch {
+      setActionMessage("Schedule generation could not satisfy all constraints.");
+    } finally {
+      setIsGenerating(false);
     }
   }
 
@@ -1000,6 +1038,14 @@ export function ScheduleWorkspace({
               />
               Show weekends
             </label>
+            <button
+              type="button"
+              onClick={handleGenerateSchedule}
+              disabled={isGenerating}
+              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+            >
+              {isGenerating ? "Generating" : "Generate draft"}
+            </button>
             <button
               type="button"
               onClick={handleSaveDraft}

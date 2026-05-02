@@ -13,7 +13,8 @@ dependencies = [
   "redis>=5.1.1",
   "rq>=2.0.0",
   "sqlalchemy>=2.0.35",
-  "uvicorn[standard]>=0.30.6"
+  "uvicorn[standard]>=0.30.6",
+  "ortools>=9.15.6755",
 ]
 
 [dependency-groups]

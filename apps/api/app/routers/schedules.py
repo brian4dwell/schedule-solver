@@ -18,6 +18,8 @@ from app.schemas.schedule import AssignmentRead
 from app.schemas.schedule import ConstraintViolationRead
 from app.schemas.schedule import ScheduleDraftSaveRequest
 from app.schemas.schedule import ScheduleDraftSaveResponse
+from app.schemas.schedule import ScheduleGenerateRequest
+from app.schemas.schedule import ScheduleGenerateResponse
 from app.schemas.schedule import ScheduleAssignmentCreate
 from app.schemas.schedule import SchedulePeriodCreate
 from app.schemas.schedule import SchedulePeriodRead
@@ -29,6 +31,7 @@ from app.services.scheduling.provider_eligibility import check_provider_slot_eli
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityViolation
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityInput
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityResult
+from app.services.scheduling.solver_service import generate_schedule_draft
 
 router = APIRouter(tags=["schedules"])
 
@@ -377,6 +380,52 @@ def list_schedule_versions(
     statement = statement.order_by(ScheduleVersion.version_number.desc())
     versions = list(session.scalars(statement))
     return versions
+
+
+@router.post(
+    "/schedule-periods/{period_id}/generate",
+    response_model=ScheduleGenerateResponse,
+    status_code=201,
+)
+def generate_schedule_period(
+    period_id: UUID,
+    request: ScheduleGenerateRequest | None = None,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> ScheduleGenerateResponse:
+    generate_request = request
+
+    if generate_request is None:
+        generate_request = ScheduleGenerateRequest()
+
+    schedule_period = require_schedule_period(period_id, organization_id, session)
+    validate_parent_version(
+        generate_request.parent_schedule_version_id,
+        period_id,
+        organization_id,
+        session,
+    )
+    generated_draft = generate_schedule_draft(
+        schedule_period,
+        generate_request.parent_schedule_version_id,
+        generate_request.notes,
+        organization_id,
+        session,
+        generate_request.assignments,
+    )
+    response = ScheduleGenerateResponse(
+        version=generated_draft.version,
+        assignments=generated_draft.assignments,
+        violations=generated_draft.violations,
+        metrics=generated_draft.metrics,
+        is_feasible=generated_draft.is_feasible,
+    )
+
+    if not generated_draft.is_feasible:
+        detail = response.model_dump(mode="json")
+        raise HTTPException(status_code=409, detail=detail)
+
+    return response
 
 
 @router.post("/schedule-provider-eligibility", response_model=ProviderSlotEligibilityResult)

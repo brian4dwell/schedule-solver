@@ -16,6 +16,7 @@ import {
 import {
   persistedScheduleVersionApiSchema,
   scheduleDraftSaveResponseApiSchema,
+  scheduleGenerateResponseApiSchema,
   schedulePeriodApiSchema,
   schedulePeriodFormSchema,
   schedulePublishResponseApiSchema,
@@ -24,6 +25,7 @@ import {
   type SchedulePeriodApi,
   type SchedulePeriodFormValues,
   type PersistedScheduleVersionApi,
+  type ScheduleGenerateResponseApi,
   type SchedulePublishResponseApi,
 } from "@/lib/schemas/schedule";
 
@@ -70,6 +72,8 @@ export type PersistedScheduleVersion = PersistedScheduleVersionApi;
 
 export type ScheduleVersionDetail = ScheduleVersionDetailApi;
 
+export type ScheduleGenerateResponse = ScheduleGenerateResponseApi;
+
 export type SchedulePublishResponse = SchedulePublishResponseApi;
 
 export type ScheduleAssignmentSavePayload = {
@@ -86,6 +90,12 @@ export type ScheduleAssignmentSavePayload = {
 
 export type ScheduleDraftSavePayload = {
   schedule_period_id: string;
+  parent_schedule_version_id: string | null;
+  notes: string | null;
+  assignments: ScheduleAssignmentSavePayload[];
+};
+
+export type ScheduleGeneratePayload = {
   parent_schedule_version_id: string | null;
   notes: string | null;
   assignments: ScheduleAssignmentSavePayload[];
@@ -382,6 +392,19 @@ export async function saveDraftScheduleVersion(
   const responseJson = await requestJson<unknown>("/schedule-versions/draft", init);
   const detail = scheduleDraftSaveResponseApiSchema.parse(responseJson);
   return detail;
+}
+
+export async function generateScheduleVersion(
+  periodId: string,
+  payload: ScheduleGeneratePayload,
+): Promise<ScheduleGenerateResponse> {
+  const init = jsonRequestInit("POST", payload);
+  const responseJson = await requestJson<unknown>(
+    `/schedule-periods/${periodId}/generate`,
+    init,
+  );
+  const response = scheduleGenerateResponseApiSchema.parse(responseJson);
+  return response;
 }
 
 export async function publishScheduleVersion(

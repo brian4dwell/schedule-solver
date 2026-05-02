@@ -8,6 +8,7 @@ from pydantic import Field
 
 from app.schemas.common import TimestampedSchema
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityViolation
+from app.services.scheduling.solver_contracts import SolverRunMetrics
 
 
 class ProviderEligibilityRequest(BaseModel):
@@ -38,6 +39,12 @@ class ScheduleDraftSaveRequest(BaseModel):
     parent_schedule_version_id: UUID | None = None
     notes: str | None = None
     assignments: list[ScheduleAssignmentCreate] = Field(default_factory=list)
+
+
+class ScheduleGenerateRequest(BaseModel):
+    parent_schedule_version_id: UUID | None = None
+    notes: str | None = None
+    assignments: list[ScheduleAssignmentCreate] | None = None
 
 
 class SchedulePeriodCreate(BaseModel):
@@ -110,6 +117,14 @@ class ScheduleDraftSaveResponse(BaseModel):
     version: ScheduleVersionRead
     assignments: list[AssignmentRead]
     violations: list[ConstraintViolationRead]
+
+
+class ScheduleGenerateResponse(BaseModel):
+    version: ScheduleVersionRead
+    assignments: list[AssignmentRead]
+    violations: list[ConstraintViolationRead]
+    metrics: SolverRunMetrics
+    is_feasible: bool
 
 
 class SchedulePublishResponse(BaseModel):

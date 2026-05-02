@@ -129,6 +129,19 @@ export const scheduleVersionDetailApiSchema = z.object({
 
 export const scheduleDraftSaveResponseApiSchema = scheduleVersionDetailApiSchema;
 
+export const solverRunMetricsApiSchema = z.object({
+  solve_duration_ms: z.number().int().min(0),
+  payload_size_bytes: z.number().int().min(0),
+  too_long_threshold_ms: z.number().int().min(0),
+  exceeded_too_long_threshold: z.boolean(),
+});
+
+export const scheduleGenerateResponseApiSchema =
+  scheduleVersionDetailApiSchema.extend({
+    metrics: solverRunMetricsApiSchema,
+    is_feasible: z.boolean(),
+  });
+
 export const providerEligibilityViolationApiSchema = z.object({
   severity: z.string().min(1),
   constraint_type: z.string().min(1),
@@ -192,6 +205,10 @@ export type PersistedScheduleVersionApi = z.infer<
 
 export type ScheduleVersionDetailApi = z.infer<
   typeof scheduleVersionDetailApiSchema
+>;
+
+export type ScheduleGenerateResponseApi = z.infer<
+  typeof scheduleGenerateResponseApiSchema
 >;
 
 export type SchedulePublishResponseApi = z.infer<

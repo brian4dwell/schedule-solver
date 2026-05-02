@@ -8,6 +8,8 @@ import {
   listProviders,
   listRoomsForCenter,
   listScheduleVersions,
+  type PersistedScheduleVersion,
+  type ScheduleVersionDetail,
 } from "@/lib/api";
 
 type ScheduleDetailPageProps = {
@@ -16,6 +18,33 @@ type ScheduleDetailPageProps = {
   }>;
 };
 
+function shouldSkipEmptyGeneratedVersion(
+  version: PersistedScheduleVersion,
+  detail: ScheduleVersionDetail,
+) {
+  const isSolverVersion = version.source === "solver";
+  const hasNoAssignments = detail.assignments.length === 0;
+  const shouldSkip = isSolverVersion && hasNoAssignments;
+  return shouldSkip;
+}
+
+async function loadInitialVersionDetail(
+  versions: PersistedScheduleVersion[],
+) {
+  for (const version of versions) {
+    const detail = await getScheduleVersion(version.id);
+    const shouldSkip = shouldSkipEmptyGeneratedVersion(version, detail);
+
+    if (shouldSkip) {
+      continue;
+    }
+
+    return detail;
+  }
+
+  return null;
+}
+
 export default async function ScheduleDetailPage({
   params,
 }: ScheduleDetailPageProps) {
@@ -23,11 +52,7 @@ export default async function ScheduleDetailPage({
   const scheduleId = routeParams.scheduleId;
   const schedulePeriod = await getSchedulePeriod(scheduleId);
   const scheduleVersions = await listScheduleVersions(scheduleId);
-  const latestVersion = scheduleVersions.at(0);
-  const initialVersionDetail =
-    latestVersion === undefined
-      ? null
-      : await getScheduleVersion(latestVersion.id);
+  const initialVersionDetail = await loadInitialVersionDetail(scheduleVersions);
   const centers = await listCenters();
   const providers = await listProviders();
   const roomGroups = await Promise.all(
