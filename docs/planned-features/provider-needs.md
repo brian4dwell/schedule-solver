@@ -22,6 +22,8 @@ If a Provider does not submit availability for a schedule week, treat that as no
 
 The schedule-week availability record is the only availability input in scope.
 
+Min-shifts-requested and max-shifts-requested constraints are out of scope for this slice.
+
 ## Placement In The App
 
 Add an `Availability` section to the current app menu.
@@ -47,6 +49,7 @@ Allowed daily options:
 - `second_half`
 - `short_shift`
 - `none`
+- `unset`
 
 Use these values consistently across UI contracts and API contracts.
 
@@ -71,7 +74,7 @@ Recommended flow:
 
 The editor should show all seven days in one view.
 
-Each day should use a single-select control with the five allowed values.
+Each day should use a single-select control with the six allowed values.
 
 Show a clear badge for draft lock state.
 
@@ -83,9 +86,26 @@ When creating availability for a Provider in a new schedule week:
 2. Prefill all seven day selections from that prior week.
 3. Allow the user to adjust any day before saving.
 
-If no prior week exists, initialize all days to `none`.
+If no prior week exists, initialize all days to `unset`.
 
 Do not add fallback inference beyond this defaulting behavior.
+
+
+## Reminder Semantics
+
+`unset` is distinct from `none` so reminder jobs can target missing responses.
+
+Practitioner reminder notification delivery remains out of scope for this slice.
+
+## Preferred Center Planning
+
+Plan a follow-on `preferred_center` input that can be used as a solver soft constraint.
+
+Recommended direction:
+
+- Support weighted points per center and explicit rank ordering.
+- Keep preferred-center input separate from hard eligibility constraints.
+- Keep this outside the first availability UI slice.
 
 ## CRUD Behavior
 
@@ -122,6 +142,7 @@ export const availabilityOptionSchema = z.enum([
   "second_half",
   "short_shift",
   "none",
+  "unset",
 ]);
 
 export const weekdaySchema = z.enum([
@@ -197,6 +218,8 @@ This availability input is schedule-week specific.
 
 `none` means the Provider is unavailable for that day.
 
+`unset` means the Provider has not submitted availability for that day yet.
+
 Other options mean limited or full availability based on shift segmentation rules.
 
 Exact slot-level eligibility mapping for `first_half`, `second_half`, and `short_shift` should be defined in scheduling rule contracts.
@@ -211,7 +234,7 @@ Build in this order:
 2. Add API client for schedule-week provider availability endpoints.
 3. Add `Availability` menu section visible to managers.
 4. Add schedule-week and Provider selector.
-5. Add seven-day editor with five-option daily selector.
+5. Add seven-day editor with six-option daily selector.
 6. Add default-from-prior-week prefill on create.
 7. Enforce draft lock in UI.
 
@@ -222,9 +245,10 @@ Practitioner-facing UI and notifications come later.
 This plan is ready when:
 
 - Manager can open a schedule week and set availability for any Provider.
-- Each day requires one of five allowed options.
+- Each day requires one of six allowed options.
 - New week defaults to the Provider's prior saved week when available.
 - Availability can be edited until the schedule is drafted.
 - Availability becomes locked after draft.
 - No vacation/time-off feature is required for this slice.
+- Min-shifts-requested and max-shifts-requested constraints remain out of scope.
 - Contracts use typed models with Zod validation at frontend boundaries.
