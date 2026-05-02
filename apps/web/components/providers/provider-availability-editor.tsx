@@ -53,6 +53,11 @@ function createDayMap(record: ProviderWeeklyAvailabilityRecord) {
   return dayMap;
 }
 
+function parseShiftCountInput(value: string) {
+  const parsedValue = Number.parseInt(value, 10);
+  return parsedValue;
+}
+
 export function ProviderAvailabilityEditor(props: {
   periods: SchedulePeriod[];
   providers: Provider[];
@@ -158,7 +163,49 @@ export function ProviderAvailabilityEditor(props: {
       scheduleWeekId: record.scheduleWeekId,
       providerId: record.providerId,
       isLocked: record.isLocked,
+      minShiftsRequested: record.minShiftsRequested,
+      maxShiftsRequested: record.maxShiftsRequested,
       days: nextDays,
+    };
+    setRecord(nextRecord);
+  }
+
+  function updateMinShiftsRequested(value: string) {
+    if (record === null) {
+      return;
+    }
+    const parsedValue = parseShiftCountInput(value);
+    const parsedValueIsInvalid = Number.isNaN(parsedValue);
+    if (parsedValueIsInvalid) {
+      return;
+    }
+    const nextRecord = {
+      scheduleWeekId: record.scheduleWeekId,
+      providerId: record.providerId,
+      isLocked: record.isLocked,
+      minShiftsRequested: parsedValue,
+      maxShiftsRequested: record.maxShiftsRequested,
+      days: record.days,
+    };
+    setRecord(nextRecord);
+  }
+
+  function updateMaxShiftsRequested(value: string) {
+    if (record === null) {
+      return;
+    }
+    const parsedValue = parseShiftCountInput(value);
+    const parsedValueIsInvalid = Number.isNaN(parsedValue);
+    if (parsedValueIsInvalid) {
+      return;
+    }
+    const nextRecord = {
+      scheduleWeekId: record.scheduleWeekId,
+      providerId: record.providerId,
+      isLocked: record.isLocked,
+      minShiftsRequested: record.minShiftsRequested,
+      maxShiftsRequested: parsedValue,
+      days: record.days,
     };
     setRecord(nextRecord);
   }
@@ -256,6 +303,30 @@ export function ProviderAvailabilityEditor(props: {
 
       {record !== null ? (
         <div className="mt-4 grid gap-3">
+          <label className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3">
+            <span className="text-sm font-medium text-slate-700">Min shifts requested</span>
+            <input
+              className="w-24 rounded-md border border-slate-300 px-3 py-2 text-sm"
+              type="number"
+              min={0}
+              max={14}
+              value={record.minShiftsRequested}
+              disabled={isLocked}
+              onChange={(event) => updateMinShiftsRequested(event.target.value)}
+            />
+          </label>
+          <label className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3">
+            <span className="text-sm font-medium text-slate-700">Max shifts requested</span>
+            <input
+              className="w-24 rounded-md border border-slate-300 px-3 py-2 text-sm"
+              type="number"
+              min={0}
+              max={14}
+              value={record.maxShiftsRequested}
+              disabled={isLocked}
+              onChange={(event) => updateMaxShiftsRequested(event.target.value)}
+            />
+          </label>
           {weekdayOrder.map((weekday) => {
             const options = dayMap.get(weekday) ?? ["unset"];
             return (
