@@ -40,3 +40,13 @@ export const providerWeeklyAvailabilitySchema = z
     },
     { message: "Each weekday must appear exactly once." },
   );
+
+export const providerWeeklyAvailabilityApiSchema = providerWeeklyAvailabilitySchema;
+
+export type ProviderWeeklyAvailability = z.infer<
+  typeof providerWeeklyAvailabilitySchema
+>;
+
+export type AvailabilityOption = z.infer<typeof availabilityOptionSchema>;
+
+export type Weekday = z.infer<typeof weekdaySchema>;
