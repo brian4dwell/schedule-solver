@@ -46,9 +46,9 @@ function labelForOption(option: AvailabilityOption) {
 }
 
 function createDayMap(record: ProviderWeeklyAvailabilityRecord) {
-  const dayMap = new Map<Weekday, AvailabilityOption>();
+  const dayMap = new Map<Weekday, AvailabilityOption[]>();
   record.days.forEach((day) => {
-    dayMap.set(day.weekday, day.option);
+    dayMap.set(day.weekday, day.options);
   });
   return dayMap;
 }
@@ -114,7 +114,7 @@ export function ProviderAvailabilityEditor(props: {
 
   const dayMap = useMemo(() => {
     if (record === null) {
-      return new Map<Weekday, AvailabilityOption>();
+      return new Map<Weekday, AvailabilityOption[]>();
     }
 
     const mappedDays = createDayMap(record);
@@ -123,7 +123,7 @@ export function ProviderAvailabilityEditor(props: {
 
   const isLocked = record?.isLocked ?? false;
 
-  function updateDay(weekday: Weekday, option: AvailabilityOption) {
+  function updateDay(weekday: Weekday, option: AvailabilityOption, isChecked: boolean) {
     if (record === null) {
       return;
     }
@@ -133,9 +133,23 @@ export function ProviderAvailabilityEditor(props: {
         return day;
       }
 
+      const currentOptions = day.options;
+      const optionsWithoutSelectedOption = currentOptions.filter((value) => value !== option);
+      const checkedOptions = isChecked ? [...currentOptions, option] : optionsWithoutSelectedOption;
+      const uniqueOptions = Array.from(new Set(checkedOptions));
+      const selectedUnsetOption = uniqueOptions.includes("unset");
+      const selectedNoneOption = uniqueOptions.includes("none");
+      const selectedExclusiveOption = selectedUnsetOption || selectedNoneOption;
+      const selectedWorkOptions = uniqueOptions.filter((value) => value !== "unset" && value !== "none");
+      const selectedExclusiveOptions = uniqueOptions.filter((value) => value === "unset" || value === "none");
+      const lastExclusiveOption = selectedExclusiveOptions.at(-1);
+      const optionsWithExclusiveRule = selectedExclusiveOption
+        ? [lastExclusiveOption ?? "unset"]
+        : selectedWorkOptions;
+      const optionsWithDefault = optionsWithExclusiveRule.length > 0 ? optionsWithExclusiveRule : ["unset"];
       const nextDay = {
         weekday: day.weekday,
-        option,
+        options: optionsWithDefault,
       };
       return nextDay;
     });
@@ -243,29 +257,30 @@ export function ProviderAvailabilityEditor(props: {
       {record !== null ? (
         <div className="mt-4 grid gap-3">
           {weekdayOrder.map((weekday) => {
-            const option = dayMap.get(weekday) ?? "unset";
+            const options = dayMap.get(weekday) ?? ["unset"];
             return (
               <label
                 key={weekday}
                 className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3"
               >
                 <span className="text-sm font-medium text-slate-700">{labelForWeekday(weekday)}</span>
-                <select
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  value={option}
-                  disabled={isLocked}
-                  onChange={(event) =>
-                    updateDay(weekday, event.target.value as AvailabilityOption)
-                  }
-                >
+                <div className="flex flex-wrap justify-end gap-3">
                   {availabilityOptions.map((item) => {
+                    const isChecked = options.includes(item);
                     return (
-                      <option key={item} value={item}>
-                        {labelForOption(item)}
-                      </option>
+                      <label key={item} className="flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300"
+                          checked={isChecked}
+                          disabled={isLocked}
+                          onChange={(event) => updateDay(weekday, item, event.target.checked)}
+                        />
+                        <span>{labelForOption(item)}</span>
+                      </label>
                     );
                   })}
-                </select>
+                </div>
               </label>
             );
           })}

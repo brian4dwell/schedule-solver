@@ -63,12 +63,14 @@ def build_read_response(schedule_week: SchedulePeriod, provider_id: UUID, rows: 
 
     for weekday in WEEKDAY_VALUES:
         row = row_by_weekday.get(weekday)
-        option = "unset"
+        options = ["unset"]
 
         if row is not None:
-            option = row.availability_option
+            options_text = row.availability_option
+            parsed_options = [value for value in options_text.split(",") if value != ""]
+            options = parsed_options
 
-        day_values.append(ProviderAvailabilityDayRead(weekday=weekday, option=option))
+        day_values.append(ProviderAvailabilityDayRead(weekday=weekday, options=options))
 
     is_locked = schedule_week_is_locked(schedule_week)
     response = ProviderWeeklyAvailabilityRead(
@@ -103,12 +105,13 @@ def replace_provider_weekly_availability(schedule_week_id: UUID, provider_id: UU
         session.delete(row)
 
     for day in request.days:
+        serialized_options = ",".join(day.options)
         created_row = ProviderScheduleWeekAvailability(
             organization_id=organization_id,
             schedule_week_id=schedule_week_id,
             provider_id=provider_id,
             weekday=day.weekday,
-            availability_option=day.option,
+            availability_option=serialized_options,
         )
         session.add(created_row)
 
