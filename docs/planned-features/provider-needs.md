@@ -1,263 +1,129 @@
-# Provider Needs UI Plan
+# Provider Availability Per Schedule Week Plan
 
 ## Goal
 
-Create a Provider availability and needs CRUD system that lets schedulers capture when a Provider can work, when they cannot work, how much they should work, and what they prefer.
+Create a weekly Provider availability flow that is requested and captured per schedule week.
 
-This feature should support statements like:
+Availability is not a global repeating weekly pattern.
 
-- I am only available Monday, Wednesday, and Friday.
-- I need at least 2 shifts per week.
-- I can work at most 4 shifts per week.
-- I prefer Peds.
-- I will work anything else in my skills.
-- I need vacation time on April 12.
+Each new schedule week asks for that specific week's availability.
 
-The UI should make hard constraints visually and structurally different from soft preferences.
+Each week can be different.
 
-The backend should remain the source of truth for whether a Provider can be assigned to a schedule slot.
+Each new week should default to the Provider's most recently saved week to reduce data entry.
 
-## Product Language
+## Product Decisions
 
-Use `Provider Needs` as the user-facing feature name.
+Use `Availability` as the user-facing label in this first slice.
 
-Use these concepts in the UI:
+Do not add vacation or time-off records for this feature.
 
-- Availability: when the Provider can work.
-- Time off: dates or times the Provider cannot work.
-- Workload limits: minimum and maximum shifts or hours over a period.
-- Preferences: assignments the Provider likes or dislikes but can still work.
-- Skills: work the Provider is qualified to do.
+If a Provider does not submit availability for a schedule week, treat that as no provided availability for that week.
 
-Do not make the user think about solver terms while editing these records.
+The schedule-week availability record is the only availability input in scope.
 
 ## Placement In The App
 
-Add Provider Needs inside the existing Provider workflow first.
+Add an `Availability` section to the current app menu.
 
-Recommended navigation:
+For now, only managers use this section.
 
-```text
-Providers
-  Provider detail
-    Profile
-    Credentials
-    Skills
-    Needs
-```
+Managers can open a schedule week and set availability for each Provider.
 
-The first implementation can keep Profile, Credentials, Skills, and Needs on one Provider edit page if tabs are too much for the current UI.
+Practitioner self-service UI is out of scope for this slice.
 
-The Needs area should be the first durable CRUD surface for Provider constraints.
+Practitioner email notifications are out of scope for this slice.
 
-Later, add a schedule-wide view:
+## Weekly Availability Model
 
-```text
-Scheduling
-  Provider Needs
-```
+Availability is captured per Provider per schedule week.
 
-That page should help schedulers review missing availability, conflicting limits, and upcoming time off across all Providers before generating a schedule.
+For each day in that week, the user must select exactly one option.
+
+Allowed daily options:
+
+- `full_shift`
+- `first_half`
+- `second_half`
+- `short_shift`
+- `none`
+
+Use these values consistently across UI contracts and API contracts.
+
+## Editing Rules
+
+A Practitioner can edit their weekly availability response until the schedule is drafted.
+
+A Manager can edit a Provider's weekly availability until the schedule is drafted.
+
+After draft creation, the schedule week availability becomes locked for this slice.
 
 ## Information Architecture
 
-The Provider Needs screen should have four sections.
+The Availability screen should be schedule-week first.
 
-### Weekly Availability
+Recommended flow:
 
-Purpose:
+1. Select schedule week.
+2. Select Provider.
+3. Edit Monday through Sunday availability choices.
+4. Save.
 
-Capture the normal weekly pattern for when a Provider can work.
+The editor should show all seven days in one view.
 
-Recommended UI:
+Each day should use a single-select control with the five allowed values.
 
-- A weekly grid with Monday through Sunday as rows.
-- A checkbox or toggle for each day.
-- Start and end time inputs for each enabled day.
-- A quick action to copy one day's time range to selected days.
-- A summary line showing the current rule in plain language.
+Show a clear badge for draft lock state.
 
-Example:
+## Defaults And Copy Behavior
 
-```text
-Available Monday, Wednesday, and Friday from 7:00 AM to 3:00 PM.
-```
+When creating availability for a Provider in a new schedule week:
 
-For the first pass, support one availability window per weekday.
+1. Look up the most recent prior saved week for that Provider.
+2. Prefill all seven day selections from that prior week.
+3. Allow the user to adjust any day before saving.
 
-Do not infer missing weekdays as available.
+If no prior week exists, initialize all days to `none`.
 
-If the organization wants availability to be optional later, add an explicit Provider-level availability mode instead of relying on missing rows.
-
-Recommended availability modes:
-
-```text
-available_only
-unavailable_blocks_only
-```
-
-For this feature, use `available_only` when a Provider says "I only have M/W/F".
-
-### Workload Limits
-
-Purpose:
-
-Capture how many shifts or hours the Provider should work in a scheduling period.
-
-Recommended UI:
-
-- A period selector with `Per week` as the first option.
-- Numeric stepper for minimum shifts.
-- Numeric stepper for maximum shifts.
-- Optional numeric fields for minimum hours and maximum hours later.
-- A validation message when maximum is lower than minimum.
-- A summary line showing the current workload rule.
-
-Example:
-
-```text
-Minimum 2 shifts per week. Maximum 4 shifts per week.
-```
-
-Initial fields:
-
-```text
-period
-minimum_shifts
-maximum_shifts
-```
-
-Recommended period values:
-
-```text
-week
-schedule_period
-```
-
-Only add hours after shifts work end to end.
-
-### Assignment Preferences
-
-Purpose:
-
-Capture soft assignment preferences without changing Provider skills.
-
-Recommended UI:
-
-- A list of room types the Provider is skilled for.
-- A preference selector for each skill.
-- A clear indication that unselected skills remain assignable.
-- Optional notes for preference context.
-
-Recommended preference values:
-
-```text
-prefer
-neutral
-avoid_if_possible
-```
-
-Example:
-
-```text
-Peds: Prefer
-GI: Neutral
-Ortho: Neutral
-```
-
-The statement "I prefer Peds but will work anything else in my skills" should be modeled as:
-
-- Peds preference is `prefer`.
-- Other skilled room types remain `neutral`.
-- No skill is removed.
-- No hard disallow rule is created.
-
-Do not use preferences to decide whether the Provider is qualified.
-
-Provider skills and credentials remain separate hard eligibility inputs.
-
-### Time Off
-
-Purpose:
-
-Capture specific dates or date ranges when the Provider cannot work.
-
-Recommended UI:
-
-- A compact list of upcoming time-off records.
-- Add button that opens a form or drawer.
-- Date picker for start date.
-- Date picker for end date.
-- Full-day toggle.
-- Start and end time inputs when full-day is off.
-- Notes field.
-- Edit and delete actions per record.
-
-Example:
-
-```text
-April 12, selected schedule year - Vacation - Full day
-```
-
-Use explicit time off records for vacation.
-
-Do not treat vacation as a soft preference.
-
-The UI must store a full calendar date with a year.
-
-For example, on April 30, 2026, an unqualified "April 12" request would be in the past unless the user selects April 12, 2027 or another future schedule year.
-
-## Provider Needs Summary
-
-At the top of the Needs screen, show a read-only summary.
-
-Example:
-
-```text
-Available M/W/F, 7:00 AM-3:00 PM
-2-4 shifts per week
-Prefers Peds
-Upcoming time off: Apr 12
-```
-
-The summary should update after each save.
-
-If a Provider has no Needs configured, show a clear empty state:
-
-```text
-No availability, workload limits, preferences, or time off are configured.
-```
-
-Do not imply that missing needs mean the Provider is available.
+Do not add fallback inference beyond this defaulting behavior.
 
 ## CRUD Behavior
 
-Every section should support create, read, update, and delete.
+Support create, read, update, and delete at the schedule-week availability record level.
 
 Recommended behavior:
 
-- Save each section independently.
+- Save one Provider week at a time.
+- Keep unsaved edits local to the current Provider.
 - Show section-level saving and error states.
-- Keep unsaved edits local to that section.
-- Refresh the Provider Needs summary after save.
-- Do not erase other needs when one section is saved.
-- Confirm destructive deletes for time off and weekly availability rules.
+- Refresh data after successful save.
+- Block edits when schedule status is drafted.
 
-The UI should not require saving the whole Provider profile just to update vacation or weekly availability.
+Delete should clear the saved week record.
+
+Delete should only be allowed before draft.
 
 ## Validation
 
-Use Zod contracts at frontend boundaries.
+Prefer Zod contracts for frontend boundaries.
 
-Recommended frontend schema files:
+Recommended schema file:
 
 ```text
-apps/web/lib/schemas/provider-needs.ts
+apps/web/lib/schemas/provider-weekly-availability.ts
 ```
 
-Recommended UI schemas:
+Recommended core contracts:
 
 ```ts
+export const availabilityOptionSchema = z.enum([
+  "full_shift",
+  "first_half",
+  "second_half",
+  "short_shift",
+  "none",
+]);
+
 export const weekdaySchema = z.enum([
   "monday",
   "tuesday",
@@ -268,249 +134,97 @@ export const weekdaySchema = z.enum([
   "sunday",
 ]);
 
-export const providerAvailabilityModeSchema = z.enum([
-  "available_only",
-  "unavailable_blocks_only",
-]);
-
-export const weeklyAvailabilityRuleSchema = z.object({
-  id: z.string().uuid().optional(),
+export const providerWeeklyAvailabilityDaySchema = z.object({
   weekday: weekdaySchema,
-  startTime: z.string().min(1),
-  endTime: z.string().min(1),
-  isActive: z.boolean(),
+  option: availabilityOptionSchema,
 });
 
-export const workloadLimitSchema = z.object({
-  id: z.string().uuid().optional(),
-  period: z.enum(["week", "schedule_period"]),
-  minimumShifts: z.number().int().min(0),
-  maximumShifts: z.number().int().min(0),
-});
-
-export const roomTypePreferenceSchema = z.object({
-  id: z.string().uuid().optional(),
-  roomTypeId: z.string().uuid(),
-  preference: z.enum(["prefer", "neutral", "avoid_if_possible"]),
-  notes: z.string().optional(),
-});
-
-export const providerTimeOffSchema = z.object({
-  id: z.string().uuid().optional(),
-  startDate: z.string().min(1),
-  endDate: z.string().min(1),
-  isFullDay: z.boolean(),
-  startTime: z.string().optional(),
-  endTime: z.string().optional(),
-  reason: z.enum(["vacation", "personal", "education", "other"]),
-  notes: z.string().optional(),
+export const providerWeeklyAvailabilitySchema = z.object({
+  scheduleWeekId: z.string().uuid(),
+  providerId: z.string().uuid(),
+  days: z
+    .array(providerWeeklyAvailabilityDaySchema)
+    .length(7),
 });
 ```
 
-Add refinements for:
+Add refinement to enforce one unique row per weekday.
 
-- End time must be after start time.
-- End date must be on or after start date.
-- Maximum shifts must be greater than or equal to minimum shifts.
-- Partial-day time off must include start and end time.
-
-Keep API schemas separate from form schemas when field casing or persistence shape differs.
+Keep API contracts separate if persistence fields differ from form fields.
 
 ## Backend Concepts Needed
 
-The existing `provider_availability` table can store one-time blocks, but it is not enough for the full Provider Needs UI.
+Add typed schedule-week availability storage.
 
-Add meaningful typed concepts instead of overloading one table for every need.
-
-Recommended backend models:
+Recommended model:
 
 ```text
-provider_availability_rules
-provider_workload_limits
-provider_room_type_preferences
-provider_time_off
-```
-
-Recommended first-pass fields:
-
-```text
-provider_availability_rules
+provider_schedule_week_availability
   id
   organization_id
+  schedule_week_id
   provider_id
   weekday
-  start_time
-  end_time
-  availability_type
-  is_active
-  notes
-
-provider_workload_limits
-  id
-  organization_id
-  provider_id
-  period
-  minimum_shifts
-  maximum_shifts
-  is_active
-  notes
-
-provider_room_type_preferences
-  id
-  organization_id
-  provider_id
-  room_type_id
-  preference
-  notes
-
-provider_time_off
-  id
-  organization_id
-  provider_id
-  start_time
-  end_time
-  reason
-  notes
+  availability_option
+  created_at
+  updated_at
 ```
 
-Use the existing `provider_availability` table only if it is intentionally narrowed to one-time availability blocks.
+Use enums for weekday and availability option.
 
-Do not hide recurring weekly availability inside JSON metadata.
+Do not store this as opaque JSON.
 
 ## API Surface
 
-Prefer Provider-scoped routes.
+Prefer schedule-week scoped routes.
 
 Recommended routes:
 
 ```http
-GET    /providers/{provider_id}/needs
-
-GET    /providers/{provider_id}/availability-rules
-POST   /providers/{provider_id}/availability-rules
-PATCH  /providers/{provider_id}/availability-rules/{rule_id}
-DELETE /providers/{provider_id}/availability-rules/{rule_id}
-
-GET    /providers/{provider_id}/workload-limits
-POST   /providers/{provider_id}/workload-limits
-PATCH  /providers/{provider_id}/workload-limits/{limit_id}
-DELETE /providers/{provider_id}/workload-limits/{limit_id}
-
-GET    /providers/{provider_id}/room-type-preferences
-POST   /providers/{provider_id}/room-type-preferences
-PATCH  /providers/{provider_id}/room-type-preferences/{preference_id}
-DELETE /providers/{provider_id}/room-type-preferences/{preference_id}
-
-GET    /providers/{provider_id}/time-off
-POST   /providers/{provider_id}/time-off
-PATCH  /providers/{provider_id}/time-off/{time_off_id}
-DELETE /providers/{provider_id}/time-off/{time_off_id}
+GET    /schedule-weeks/{schedule_week_id}/provider-availability
+GET    /schedule-weeks/{schedule_week_id}/providers/{provider_id}/availability
+PUT    /schedule-weeks/{schedule_week_id}/providers/{provider_id}/availability
+DELETE /schedule-weeks/{schedule_week_id}/providers/{provider_id}/availability
 ```
 
-`GET /providers/{provider_id}/needs` should return a composed read model for the screen.
+`PUT` replaces all seven day values for that Provider and week.
 
-The write routes should remain specific so each section can save independently.
+The read response should include lock state from schedule status.
 
 ## Scheduling Semantics
 
-Treat these as hard constraints:
+This availability input is schedule-week specific.
 
-- Provider is outside weekly availability when availability mode is `available_only`.
-- Provider overlaps approved time off.
-- Provider exceeds maximum shifts for the configured period.
-- Provider is below minimum shifts in a complete generated schedule.
+`none` means the Provider is unavailable for that day.
 
-Treat these as soft constraints:
+Other options mean limited or full availability based on shift segmentation rules.
 
-- Provider is assigned to a neutral skilled room type.
-- Provider is not assigned to a preferred room type.
-- Provider is assigned to `avoid_if_possible`.
+Exact slot-level eligibility mapping for `first_half`, `second_half`, and `short_shift` should be defined in scheduling rule contracts.
 
-Minimum shifts are special:
-
-- During assignment eligibility for one slot, minimum shifts should not block selection.
-- During solver generation and schedule publish validation, minimum shifts should be evaluated against the full schedule period.
-
-Maximum shifts can be checked during single-slot assignment when enough schedule context is available.
-
-Do not add fallback behavior that assigns a Provider outside hard constraints.
-
-## UI Flow For The Example
-
-For "I only have M/W/F":
-
-1. Open Provider detail.
-2. Go to Needs.
-3. In Weekly Availability, enable Monday, Wednesday, and Friday.
-4. Set the available time window for each enabled day.
-5. Save Weekly Availability.
-
-For "I want two shifts per week minimum, 4 maximum":
-
-1. In Workload Limits, choose `Per week`.
-2. Set minimum shifts to `2`.
-3. Set maximum shifts to `4`.
-4. Save Workload Limits.
-
-For "I prefer Peds but will work anything else in my skills":
-
-1. In Assignment Preferences, set Peds to `Prefer`.
-2. Leave other skilled room types as `Neutral`.
-3. Save Assignment Preferences.
-
-For "I need vacation time on April 12th":
-
-1. In Time Off, choose Add.
-2. Set start date to April 12 in the correct schedule year.
-3. Set end date to April 12 in the same schedule year.
-4. Leave full-day enabled.
-5. Set reason to Vacation.
-6. Save Time Off.
+Do not invent fallback assignment outside the selected daily option.
 
 ## First UI Slice
 
-Build the smallest useful version in this order:
+Build in this order:
 
-1. Add Provider Needs schemas in the frontend.
-2. Add Provider Needs API client functions.
-3. Add a Needs section to the Provider detail page.
-4. Add Weekly Availability CRUD.
-5. Add Time Off CRUD.
-6. Add Workload Limits CRUD.
-7. Add Assignment Preferences CRUD.
-8. Add the Provider Needs summary.
-9. Add a schedule-wide Provider Needs review page.
+1. Add Zod schemas for provider weekly availability.
+2. Add API client for schedule-week provider availability endpoints.
+3. Add `Availability` menu section visible to managers.
+4. Add schedule-week and Provider selector.
+5. Add seven-day editor with five-option daily selector.
+6. Add default-from-prior-week prefill on create.
+7. Enforce draft lock in UI.
 
-Weekly Availability and Time Off should come before preferences because they affect hard eligibility immediately.
-
-## Solver And Assignment Integration
-
-Provider assignment eligibility should consume Provider Needs through one backend service.
-
-Weekly availability and time off should extend the existing Provider eligibility checks.
-
-Workload limits and preferences should feed solver candidate scoring and publish validation.
-
-The solver should:
-
-- Reject candidates outside hard availability.
-- Reject candidates that overlap time off.
-- Avoid candidates that exceed maximum workload.
-- Prefer assignments that satisfy room type preferences.
-- Prefer schedules that meet minimum workload when possible.
-- Report unmet minimum workload as a structured violation when a full schedule cannot satisfy it.
+Practitioner-facing UI and notifications come later.
 
 ## Acceptance Criteria
 
-This feature plan is ready when:
+This plan is ready when:
 
-- A scheduler can record normal weekly availability for a Provider.
-- A scheduler can record Provider vacation or other time off.
-- A scheduler can record minimum and maximum weekly shifts.
-- A scheduler can mark Peds or another room type as preferred without removing other skills.
-- The UI distinguishes hard constraints from soft preferences.
-- Missing availability is not silently treated as available.
-- Provider Needs are saved independently from the Provider profile.
-- Zod contracts validate the frontend form and API boundaries.
-- Backend contracts use typed request and response models.
-- Schedule assignment validation and solver generation use the same Provider Needs rules.
+- Manager can open a schedule week and set availability for any Provider.
+- Each day requires one of five allowed options.
+- New week defaults to the Provider's prior saved week when available.
+- Availability can be edited until the schedule is drafted.
+- Availability becomes locked after draft.
+- No vacation/time-off feature is required for this slice.
+- Contracts use typed models with Zod validation at frontend boundaries.
