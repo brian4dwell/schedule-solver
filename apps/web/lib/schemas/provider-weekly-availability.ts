@@ -21,7 +21,7 @@ export const weekdaySchema = z.enum([
 
 export const providerWeeklyAvailabilityDaySchema = z.object({
   weekday: weekdaySchema,
-  option: availabilityOptionSchema,
+  options: z.array(availabilityOptionSchema).min(1),
 });
 
 export const providerWeeklyAvailabilitySchema = z

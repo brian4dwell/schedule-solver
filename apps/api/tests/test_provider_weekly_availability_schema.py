@@ -6,13 +6,13 @@ from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityRep
 def test_provider_weekly_availability_requires_seven_unique_days() -> None:
     request_data = {
         "days": [
-            {"weekday": "monday", "option": "full_shift"},
-            {"weekday": "tuesday", "option": "first_half"},
-            {"weekday": "wednesday", "option": "second_half"},
-            {"weekday": "thursday", "option": "short_shift"},
-            {"weekday": "friday", "option": "none"},
-            {"weekday": "saturday", "option": "unset"},
-            {"weekday": "sunday", "option": "full_shift"},
+            {"weekday": "monday", "options": ["full_shift"]},
+            {"weekday": "tuesday", "options": ["first_half"]},
+            {"weekday": "wednesday", "options": ["second_half"]},
+            {"weekday": "thursday", "options": ["short_shift"]},
+            {"weekday": "friday", "options": ["none"]},
+            {"weekday": "saturday", "options": ["unset"]},
+            {"weekday": "sunday", "options": ["full_shift"]},
         ]
     }
 
@@ -24,13 +24,13 @@ def test_provider_weekly_availability_requires_seven_unique_days() -> None:
 def test_provider_weekly_availability_rejects_duplicate_weekday() -> None:
     request_data = {
         "days": [
-            {"weekday": "monday", "option": "full_shift"},
-            {"weekday": "monday", "option": "first_half"},
-            {"weekday": "wednesday", "option": "second_half"},
-            {"weekday": "thursday", "option": "short_shift"},
-            {"weekday": "friday", "option": "none"},
-            {"weekday": "saturday", "option": "unset"},
-            {"weekday": "sunday", "option": "full_shift"},
+            {"weekday": "monday", "options": ["full_shift"]},
+            {"weekday": "monday", "options": ["first_half"]},
+            {"weekday": "wednesday", "options": ["second_half"]},
+            {"weekday": "thursday", "options": ["short_shift"]},
+            {"weekday": "friday", "options": ["none"]},
+            {"weekday": "saturday", "options": ["unset"]},
+            {"weekday": "sunday", "options": ["full_shift"]},
         ]
     }
 
