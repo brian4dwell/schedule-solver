@@ -53,6 +53,9 @@ class SolverProvider(BaseModel):
     id: UUID
     is_active: bool
     provider_type: str
+    fairness_debt: float = 0.0
+    favor_credit: float = 0.0
+    fairness_priority_multiplier: float = 1.0
     provider_room_type_skills: list[SolverProviderRoomTypeSkill] = Field(default_factory=list)
     week_availability: SolverProviderWeekAvailability
 
