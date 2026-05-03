@@ -377,6 +377,15 @@ export async function createSchedulePeriod(
   return period;
 }
 
+
+export async function deleteSchedulePeriod(periodId: string): Promise<SchedulePeriod> {
+  const responseJson = await requestJson<unknown>(`/schedule-periods/${periodId}`, {
+    method: "DELETE",
+    cache: "no-store",
+  });
+  const period = schedulePeriodApiSchema.parse(responseJson);
+  return period;
+}
 export async function getSchedulePeriod(periodId: string): Promise<SchedulePeriod> {
   const responseJson = await requestJson<unknown>(`/schedule-periods/${periodId}`, {
     cache: "no-store",
