@@ -234,6 +234,14 @@ def provider_is_candidate(
     shift_requirement: SolverShiftRequirement,
     room: SolverRoom | None,
 ) -> bool:
+    locked_provider_id = shift_requirement.locked_provider_id
+
+    if locked_provider_id is not None:
+        provider_matches_locked_assignment = provider.id == locked_provider_id
+
+        if not provider_matches_locked_assignment:
+            return False
+
     room_is_available = room_is_available_for_shift(room)
 
     if not room_is_available:

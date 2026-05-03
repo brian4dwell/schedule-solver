@@ -352,3 +352,31 @@ def test_solver_records_min_shift_request_warning_without_blocking_schedule() ->
     assert len(result.assignments) == 1
     assert result.violations[0].severity == "warning"
     assert result.violations[0].constraint_type == "provider_min_shifts_not_met"
+
+
+def test_solver_respects_locked_provider_assignment() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    center_id = uuid4()
+    room_type_id = uuid4()
+    room = create_room(center_id, room_type_id)
+    locked_provider = create_provider(center_id, room_type_id)
+    other_provider = create_provider(center_id, room_type_id)
+    locked_credential = create_credential(locked_provider.id, center_id)
+    other_credential = create_credential(other_provider.id, center_id)
+    shift = create_shift(center_id, room.id, 7, 15)
+    shift.locked_provider_id = locked_provider.id
+    solver_input = SolverInput(
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        rooms=[room],
+        providers=[locked_provider, other_provider],
+        center_credentials=[locked_credential, other_credential],
+        shift_requirements=[shift],
+    )
+
+    result = solve_schedule(solver_input)
+
+    assert result.is_feasible is True
+    assert len(result.assignments) == 1
+    assert result.assignments[0].provider_id == locked_provider.id
