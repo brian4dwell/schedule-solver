@@ -12,6 +12,7 @@ const navigationItems = [
   { href: "/providers", label: "Providers", shortLabel: "P" },
   { href: "/schedules", label: "Schedules", shortLabel: "S" },
   { href: "/availability", label: "Availability", shortLabel: "A" },
+  { href: "/fairness", label: "Fairness", shortLabel: "F" },
 ];
 
 const sidebarDockedStorageKey = "schedule-solver-sidebar-docked";

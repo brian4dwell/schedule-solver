@@ -29,6 +29,11 @@ const dashboardLinks = [
     title: "Schedules",
     description: "Build draft schedules and review completed schedule versions.",
   },
+  {
+    href: "/fairness",
+    title: "Fairness",
+    description: "Track fairness status, timeline activity, and transaction reasons.",
+  },
 ];
 
 export default function DashboardPage() {
@@ -38,7 +43,7 @@ export default function DashboardPage() {
         title="Dashboard"
         description="Start with the core scheduling entities for the first operational slice."
       />
-      <div className="grid gap-4 md:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-6">
         {dashboardLinks.map((item) => {
           return (
             <Link

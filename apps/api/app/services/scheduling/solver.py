@@ -25,6 +25,7 @@ from app.services.scheduling.solver_contracts import SolverViolation
 BELOW_MIN_SHIFT_REQUEST_PENALTY = 20
 ABOVE_MAX_SHIFT_REQUEST_PENALTY = 30
 ASSIGNMENT_IMBALANCE_PENALTY = 3
+FAIRNESS_PRESSURE_SCALE = 10
 MAX_SOLVE_SECONDS = 30.0
 
 
@@ -502,6 +503,29 @@ def add_assignment_balance_objective_terms(
             objective_terms.append(objective_term)
 
 
+def fairness_pressure_for_provider(provider: SolverProvider) -> float:
+    fairness_debt = provider.fairness_debt
+    favor_credit = provider.favor_credit
+    priority_multiplier = provider.fairness_priority_multiplier
+    pressure_without_tier = fairness_debt - favor_credit
+    scaled_pressure = pressure_without_tier * priority_multiplier
+    return scaled_pressure
+
+
+def add_fairness_objective_terms(
+    solver_input: SolverInput,
+    provider_assignment_totals: list[ProviderAssignmentTotal],
+    objective_terms: list[cp_model.LinearExpr],
+) -> None:
+    for provider_assignment_total in provider_assignment_totals:
+        provider = provider_assignment_total.provider
+        assignment_total = provider_assignment_total.variable
+        fairness_pressure = fairness_pressure_for_provider(provider)
+        fairness_penalty = int(round(fairness_pressure * FAIRNESS_PRESSURE_SCALE))
+        objective_term = assignment_total * -fairness_penalty
+        objective_terms.append(objective_term)
+
+
 def add_objective(
     model: cp_model.CpModel,
     solver_input: SolverInput,
@@ -521,6 +545,11 @@ def add_objective(
     )
     add_assignment_balance_objective_terms(
         model,
+        solver_input,
+        provider_assignment_totals,
+        objective_terms,
+    )
+    add_fairness_objective_terms(
         solver_input,
         provider_assignment_totals,
         objective_terms,
