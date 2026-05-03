@@ -20,11 +20,13 @@ import {
   scheduleGenerateResponseApiSchema,
   schedulePeriodApiSchema,
   schedulePeriodFormSchema,
+  schedulePeriodRenameSchema,
   schedulePublishResponseApiSchema,
   scheduleVersionDetailApiSchema,
   type ScheduleVersionDetailApi,
   type SchedulePeriodApi,
   type SchedulePeriodFormValues,
+  type SchedulePeriodRenameValues,
   type PersistedScheduleVersionApi,
   type ScheduleGenerateResponseApi,
   type SchedulePublishResponseApi,
@@ -386,6 +388,21 @@ export async function deleteSchedulePeriod(periodId: string): Promise<SchedulePe
   const period = schedulePeriodApiSchema.parse(responseJson);
   return period;
 }
+
+export async function renameSchedulePeriod(
+  periodId: string,
+  values: SchedulePeriodRenameValues,
+): Promise<SchedulePeriod> {
+  const parsedValues = schedulePeriodRenameSchema.parse(values);
+  const payload = {
+    name: parsedValues.name,
+  };
+  const init = jsonRequestInit("PATCH", payload);
+  const responseJson = await requestJson<unknown>(`/schedule-periods/${periodId}`, init);
+  const period = schedulePeriodApiSchema.parse(responseJson);
+  return period;
+}
+
 export async function getSchedulePeriod(periodId: string): Promise<SchedulePeriod> {
   const responseJson = await requestJson<unknown>(`/schedule-periods/${periodId}`, {
     cache: "no-store",

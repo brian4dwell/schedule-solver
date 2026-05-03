@@ -89,6 +89,10 @@ export const schedulePeriodFormSchema = z.object({
   endDate: z.string().min(1),
 });
 
+export const schedulePeriodRenameSchema = z.object({
+  name: z.string().trim().min(1),
+});
+
 export const scheduleAssignmentApiSchema = z.object({
   id: z.string().uuid(),
   schedule_version_id: z.string().uuid(),
@@ -207,6 +211,8 @@ export type SchedulePeriodSummary = z.infer<typeof schedulePeriodSummarySchema>;
 export type SchedulePeriodApi = z.infer<typeof schedulePeriodApiSchema>;
 
 export type SchedulePeriodFormValues = z.infer<typeof schedulePeriodFormSchema>;
+
+export type SchedulePeriodRenameValues = z.infer<typeof schedulePeriodRenameSchema>;
 
 export type ScheduleAssignmentApi = z.infer<typeof scheduleAssignmentApiSchema>;
 

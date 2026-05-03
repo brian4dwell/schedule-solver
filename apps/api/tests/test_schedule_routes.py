@@ -7,10 +7,41 @@ import pytest
 from fastapi import HTTPException
 
 from app.routers.schedules import create_assignment_from_request
+from app.routers.schedules import router
 from app.routers.schedules import unassigned_provider_violation
 from app.routers.schedules import validate_schedule_period_dates
 from app.schemas.schedule import ScheduleAssignmentCreate
 from app.schemas.schedule import SchedulePeriodCreate
+
+
+def test_schedule_period_route_accepts_delete() -> None:
+    period_routes = [
+        route
+        for route in router.routes
+        if route.path == "/schedule-periods/{period_id}"
+    ]
+    delete_routes = [
+        route
+        for route in period_routes
+        if "DELETE" in route.methods
+    ]
+
+    assert len(delete_routes) == 1
+
+
+def test_schedule_period_route_accepts_patch() -> None:
+    period_routes = [
+        route
+        for route in router.routes
+        if route.path == "/schedule-periods/{period_id}"
+    ]
+    patch_routes = [
+        route
+        for route in period_routes
+        if "PATCH" in route.methods
+    ]
+
+    assert len(patch_routes) == 1
 
 
 def test_schedule_period_end_date_must_not_precede_start_date() -> None:

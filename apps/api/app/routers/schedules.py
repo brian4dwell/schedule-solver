@@ -3,12 +3,16 @@ from uuid import UUID
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from sqlalchemy import delete as sqlalchemy_delete
 from sqlalchemy import func
 from sqlalchemy import select
+from sqlalchemy import update as sqlalchemy_update
 from sqlalchemy.orm import Session
 
 from app.db.models import Assignment
 from app.db.models import ConstraintViolation
+from app.db.models import ProviderScheduleWeekAvailability
+from app.db.models import ScheduleJob
 from app.db.models import SchedulePeriod
 from app.db.models import ScheduleVersion
 from app.db.session import get_db
@@ -23,6 +27,7 @@ from app.schemas.schedule import ScheduleGenerateResponse
 from app.schemas.schedule import ScheduleAssignmentCreate
 from app.schemas.schedule import SchedulePeriodCreate
 from app.schemas.schedule import SchedulePeriodRead
+from app.schemas.schedule import SchedulePeriodRenameRequest
 from app.schemas.schedule import SchedulePublishResponse
 from app.schemas.schedule import ScheduleVersionDetailRead
 from app.schemas.schedule import ScheduleVersionRead
@@ -206,6 +211,101 @@ def violations_for_version(
     return violations
 
 
+def schedule_versions_for_period(
+    schedule_period_id: UUID,
+    organization_id: UUID,
+    session: Session,
+) -> list[ScheduleVersion]:
+    statement = select(ScheduleVersion)
+    statement = statement.where(ScheduleVersion.schedule_period_id == schedule_period_id)
+    statement = statement.where(ScheduleVersion.organization_id == organization_id)
+    statement = statement.order_by(ScheduleVersion.version_number.desc())
+    schedule_versions = list(session.scalars(statement))
+    return schedule_versions
+
+
+def delete_constraint_violations_for_period(
+    schedule_version_ids: list[UUID],
+    organization_id: UUID,
+    session: Session,
+) -> None:
+    has_schedule_versions = len(schedule_version_ids) > 0
+
+    if not has_schedule_versions:
+        return
+
+    statement = sqlalchemy_delete(ConstraintViolation)
+    statement = statement.where(ConstraintViolation.organization_id == organization_id)
+    statement = statement.where(ConstraintViolation.schedule_version_id.in_(schedule_version_ids))
+    session.execute(statement)
+
+
+def delete_assignments_for_period(
+    schedule_period_id: UUID,
+    organization_id: UUID,
+    session: Session,
+) -> None:
+    statement = sqlalchemy_delete(Assignment)
+    statement = statement.where(Assignment.schedule_period_id == schedule_period_id)
+    statement = statement.where(Assignment.organization_id == organization_id)
+    session.execute(statement)
+
+
+def clear_parent_schedule_version_links(
+    schedule_version_ids: list[UUID],
+    organization_id: UUID,
+    session: Session,
+) -> None:
+    has_schedule_versions = len(schedule_version_ids) > 0
+
+    if not has_schedule_versions:
+        return
+
+    statement = sqlalchemy_update(ScheduleVersion)
+    statement = statement.where(ScheduleVersion.organization_id == organization_id)
+    statement = statement.where(ScheduleVersion.id.in_(schedule_version_ids))
+    statement = statement.values(parent_schedule_version_id=None)
+    session.execute(statement)
+
+
+def delete_schedule_versions_for_period(
+    schedule_version_ids: list[UUID],
+    organization_id: UUID,
+    session: Session,
+) -> None:
+    has_schedule_versions = len(schedule_version_ids) > 0
+
+    if not has_schedule_versions:
+        return
+
+    statement = sqlalchemy_delete(ScheduleVersion)
+    statement = statement.where(ScheduleVersion.organization_id == organization_id)
+    statement = statement.where(ScheduleVersion.id.in_(schedule_version_ids))
+    session.execute(statement)
+
+
+def delete_schedule_jobs_for_period(
+    schedule_period_id: UUID,
+    organization_id: UUID,
+    session: Session,
+) -> None:
+    statement = sqlalchemy_delete(ScheduleJob)
+    statement = statement.where(ScheduleJob.schedule_period_id == schedule_period_id)
+    statement = statement.where(ScheduleJob.organization_id == organization_id)
+    session.execute(statement)
+
+
+def delete_weekly_availability_for_period(
+    schedule_period_id: UUID,
+    organization_id: UUID,
+    session: Session,
+) -> None:
+    statement = sqlalchemy_delete(ProviderScheduleWeekAvailability)
+    statement = statement.where(ProviderScheduleWeekAvailability.schedule_week_id == schedule_period_id)
+    statement = statement.where(ProviderScheduleWeekAvailability.organization_id == organization_id)
+    session.execute(statement)
+
+
 def validate_schedule_period_dates(request: SchedulePeriodCreate) -> None:
     end_is_before_start = request.end_date < request.start_date
 
@@ -338,7 +438,7 @@ def list_schedule_periods(
     organization_id: UUID = Depends(get_current_organization_id),
 ) -> list[SchedulePeriod]:
     statement = select(SchedulePeriod).where(SchedulePeriod.organization_id == organization_id)
-    statement = statement.order_by(SchedulePeriod.start_date.desc())
+    statement = statement.order_by(SchedulePeriod.start_date, SchedulePeriod.id)
     periods = list(session.scalars(statement))
     return periods
 
@@ -371,6 +471,50 @@ def read_schedule_period(
 ) -> SchedulePeriod:
     schedule_period = require_schedule_period(period_id, organization_id, session)
     return schedule_period
+
+
+@router.patch("/schedule-periods/{period_id}", response_model=SchedulePeriodRead)
+def rename_schedule_period(
+    period_id: UUID,
+    request: SchedulePeriodRenameRequest,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> SchedulePeriod:
+    schedule_period = require_schedule_period(period_id, organization_id, session)
+    next_name = request.name.strip()
+    has_name = len(next_name) > 0
+
+    if not has_name:
+        raise HTTPException(status_code=400, detail="Schedule name is required")
+
+    schedule_period.name = next_name
+    session.commit()
+    session.refresh(schedule_period)
+    return schedule_period
+
+
+@router.delete("/schedule-periods/{period_id}", response_model=SchedulePeriodRead)
+def delete_schedule_period(
+    period_id: UUID,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> SchedulePeriodRead:
+    schedule_period = require_schedule_period(period_id, organization_id, session)
+    schedule_period_read = SchedulePeriodRead.model_validate(schedule_period)
+    schedule_versions = schedule_versions_for_period(period_id, organization_id, session)
+    schedule_version_ids = [
+        schedule_version.id
+        for schedule_version in schedule_versions
+    ]
+    delete_constraint_violations_for_period(schedule_version_ids, organization_id, session)
+    delete_assignments_for_period(period_id, organization_id, session)
+    clear_parent_schedule_version_links(schedule_version_ids, organization_id, session)
+    delete_schedule_versions_for_period(schedule_version_ids, organization_id, session)
+    delete_schedule_jobs_for_period(period_id, organization_id, session)
+    delete_weekly_availability_for_period(period_id, organization_id, session)
+    session.delete(schedule_period)
+    session.commit()
+    return schedule_period_read
 
 
 @router.get("/schedule-periods/{period_id}/versions", response_model=list[ScheduleVersionRead])

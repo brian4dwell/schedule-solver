@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { deleteSchedulePeriod } from "@/lib/api";
+import { deleteSchedulePeriod, renameSchedulePeriod } from "@/lib/api";
 import type { SchedulePeriodSummary } from "@/lib/schemas/schedule";
 
 type SchedulesTableProps = {
@@ -38,6 +38,36 @@ function publishStatus(period: SchedulePeriodSummary) {
 export function SchedulesTable({ periods }: SchedulesTableProps) {
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [openMenuPeriodId, setOpenMenuPeriodId] = useState<string | null>(null);
+
+  function toggleActionMenu(periodId: string) {
+    const nextMenuPeriodId = openMenuPeriodId === periodId ? null : periodId;
+    setOpenMenuPeriodId(nextMenuPeriodId);
+  }
+
+  async function handleRenameSchedule(period: SchedulePeriodSummary) {
+    const nextName = window.prompt("Rename schedule", period.name);
+
+    if (nextName === null) {
+      setOpenMenuPeriodId(null);
+      return;
+    }
+
+    setErrorMessage(null);
+    setOpenMenuPeriodId(null);
+
+    try {
+      const renameValues = {
+        name: nextName,
+      };
+      await renameSchedulePeriod(period.id, renameValues);
+      router.refresh();
+    } catch (error) {
+      const nextErrorMessage =
+        error instanceof Error ? error.message : "Schedule rename failed.";
+      setErrorMessage(nextErrorMessage);
+    }
+  }
 
   async function handleDeleteSchedule(period: SchedulePeriodSummary) {
     const hasConfirmedDeletion = window.confirm(
@@ -49,6 +79,7 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
     }
 
     setErrorMessage(null);
+    setOpenMenuPeriodId(null);
 
     try {
       await deleteSchedulePeriod(period.id);
@@ -81,6 +112,7 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
         ) : null}
         {periods.map((period) => {
           const status = publishStatus(period);
+          const isActionMenuOpen = openMenuPeriodId === period.id;
           const lastPublished =
             period.lastPublishedAt === null
               ? "Not published"
@@ -109,19 +141,47 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
               </div>
               <p className="text-sm text-slate-600">{lastPublished}</p>
               <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleDeleteSchedule(period)}
-                  className="inline-flex h-9 items-center justify-center rounded-md border border-red-200 px-3 text-sm font-semibold text-red-700 hover:bg-red-50"
-                >
-                  Delete
-                </button>
                 <Link
                   href={`/schedules/${period.id}`}
                   className="inline-flex h-9 items-center justify-center rounded-md bg-teal-700 px-3 text-sm font-semibold text-white hover:bg-teal-800"
                 >
                   Open
                 </Link>
+                <div className="relative">
+                  <button
+                    type="button"
+                    aria-label={`More actions for ${period.name}`}
+                    aria-expanded={isActionMenuOpen}
+                    aria-haspopup="menu"
+                    onClick={() => toggleActionMenu(period.id)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    ...
+                  </button>
+                  {isActionMenuOpen ? (
+                    <div
+                      role="menu"
+                      className="absolute right-0 z-10 mt-2 w-36 rounded-md border border-slate-200 bg-white py-1 shadow-lg"
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => handleRenameSchedule(period)}
+                        className="flex w-full px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Rename
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => handleDeleteSchedule(period)}
+                        className="flex w-full px-3 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
           );

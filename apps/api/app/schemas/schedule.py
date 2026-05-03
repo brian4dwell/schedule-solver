@@ -57,6 +57,10 @@ class SchedulePeriodCreate(BaseModel):
     status: str = "draft"
 
 
+class SchedulePeriodRenameRequest(BaseModel):
+    name: str = Field(min_length=1)
+
+
 class SchedulePeriodRead(TimestampedSchema):
     name: str
     start_date: date

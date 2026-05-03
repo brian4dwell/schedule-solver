@@ -7,6 +7,7 @@ import { createSchedulePeriod } from "@/lib/api";
 import { schedulePeriodFormSchema } from "@/lib/schemas/schedule";
 
 const MONDAY_DAY_INDEX = 1;
+const MONDAY_DATE_INPUT_STEP_BASE = "1970-01-05";
 const DAYS_IN_SCHEDULE_WEEK = 7;
 const SCHEDULE_WEEK_END_OFFSET_DAYS = DAYS_IN_SCHEDULE_WEEK - 1;
 
@@ -151,6 +152,8 @@ export function SchedulePeriodForm() {
             name="startDate"
             type="date"
             required
+            min={MONDAY_DATE_INPUT_STEP_BASE}
+            step={DAYS_IN_SCHEDULE_WEEK}
             value={startDateValue}
             onChange={(event) => handleStartDateChange(event.target.value)}
             className="h-10 rounded-md border border-slate-300 px-3 text-slate-950"
