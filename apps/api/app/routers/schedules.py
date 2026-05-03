@@ -338,6 +338,22 @@ def create_assignment_from_request(
     return assignment
 
 
+def duplicate_assignment_request(assignment: Assignment) -> ScheduleAssignmentCreate:
+    requested_assignment = ScheduleAssignmentCreate(
+        provider_id=assignment.provider_id,
+        center_id=assignment.center_id,
+        room_id=assignment.room_id,
+        shift_requirement_id=assignment.shift_requirement_id,
+        required_provider_type=assignment.required_provider_type,
+        shift_type=assignment.shift_type,
+        start_time=assignment.start_time,
+        end_time=assignment.end_time,
+        source="duplicate",
+        notes=assignment.notes,
+    )
+    return requested_assignment
+
+
 def save_schedule_version(
     request: ScheduleDraftSaveRequest,
     source: str,
@@ -677,18 +693,7 @@ def duplicate_schedule_version(
     requested_assignments: list[ScheduleAssignmentCreate] = []
 
     for assignment in assignments:
-        requested_assignment = ScheduleAssignmentCreate(
-            provider_id=assignment.provider_id,
-            center_id=assignment.center_id,
-            room_id=assignment.room_id,
-            shift_requirement_id=assignment.shift_requirement_id,
-            required_provider_type=assignment.required_provider_type,
-            shift_type=assignment.shift_type,
-            start_time=assignment.start_time,
-            end_time=assignment.end_time,
-            source="duplicate",
-            notes=assignment.notes,
-        )
+        requested_assignment = duplicate_assignment_request(assignment)
         requested_assignments.append(requested_assignment)
 
     request = ScheduleDraftSaveRequest(

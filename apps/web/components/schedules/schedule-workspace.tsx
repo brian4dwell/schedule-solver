@@ -5,7 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   checkProviderSlotEligibility,
+  duplicateScheduleVersion,
   generateScheduleVersion,
+  getScheduleVersion,
   getProviderWeeklyAvailability,
   publishScheduleVersion,
   saveDraftScheduleVersion,
@@ -13,6 +15,7 @@ import {
   type Provider,
   type ProviderSlotEligibility,
   type ProviderWeeklyAvailabilityRecord,
+  type PersistedScheduleVersion,
   type Room,
   type ScheduleAssignmentSavePayload,
   type SchedulePeriod,
@@ -70,6 +73,7 @@ type DragPayload =
 
 type ScheduleWorkspaceProps = {
   initialVersionDetail: ScheduleVersionDetail | null;
+  initialVersions: PersistedScheduleVersion[];
   providers: Provider[];
   rooms: RoomRow[];
   schedulePeriod: SchedulePeriod;
@@ -275,6 +279,31 @@ function publishEventsFromDetail(
   };
   const parsedPublishEvent = schedulePublishEventSchema.parse(publishEvent);
   return [parsedPublishEvent];
+}
+
+function versionOptionLabel(version: PersistedScheduleVersion) {
+  const firstLetter = version.status.charAt(0);
+  const capitalizedFirstLetter = firstLetter.toUpperCase();
+  const remainingLetters = version.status.slice(1);
+  const statusLabel = `${capitalizedFirstLetter}${remainingLetters}`;
+  const label = `Version ${version.version_number} - ${statusLabel}`;
+  return label;
+}
+
+function upsertVersionOption(
+  versions: PersistedScheduleVersion[],
+  nextVersion: PersistedScheduleVersion,
+) {
+  const otherVersions = versions.filter((version) => {
+    const isSameVersion = version.id === nextVersion.id;
+    return !isSameVersion;
+  });
+  const nextVersions = [...otherVersions, nextVersion];
+  const sortedVersions = nextVersions.toSorted((first, second) => {
+    const comparison = second.version_number - first.version_number;
+    return comparison;
+  });
+  return sortedVersions;
 }
 
 function availableRoomsFromRows(rows: RoomRow[]): AvailableRoom[] {
@@ -1051,6 +1080,7 @@ function createRoomAssignment(
 
 export function ScheduleWorkspace({
   initialVersionDetail,
+  initialVersions,
   providers,
   rooms,
   schedulePeriod,
@@ -1071,9 +1101,17 @@ export function ScheduleWorkspace({
   const [publishEvents, setPublishEvents] = useState<SchedulePublishEvent[]>(() => {
     return publishEventsFromDetail(initialVersionDetail);
   });
+  const [versionOptions, setVersionOptions] =
+    useState<PersistedScheduleVersion[]>(initialVersions);
+  const [selectedVersionId, setSelectedVersionId] = useState(() => {
+    const versionId = initialVersionDetail?.version.id ?? "";
+    return versionId;
+  });
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isCloning, setIsCloning] = useState(false);
+  const [isLoadingVersion, setIsLoadingVersion] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [showWeekends, setShowWeekends] = useState(false);
   const [showUnsetAvailabilityProviders, setShowUnsetAvailabilityProviders] = useState(false);
@@ -1227,6 +1265,10 @@ export function ScheduleWorkspace({
         ...savedVersionDetail,
         version: response.version,
       });
+      setVersionOptions((currentOptions) => {
+        const nextOptions = upsertVersionOption(currentOptions, response.version);
+        return nextOptions;
+      });
       setActionMessage("Schedule published.");
     } catch {
       setActionMessage("Publish failed because the saved version has blockers.");
@@ -1283,6 +1325,11 @@ export function ScheduleWorkspace({
       const detail = await saveDraftScheduleVersion(payload);
       const nextVersion = versionFromDetail(schedulePeriod, detail);
       setSavedVersionDetail(detail);
+      setSelectedVersionId(detail.version.id);
+      setVersionOptions((currentOptions) => {
+        const nextOptions = upsertVersionOption(currentOptions, detail.version);
+        return nextOptions;
+      });
       updateWorkingVersion(nextVersion);
       setActionMessage("Draft saved.");
     } catch {
@@ -1319,12 +1366,64 @@ export function ScheduleWorkspace({
       const nextVersion = versionFromDetail(schedulePeriod, detail);
       const duration = detail.metrics.solve_duration_ms;
       setSavedVersionDetail(detail);
+      setSelectedVersionId(detail.version.id);
+      setVersionOptions((currentOptions) => {
+        const nextOptions = upsertVersionOption(currentOptions, detail.version);
+        return nextOptions;
+      });
       updateWorkingVersion(nextVersion);
       setActionMessage(`Generated draft in ${duration} ms.`);
     } catch {
       setActionMessage("Schedule generation could not satisfy all constraints.");
     } finally {
       setIsGenerating(false);
+    }
+  }
+
+  async function handleCloneDraft() {
+    if (savedVersionDetail === null) {
+      setActionMessage("Save a draft before cloning.");
+      return;
+    }
+
+    setIsCloning(true);
+    setActionMessage(null);
+
+    try {
+      const detail = await duplicateScheduleVersion(savedVersionDetail.version.id);
+      const nextVersion = versionFromDetail(schedulePeriod, detail);
+      setSavedVersionDetail(detail);
+      setSelectedVersionId(detail.version.id);
+      setVersionOptions((currentOptions) => {
+        const nextOptions = upsertVersionOption(currentOptions, detail.version);
+        return nextOptions;
+      });
+      updateWorkingVersion(nextVersion);
+      setActionMessage("Draft cloned.");
+    } catch {
+      setActionMessage("Draft clone failed.");
+    } finally {
+      setIsCloning(false);
+    }
+  }
+
+  async function handleVersionSelected(versionId: string) {
+    setSelectedVersionId(versionId);
+    setIsLoadingVersion(true);
+    setActionMessage(null);
+
+    try {
+      const detail = await getScheduleVersion(versionId);
+      const nextVersion = versionFromDetail(schedulePeriod, detail);
+      const nextPublishEvents = publishEventsFromDetail(detail);
+      setSavedVersionDetail(detail);
+      setPublishEvents(nextPublishEvents);
+      updateWorkingVersion(nextVersion);
+      setActionMessage("Draft loaded.");
+    } catch {
+      setActionMessage("Draft load failed.");
+    } finally {
+      setIsLoadingVersion(false);
     }
   }
 
@@ -1727,6 +1826,29 @@ export function ScheduleWorkspace({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            {versionOptions.length > 0 ? (
+              <label className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700">
+                <span>Version</span>
+                <select
+                  value={selectedVersionId}
+                  onChange={(event) => handleVersionSelected(event.target.value)}
+                  disabled={isLoadingVersion}
+                  className="bg-white text-sm font-semibold text-slate-900 outline-none disabled:text-slate-400"
+                >
+                  {selectedVersionId === "" ? (
+                    <option value="">Working version</option>
+                  ) : null}
+                  {versionOptions.map((version) => {
+                    const label = versionOptionLabel(version);
+                    return (
+                      <option key={version.id} value={version.id}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+            ) : null}
             <label className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700">
               <input
                 type="checkbox"
@@ -1751,6 +1873,14 @@ export function ScheduleWorkspace({
               className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
             >
               {isSaving ? "Saving" : "Save draft"}
+            </button>
+            <button
+              type="button"
+              onClick={handleCloneDraft}
+              disabled={!hasSavedVersion || isCloning}
+              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+            >
+              {isCloning ? "Cloning" : "Clone draft"}
             </button>
             <button
               type="button"

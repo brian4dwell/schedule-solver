@@ -74,6 +74,7 @@ export default async function ScheduleDetailPage({
       />
       <ScheduleWorkspace
         initialVersionDetail={initialVersionDetail}
+        initialVersions={scheduleVersions}
         schedulePeriod={schedulePeriod}
         providers={providers}
         rooms={rooms}

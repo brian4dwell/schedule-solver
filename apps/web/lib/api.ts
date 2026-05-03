@@ -444,6 +444,20 @@ export async function saveDraftScheduleVersion(
   return detail;
 }
 
+export async function duplicateScheduleVersion(
+  versionId: string,
+): Promise<ScheduleVersionDetail> {
+  const responseJson = await requestJson<unknown>(
+    `/schedule-versions/${versionId}/duplicate`,
+    {
+      method: "POST",
+      cache: "no-store",
+    },
+  );
+  const detail = scheduleDraftSaveResponseApiSchema.parse(responseJson);
+  return detail;
+}
+
 export async function generateScheduleVersion(
   periodId: string,
   payload: ScheduleGeneratePayload,
