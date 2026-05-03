@@ -5,17 +5,29 @@ from pydantic import BaseModel
 from pydantic import Field
 
 
-class SolverTimeBlock(BaseModel):
-    start_time: datetime
-    end_time: datetime
-    availability_type: str
+class SolverWeeklyAvailabilityDay(BaseModel):
+    weekday: str
+    options: list[str] = Field(default_factory=list)
+
+
+class SolverProviderWeekAvailability(BaseModel):
+    provider_id: UUID
+    min_shifts_requested: int = 0
+    max_shifts_requested: int = 0
+    days: list[SolverWeeklyAvailabilityDay] = Field(default_factory=list)
+
+
+class SolverRequiredRoomTypeSkill(BaseModel):
+    room_type_id: UUID
+    required_proficiency_level: int = 1
 
 
 class SolverRoom(BaseModel):
     id: UUID
     center_id: UUID
     md_only: bool
-    room_type_ids: list[UUID] = Field(default_factory=list)
+    is_active: bool
+    required_room_type_skills: list[SolverRequiredRoomTypeSkill] = Field(default_factory=list)
 
 
 class SolverShiftRequirement(BaseModel):
@@ -24,20 +36,32 @@ class SolverShiftRequirement(BaseModel):
     source_shift_requirement_id: UUID | None = None
     center_id: UUID
     room_id: UUID | None
+    shift_type: str = "full_shift"
     start_time: datetime
     end_time: datetime
     required_provider_count: int
     required_provider_type: str | None
 
 
+class SolverProviderRoomTypeSkill(BaseModel):
+    room_type_id: UUID
+    proficiency_level: int = 1
+
+
 class SolverProvider(BaseModel):
     id: UUID
+    is_active: bool
     provider_type: str
-    credentialed_center_ids: list[UUID] = Field(default_factory=list)
-    skill_room_type_ids: list[UUID] = Field(default_factory=list)
-    unavailable_blocks: list[SolverTimeBlock] = Field(default_factory=list)
-    preferred_blocks: list[SolverTimeBlock] = Field(default_factory=list)
-    avoid_blocks: list[SolverTimeBlock] = Field(default_factory=list)
+    provider_room_type_skills: list[SolverProviderRoomTypeSkill] = Field(default_factory=list)
+    week_availability: SolverProviderWeekAvailability
+
+
+class SolverCenterCredential(BaseModel):
+    provider_id: UUID
+    center_id: UUID
+    starts_at: datetime | None = None
+    expires_at: datetime | None = None
+    is_active: bool
 
 
 class SolverInput(BaseModel):
@@ -45,6 +69,7 @@ class SolverInput(BaseModel):
     schedule_period_id: UUID
     rooms: list[SolverRoom] = Field(default_factory=list)
     providers: list[SolverProvider] = Field(default_factory=list)
+    center_credentials: list[SolverCenterCredential] = Field(default_factory=list)
     shift_requirements: list[SolverShiftRequirement] = Field(default_factory=list)
 
 
@@ -54,6 +79,7 @@ class SolverAssignment(BaseModel):
     center_id: UUID
     room_id: UUID | None
     required_provider_type: str | None
+    shift_type: str
     start_time: datetime
     end_time: datetime
 

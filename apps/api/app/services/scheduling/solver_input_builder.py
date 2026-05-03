@@ -10,17 +10,22 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
 from app.db.models import Provider
-from app.db.models import ProviderAvailability
+from app.db.models import ProviderCenterCredential
+from app.db.models import ProviderScheduleWeekAvailability
 from app.db.models import Room
 from app.db.models import RoomRoomType
 from app.db.models import SchedulePeriod
 from app.db.models import ShiftRequirement
 from app.schemas.schedule import ScheduleAssignmentCreate
+from app.services.scheduling.solver_contracts import SolverCenterCredential
 from app.services.scheduling.solver_contracts import SolverInput
 from app.services.scheduling.solver_contracts import SolverProvider
+from app.services.scheduling.solver_contracts import SolverProviderRoomTypeSkill
+from app.services.scheduling.solver_contracts import SolverProviderWeekAvailability
+from app.services.scheduling.solver_contracts import SolverRequiredRoomTypeSkill
 from app.services.scheduling.solver_contracts import SolverRoom
 from app.services.scheduling.solver_contracts import SolverShiftRequirement
-from app.services.scheduling.solver_contracts import SolverTimeBlock
+from app.services.scheduling.solver_contracts import SolverWeeklyAvailabilityDay
 
 
 def period_start_datetime(schedule_period: SchedulePeriod) -> datetime:
@@ -36,11 +41,11 @@ def period_end_datetime(schedule_period: SchedulePeriod) -> datetime:
     return aware_end_datetime
 
 
-def room_type_ids_for_room(
+def required_room_type_skills_for_room(
     room: Room,
     room_type_assignments: list[RoomRoomType],
-) -> list[UUID]:
-    room_type_ids: list[UUID] = []
+) -> list[SolverRequiredRoomTypeSkill]:
+    required_skills: list[SolverRequiredRoomTypeSkill] = []
 
     for room_type_assignment in room_type_assignments:
         assignment_matches_room = room_type_assignment.room_id == room.id
@@ -48,97 +53,130 @@ def room_type_ids_for_room(
         if not assignment_matches_room:
             continue
 
-        room_type_ids.append(room_type_assignment.room_type_id)
-
-    return room_type_ids
-
-
-def time_blocks_for_provider(
-    provider: Provider,
-    provider_availability_blocks: list[ProviderAvailability],
-    availability_type: str,
-) -> list[SolverTimeBlock]:
-    time_blocks: list[SolverTimeBlock] = []
-
-    for availability_block in provider_availability_blocks:
-        block_matches_provider = availability_block.provider_id == provider.id
-
-        if not block_matches_provider:
-            continue
-
-        block_matches_type = availability_block.availability_type == availability_type
-
-        if not block_matches_type:
-            continue
-
-        time_block = SolverTimeBlock(
-            start_time=availability_block.start_time,
-            end_time=availability_block.end_time,
-            availability_type=availability_block.availability_type,
+        required_skill = SolverRequiredRoomTypeSkill(
+            room_type_id=room_type_assignment.room_type_id,
+            required_proficiency_level=room_type_assignment.required_proficiency_level,
         )
-        time_blocks.append(time_block)
+        required_skills.append(required_skill)
 
-    return time_blocks
+    return required_skills
 
 
 def solver_room_from_model(
     room: Room,
     room_type_assignments: list[RoomRoomType],
 ) -> SolverRoom:
-    room_type_ids = room_type_ids_for_room(room, room_type_assignments)
+    required_room_type_skills = required_room_type_skills_for_room(
+        room,
+        room_type_assignments,
+    )
     solver_room = SolverRoom(
         id=room.id,
         center_id=room.center_id,
         md_only=room.md_only,
-        room_type_ids=room_type_ids,
+        is_active=room.is_active,
+        required_room_type_skills=required_room_type_skills,
     )
     return solver_room
 
 
-def active_credentialed_center_ids(provider: Provider) -> list[UUID]:
-    center_ids: list[UUID] = []
+def solver_provider_room_type_skills(
+    provider: Provider,
+) -> list[SolverProviderRoomTypeSkill]:
+    skill_summaries: list[SolverProviderRoomTypeSkill] = []
 
-    for credential in provider.center_credentials:
-        credential_is_active = credential.is_active
+    for room_type_skill in provider.room_type_skills:
+        skill_summary = SolverProviderRoomTypeSkill(
+            room_type_id=room_type_skill.room_type_id,
+            proficiency_level=room_type_skill.proficiency_level,
+        )
+        skill_summaries.append(skill_summary)
 
-        if not credential_is_active:
+    return skill_summaries
+
+
+def solver_weekly_availability_days(
+    provider: Provider,
+    weekly_availability_rows: list[ProviderScheduleWeekAvailability],
+) -> list[SolverWeeklyAvailabilityDay]:
+    days: list[SolverWeeklyAvailabilityDay] = []
+
+    for weekly_availability_row in weekly_availability_rows:
+        row_matches_provider = weekly_availability_row.provider_id == provider.id
+
+        if not row_matches_provider:
             continue
 
-        center_ids.append(credential.center_id)
+        day = SolverWeeklyAvailabilityDay(
+            weekday=weekly_availability_row.weekday,
+            options=weekly_availability_row.availability_options,
+        )
+        days.append(day)
 
-    return center_ids
+    return days
+
+
+def solver_provider_week_availability(
+    provider: Provider,
+    weekly_availability_rows: list[ProviderScheduleWeekAvailability],
+) -> SolverProviderWeekAvailability:
+    matching_rows = [
+        weekly_availability_row
+        for weekly_availability_row in weekly_availability_rows
+        if weekly_availability_row.provider_id == provider.id
+    ]
+    has_matching_row = len(matching_rows) > 0
+    min_shifts_requested = 0
+    max_shifts_requested = 0
+
+    if has_matching_row:
+        first_row = matching_rows[0]
+        min_shifts_requested = first_row.min_shifts_requested
+        max_shifts_requested = first_row.max_shifts_requested
+
+    days = solver_weekly_availability_days(
+        provider,
+        weekly_availability_rows,
+    )
+    week_availability = SolverProviderWeekAvailability(
+        provider_id=provider.id,
+        min_shifts_requested=min_shifts_requested,
+        max_shifts_requested=max_shifts_requested,
+        days=days,
+    )
+    return week_availability
 
 
 def solver_provider_from_model(
     provider: Provider,
-    provider_availability_blocks: list[ProviderAvailability],
+    weekly_availability_rows: list[ProviderScheduleWeekAvailability],
 ) -> SolverProvider:
-    unavailable_blocks = time_blocks_for_provider(
+    provider_room_type_skills = solver_provider_room_type_skills(provider)
+    week_availability = solver_provider_week_availability(
         provider,
-        provider_availability_blocks,
-        "unavailable",
+        weekly_availability_rows,
     )
-    preferred_blocks = time_blocks_for_provider(
-        provider,
-        provider_availability_blocks,
-        "preferred",
-    )
-    avoid_blocks = time_blocks_for_provider(
-        provider,
-        provider_availability_blocks,
-        "avoid_if_possible",
-    )
-    credentialed_center_ids = active_credentialed_center_ids(provider)
     solver_provider = SolverProvider(
         id=provider.id,
+        is_active=provider.is_active,
         provider_type=provider.provider_type,
-        credentialed_center_ids=credentialed_center_ids,
-        skill_room_type_ids=provider.skill_room_type_ids,
-        unavailable_blocks=unavailable_blocks,
-        preferred_blocks=preferred_blocks,
-        avoid_blocks=avoid_blocks,
+        provider_room_type_skills=provider_room_type_skills,
+        week_availability=week_availability,
     )
     return solver_provider
+
+
+def solver_credential_from_model(
+    credential: ProviderCenterCredential,
+) -> SolverCenterCredential:
+    solver_credential = SolverCenterCredential(
+        provider_id=credential.provider_id,
+        center_id=credential.center_id,
+        starts_at=credential.starts_at,
+        expires_at=credential.expires_at,
+        is_active=credential.is_active,
+    )
+    return solver_credential
 
 
 def solver_shift_from_model(shift_requirement: ShiftRequirement) -> SolverShiftRequirement:
@@ -148,6 +186,7 @@ def solver_shift_from_model(shift_requirement: ShiftRequirement) -> SolverShiftR
         source_shift_requirement_id=shift_requirement.id,
         center_id=shift_requirement.center_id,
         room_id=shift_requirement.room_id,
+        shift_type="full_shift",
         start_time=shift_requirement.start_time,
         end_time=shift_requirement.end_time,
         required_provider_count=shift_requirement.required_provider_count,
@@ -166,6 +205,7 @@ def solver_shift_from_assignment(
         source_shift_requirement_id=assignment.shift_requirement_id,
         center_id=assignment.center_id,
         room_id=assignment.room_id,
+        shift_type=assignment.shift_type,
         start_time=assignment.start_time,
         end_time=assignment.end_time,
         required_provider_count=1,
@@ -195,7 +235,6 @@ def load_rooms(
     session: Session,
 ) -> list[Room]:
     statement = select(Room).where(Room.organization_id == organization_id)
-    statement = statement.where(Room.is_active.is_(True))
     statement = statement.order_by(Room.center_id, Room.display_order, Room.name)
     rooms = list(session.scalars(statement))
     return rooms
@@ -216,7 +255,6 @@ def load_providers(
     session: Session,
 ) -> list[Provider]:
     statement = select(Provider).where(Provider.organization_id == organization_id)
-    statement = statement.where(Provider.is_active.is_(True))
     statement = statement.order_by(Provider.display_name, Provider.id)
     statement = statement.options(selectinload(Provider.center_credentials))
     statement = statement.options(selectinload(Provider.room_type_skills))
@@ -224,19 +262,16 @@ def load_providers(
     return providers
 
 
-def load_provider_availability(
+def load_provider_weekly_availability(
     schedule_period: SchedulePeriod,
     organization_id: UUID,
     session: Session,
-) -> list[ProviderAvailability]:
-    period_start = period_start_datetime(schedule_period)
-    period_end = period_end_datetime(schedule_period)
-    statement = select(ProviderAvailability)
-    statement = statement.where(ProviderAvailability.organization_id == organization_id)
-    statement = statement.where(ProviderAvailability.start_time < period_end)
-    statement = statement.where(ProviderAvailability.end_time > period_start)
-    provider_availability_blocks = list(session.scalars(statement))
-    return provider_availability_blocks
+) -> list[ProviderScheduleWeekAvailability]:
+    statement = select(ProviderScheduleWeekAvailability)
+    statement = statement.where(ProviderScheduleWeekAvailability.organization_id == organization_id)
+    statement = statement.where(ProviderScheduleWeekAvailability.schedule_week_id == schedule_period.id)
+    weekly_availability_rows = list(session.scalars(statement))
+    return weekly_availability_rows
 
 
 def build_solver_input(
@@ -248,7 +283,7 @@ def build_solver_input(
     rooms = load_rooms(organization_id, session)
     room_type_assignments = load_room_type_assignments(organization_id, session)
     providers = load_providers(organization_id, session)
-    provider_availability_blocks = load_provider_availability(
+    weekly_availability_rows = load_provider_weekly_availability(
         schedule_period,
         organization_id,
         session,
@@ -276,14 +311,20 @@ def build_solver_input(
         for room in rooms
     ]
     solver_providers = [
-        solver_provider_from_model(provider, provider_availability_blocks)
+        solver_provider_from_model(provider, weekly_availability_rows)
         for provider in providers
+    ]
+    solver_credentials = [
+        solver_credential_from_model(credential)
+        for provider in providers
+        for credential in provider.center_credentials
     ]
     solver_input = SolverInput(
         organization_id=organization_id,
         schedule_period_id=schedule_period.id,
         rooms=solver_rooms,
         providers=solver_providers,
+        center_credentials=solver_credentials,
         shift_requirements=solver_shift_requirements,
     )
     return solver_input
