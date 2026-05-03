@@ -22,6 +22,19 @@ Do not add time-of-day preferences in this pass.
 
 ## Guiding Principles
 
+## Relationship To Fairness Plan
+
+Treat this document as the preference-objective implementation plan.
+
+Treat `docs/plans/fairness.md` as the cross-cycle fairness-accounting plan.
+
+Avoid redefining fairness account mechanics here.
+
+Reference fairness pressure outputs as solver inputs for preference balancing.
+
+Keep shared concepts in one place and link instead of duplicating details.
+
+
 Keep hard constraints separate from soft objectives.
 
 Use typed contracts at solver boundaries.
@@ -88,7 +101,9 @@ Use that candidate score in the objective.
 
 ## Fairness Integration
 
-Add preference scoring as another soft term in the existing fairness mechanism.
+Use fairness pressure signals from `docs/plans/fairness.md` during objective composition.
+
+Keep this document focused on preference scoring inputs and explainability outputs.
 
 Keep min and max shift requests as soft terms.
 
@@ -216,7 +231,7 @@ Store candidate score and breakdown for objective construction.
 
 Add preference score terms to the CP-SAT objective.
 
-Keep existing fairness terms in place.
+Compose preference terms with fairness pressure terms defined in `docs/plans/fairness.md`.
 
 Tune relative coefficients in one centralized weight config.
 
