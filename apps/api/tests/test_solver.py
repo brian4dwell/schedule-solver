@@ -380,3 +380,34 @@ def test_solver_respects_locked_provider_assignment() -> None:
     assert result.is_feasible is True
     assert len(result.assignments) == 1
     assert result.assignments[0].provider_id == locked_provider.id
+
+
+def test_solver_uses_fairness_pressure_to_protect_higher_debt_provider() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    center_id = uuid4()
+    room_type_id = uuid4()
+    room = create_room(center_id, room_type_id)
+    high_debt_provider = create_provider(center_id, room_type_id)
+    low_debt_provider = create_provider(center_id, room_type_id)
+    high_debt_provider.fairness_debt = 3.0
+    high_debt_provider.favor_credit = 0.0
+    low_debt_provider.fairness_debt = 0.0
+    low_debt_provider.favor_credit = 0.0
+    high_debt_credential = create_credential(high_debt_provider.id, center_id)
+    low_debt_credential = create_credential(low_debt_provider.id, center_id)
+    shift = create_shift(center_id, room.id, 7, 15)
+    solver_input = SolverInput(
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        rooms=[room],
+        providers=[high_debt_provider, low_debt_provider],
+        center_credentials=[high_debt_credential, low_debt_credential],
+        shift_requirements=[shift],
+    )
+
+    result = solve_schedule(solver_input)
+
+    assert result.is_feasible is True
+    assert len(result.assignments) == 1
+    assert result.assignments[0].provider_id == low_debt_provider.id
