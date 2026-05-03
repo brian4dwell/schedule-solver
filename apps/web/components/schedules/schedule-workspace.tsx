@@ -1460,6 +1460,27 @@ export function ScheduleWorkspace({
     updateWorkingVersion(nextVersion);
   }
 
+  function handleClearAssignments() {
+    const assignments: ScheduleRoomAssignment[] = [];
+    const nextVersion = scheduleVersionSchema.parse({
+      ...workingVersion,
+      assignments,
+    });
+    updateWorkingVersion(nextVersion);
+  }
+
+  function handleClearDayAssignments(dayKey: ScheduleDayKey) {
+    const remainingAssignments = workingVersion.assignments.filter((assignment) => {
+      return assignment.dayKey !== dayKey;
+    });
+    const reorderedAssignments = reorderAssignments(remainingAssignments);
+    const nextVersion = scheduleVersionSchema.parse({
+      ...workingVersion,
+      assignments: reorderedAssignments,
+    });
+    updateWorkingVersion(nextVersion);
+  }
+
   function handleShiftTypeChanged(
     assignmentId: string,
     shiftType: ScheduleRoomAssignment["shiftType"],
@@ -1733,6 +1754,14 @@ export function ScheduleWorkspace({
             </button>
             <button
               type="button"
+              onClick={handleClearAssignments}
+              disabled={assignedRoomCount === 0}
+              className="inline-flex h-9 items-center justify-center rounded-md border border-red-300 px-3 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+            >
+              Clear assignments
+            </button>
+            <button
+              type="button"
               onClick={handlePublishSchedule}
               disabled={!canPublish || isPublishing}
               className="inline-flex h-9 items-center justify-center rounded-md bg-teal-700 px-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
@@ -1761,12 +1790,24 @@ export function ScheduleWorkspace({
                   className="flex min-h-96 min-w-52 flex-col rounded-md border border-slate-200 bg-slate-50"
                 >
                   <div className="border-b border-slate-200 px-3 py-2">
-                    <h4 className="text-sm font-semibold text-slate-950">
-                      {column.label}
-                    </h4>
-                    <p className="text-xs text-slate-500">
-                      {dayAssignments.length} rooms
-                    </p>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="text-sm font-semibold text-slate-950">
+                          {column.label}
+                        </h4>
+                        <p className="text-xs text-slate-500">
+                          {dayAssignments.length} rooms
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleClearDayAssignments(column.key)}
+                        disabled={dayAssignments.length === 0}
+                        className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                      >
+                        Clear day
+                      </button>
+                    </div>
                   </div>
                   <div className="flex flex-1 flex-col gap-2 p-2">
                     {dayAssignments.map((assignment, index) => {
