@@ -7,6 +7,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from app.db.models import SchedulePeriod
 from app.db.models import ProviderScheduleWeekAvailability
 from app.routers.provider_availability import build_read_response
+from app.routers.provider_availability import saved_options_for_day
 from app.routers.provider_availability import schedule_week_is_locked
 from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityReplaceRequest
 
@@ -177,3 +178,19 @@ def test_provider_weekly_availability_defaults_weekends_to_none() -> None:
     assert day_by_weekday["friday"].options == ["unset"]
     assert day_by_weekday["saturday"].options == ["none"]
     assert day_by_weekday["sunday"].options == ["none"]
+
+
+def test_provider_weekly_availability_save_changes_unset_to_none() -> None:
+    options = ["unset"]
+
+    saved_options = saved_options_for_day(options)
+
+    assert saved_options == ["none"]
+
+
+def test_provider_weekly_availability_save_keeps_selected_options() -> None:
+    options = ["full_shift", "first_half"]
+
+    saved_options = saved_options_for_day(options)
+
+    assert saved_options == ["full_shift", "first_half"]
