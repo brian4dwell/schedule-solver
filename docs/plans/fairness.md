@@ -23,6 +23,11 @@ This gives us a single, auditable fairness currency that can be incorporated int
 
 ## Design goals
 
+Preference scoring details live in `docs/plans/prefs.md`.
+
+This document defines fairness accounting and pressure signals consumed by preference and objective composition.
+
+
 - Reduce repeated burden on the same person.
 - Preserve flexibility when schedule feasibility is tight.
 - Make special-treatment policy explicit instead of hidden.
@@ -93,10 +98,10 @@ Higher pressure means "protect this person from additional pain this cycle."
 
 When evaluating candidate schedules:
 
-- Add marginal cost for negative events.
+- Add marginal fairness cost for negative events.
 - Scale that cost by event severity.
 - Scale that cost by practitioner pressure and priority tier.
-- Optionally reduce pressure slightly when positive events are assigned.
+- Pass fairness pressure outputs to preference objective composition in `docs/plans/prefs.md`.
 
 Result:
 
