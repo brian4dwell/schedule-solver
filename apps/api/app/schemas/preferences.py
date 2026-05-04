@@ -1,4 +1,3 @@
-from datetime import date
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -10,8 +9,6 @@ from app.schemas.common import TimestampedSchema
 
 class PreferenceWindow(BaseModel):
     preference_level: int = Field(ge=-3, le=3)
-    effective_start_date: date | None = None
-    effective_end_date: date | None = None
 
 
 class ProviderCenterPreferenceUpsert(PreferenceWindow):
@@ -32,8 +29,6 @@ class ProviderCenterPreferenceRead(TimestampedSchema):
     center_id: UUID
     preference_level: int
     is_active: bool
-    effective_start_date: date | None
-    effective_end_date: date | None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -43,8 +38,6 @@ class ProviderShiftTypePreferenceRead(TimestampedSchema):
     shift_type: str
     preference_level: int
     is_active: bool
-    effective_start_date: date | None
-    effective_end_date: date | None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -54,8 +47,6 @@ class ManagerProviderCenterPreferenceRead(TimestampedSchema):
     center_id: UUID
     preference_level: int
     is_active: bool
-    effective_start_date: date | None
-    effective_end_date: date | None
     manager_note: str | None
 
     model_config = ConfigDict(from_attributes=True)

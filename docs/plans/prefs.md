@@ -185,7 +185,7 @@ Store practitioner preferences in practitioner-managed tables.
 
 Store manager-only preferences in restricted manager tables.
 
-Use active flags and effective dates for both sources.
+Use active flags for both sources.
 
 Index by organization, practitioner, and center or skill key.
 
@@ -257,7 +257,7 @@ Add persistence models and migrations for practitioner preferences.
 
 Add persistence models and migrations for manager-only preferences.
 
-Add audit fields and active windows.
+Add audit fields and active status.
 
 ### Step 3: Input Builder
 
@@ -354,8 +354,6 @@ Set manager hidden weight to `5`.
 Keep these values in configuration for easy tuning.
 
 ## Open Questions
-
-Should manager-only preferences support expiration dates by default.
 
 Should hidden preferences support per-shift-type granularity.
 
