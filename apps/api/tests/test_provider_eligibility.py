@@ -10,6 +10,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from app.services.scheduling.provider_eligibility import credential_is_active_for_slot
 from app.services.scheduling.provider_eligibility import evaluate_provider_slot_eligibility
+from app.services.scheduling.provider_eligibility import overlapping_assignment_is_allowed
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityContext
 from app.services.scheduling.provider_eligibility_contracts import ProviderRoomTypeSkillSummary
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityInput
@@ -247,3 +248,30 @@ def test_credential_date_range_must_cover_slot() -> None:
     is_active = credential_is_active_for_slot(credential, start_time, end_time)
 
     assert is_active is False
+
+
+def test_overlapping_assignment_is_allowed_for_split_day_same_center() -> None:
+    center_id = uuid4()
+
+    overlap_is_allowed = overlapping_assignment_is_allowed(
+        center_id,
+        "first_half",
+        center_id,
+        "second_half",
+    )
+
+    assert overlap_is_allowed is True
+
+
+def test_overlapping_assignment_is_blocked_for_split_day_different_center() -> None:
+    first_center_id = uuid4()
+    second_center_id = uuid4()
+
+    overlap_is_allowed = overlapping_assignment_is_allowed(
+        first_center_id,
+        "first_half",
+        second_center_id,
+        "second_half",
+    )
+
+    assert overlap_is_allowed is False

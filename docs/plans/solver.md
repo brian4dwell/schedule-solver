@@ -270,7 +270,7 @@ Hard constraints define what the solver must obey.
 Start with:
 
 - Each shift requirement receives exactly `required_provider_count` assignments.
-- A provider cannot be assigned to overlapping shifts.
+- A provider cannot be assigned to overlapping shifts, except a `first_half` plus `second_half` pair in the same center.
 - A shift cannot target a missing or inactive room.
 - A provider cannot be assigned when they are inactive.
 - A provider cannot be assigned when their provider type does not match the required provider type.
