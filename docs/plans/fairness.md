@@ -150,6 +150,74 @@ Transparency is essential for practitioner trust.
 
 ## Implementation plan
 
+## Current implementation decisions
+
+The first real implementation slice is now contract-backed instead of mock UI data.
+
+Implemented backend surfaces:
+
+- `fairness_config_versions` stores the active decay and weight configuration.
+- `provider_fairness_states` stores the current solver-facing debt, favor credit, priority tier, and priority multiplier.
+- `provider_fairness_events` stores per-schedule-version ledger entries.
+- `provider_fairness_snapshots` stores per-provider balances for each schedule version.
+- `GET /fairness/report` returns the latest persisted fairness report.
+
+Implemented scoring events:
+
+- `assigned_shift` adds workload debt for each assigned shift.
+- `below_minimum_shift_request` adds debt when a provider receives fewer shifts than their requested weekly minimum.
+- `above_maximum_shift_request` adds debt when a provider receives more shifts than their requested weekly maximum.
+- `under_average_workload` adds favor credit when a provider receives materially lighter workload than the active-provider average.
+
+Implemented solver integration:
+
+- Solver input loading reads persisted `provider_fairness_states`.
+- `fairness_debt`, `favor_credit`, and `priority_multiplier` are passed into `SolverProvider`.
+- The solver objective uses the resulting pressure to avoid assigning more work to providers with high pressure when feasible.
+
+Implemented accounting lifecycle:
+
+- Saving or generating a schedule version records fairness events and snapshots for that version.
+- Publishing a schedule version applies its snapshots to `provider_fairness_states`.
+- Draft snapshots are inspectable, but the durable state changes only on publish.
+
+Current caveats:
+
+- The event catalog is intentionally small and based on data already present in the app.
+- Priority tier editing is not exposed yet.
+- Backtesting and calibration are not implemented yet.
+- Re-publishing another version of the same schedule period should be treated carefully until period-replacement accounting is explicitly designed.
+
+## UI implementation plan
+
+The Fairness UI must render only data returned by the backend fairness report contract.
+
+Current UI route:
+
+- `/fairness`
+
+Current UI data source:
+
+- `GET /fairness/report`
+- Web validation contract: `apps/web/lib/schemas/fairness.ts`
+- API client function: `getFairnessReport`
+
+Current UI views:
+
+- Empty state when no fairness snapshots exist.
+- Run summary for the latest schedule version with fairness records.
+- Metric cards derived from persisted snapshots.
+- Provider balance table showing assignments, ending debt, ending favor credit, pressure, and priority tier.
+- Event ledger showing provider, event type, category, debt delta, favor delta, reason, and timestamp.
+
+UI rules:
+
+- Do not hard-code example fairness metrics or fake transaction events.
+- Add a backend report field before adding a UI field.
+- Keep UI labels aligned with persisted event and snapshot terminology.
+- Validate the response with Zod before rendering.
+- Show unavailable future concepts as absent, not as placeholder data.
+
 ### Phase 0: Alignment and scope
 
 1. Confirm event taxonomy with operations and practitioner stakeholders.

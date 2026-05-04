@@ -11,6 +11,9 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Assignment
 from app.db.models import ConstraintViolation
+from app.db.models import ProviderFairnessEvent
+from app.db.models import ProviderFairnessSnapshot
+from app.db.models import ProviderFairnessState
 from app.db.models import ProviderScheduleWeekAvailability
 from app.db.models import ScheduleJob
 from app.db.models import SchedulePeriod
@@ -36,6 +39,8 @@ from app.services.scheduling.provider_eligibility import check_provider_slot_eli
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityViolation
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityInput
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityResult
+from app.services.scheduling.fairness import apply_fairness_state_for_schedule_version
+from app.services.scheduling.fairness import record_fairness_for_schedule_version
 from app.services.scheduling.solver_service import generate_schedule_draft
 
 router = APIRouter(tags=["schedules"])
@@ -240,6 +245,44 @@ def delete_constraint_violations_for_period(
     session.execute(statement)
 
 
+def clear_fairness_state_links_for_period(
+    schedule_period_id: UUID,
+    schedule_version_ids: list[UUID],
+    organization_id: UUID,
+    session: Session,
+) -> None:
+    statement = sqlalchemy_update(ProviderFairnessState)
+    statement = statement.where(ProviderFairnessState.organization_id == organization_id)
+    period_matches = ProviderFairnessState.last_applied_schedule_period_id == schedule_period_id
+
+    if len(schedule_version_ids) > 0:
+        version_matches = ProviderFairnessState.last_applied_schedule_version_id.in_(schedule_version_ids)
+        statement = statement.where(period_matches | version_matches)
+    else:
+        statement = statement.where(period_matches)
+
+    statement = statement.values(
+        last_applied_schedule_period_id=None,
+        last_applied_schedule_version_id=None,
+    )
+    session.execute(statement)
+
+
+def delete_fairness_records_for_period(
+    schedule_period_id: UUID,
+    organization_id: UUID,
+    session: Session,
+) -> None:
+    event_statement = sqlalchemy_delete(ProviderFairnessEvent)
+    event_statement = event_statement.where(ProviderFairnessEvent.schedule_period_id == schedule_period_id)
+    event_statement = event_statement.where(ProviderFairnessEvent.organization_id == organization_id)
+    session.execute(event_statement)
+    snapshot_statement = sqlalchemy_delete(ProviderFairnessSnapshot)
+    snapshot_statement = snapshot_statement.where(ProviderFairnessSnapshot.schedule_period_id == schedule_period_id)
+    snapshot_statement = snapshot_statement.where(ProviderFairnessSnapshot.organization_id == organization_id)
+    session.execute(snapshot_statement)
+
+
 def delete_assignments_for_period(
     schedule_period_id: UUID,
     organization_id: UUID,
@@ -431,6 +474,13 @@ def save_schedule_version(
             session.add(constraint_violation)
             violations.append(constraint_violation)
 
+    session.flush()
+    record_fairness_for_schedule_version(
+        schedule_version,
+        assignments,
+        organization_id,
+        session,
+    )
     session.commit()
     session.refresh(schedule_version)
 
@@ -522,6 +572,8 @@ def delete_schedule_period(
         schedule_version.id
         for schedule_version in schedule_versions
     ]
+    clear_fairness_state_links_for_period(period_id, schedule_version_ids, organization_id, session)
+    delete_fairness_records_for_period(period_id, organization_id, session)
     delete_constraint_violations_for_period(schedule_version_ids, organization_id, session)
     delete_assignments_for_period(period_id, organization_id, session)
     clear_parent_schedule_version_links(schedule_version_ids, organization_id, session)
@@ -770,6 +822,17 @@ def publish_schedule_version(
         session,
     )
     published_at = current_utc_time()
+    record_fairness_for_schedule_version(
+        schedule_version,
+        assignments,
+        organization_id,
+        session,
+    )
+    apply_fairness_state_for_schedule_version(
+        schedule_version,
+        organization_id,
+        session,
+    )
     schedule_version.status = "published"
     schedule_version.published_at = published_at
     schedule_period.status = "published"

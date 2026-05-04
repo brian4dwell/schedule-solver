@@ -10,6 +10,7 @@ from app.db.models import ScheduleVersion
 from app.services.scheduling.solver_contracts import SolverAssignment
 from app.services.scheduling.solver_contracts import SolverResult
 from app.services.scheduling.solver_contracts import SolverViolation
+from app.services.scheduling.fairness import record_fairness_for_schedule_version
 
 
 def next_solver_version_number(
@@ -140,6 +141,13 @@ def persist_solver_result(
         session.add(constraint_violation)
         violations.append(constraint_violation)
 
+    session.flush()
+    record_fairness_for_schedule_version(
+        schedule_version,
+        assignments,
+        organization_id,
+        session,
+    )
     session.commit()
     session.refresh(schedule_version)
 

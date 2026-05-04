@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db.models import Provider
 from app.db.models import ProviderCenterCredential
+from app.db.models import ProviderFairnessState
 from app.db.models import ProviderScheduleWeekAvailability
 from app.db.models import Room
 from app.db.models import RoomRoomType
@@ -26,6 +27,11 @@ from app.services.scheduling.solver_contracts import SolverRequiredRoomTypeSkill
 from app.services.scheduling.solver_contracts import SolverRoom
 from app.services.scheduling.solver_contracts import SolverShiftRequirement
 from app.services.scheduling.solver_contracts import SolverWeeklyAvailabilityDay
+
+
+def numeric_value(value: object) -> float:
+    number = float(value)
+    return number
 
 
 def period_start_datetime(schedule_period: SchedulePeriod) -> datetime:
@@ -150,16 +156,34 @@ def solver_provider_week_availability(
 def solver_provider_from_model(
     provider: Provider,
     weekly_availability_rows: list[ProviderScheduleWeekAvailability],
+    fairness_states: list[ProviderFairnessState],
 ) -> SolverProvider:
     provider_room_type_skills = solver_provider_room_type_skills(provider)
     week_availability = solver_provider_week_availability(
         provider,
         weekly_availability_rows,
     )
+    fairness_debt = 0.0
+    favor_credit = 0.0
+    fairness_priority_multiplier = 1.0
+
+    for fairness_state in fairness_states:
+        state_matches_provider = fairness_state.provider_id == provider.id
+
+        if not state_matches_provider:
+            continue
+
+        fairness_debt = numeric_value(fairness_state.fairness_debt)
+        favor_credit = numeric_value(fairness_state.favor_credit)
+        fairness_priority_multiplier = numeric_value(fairness_state.priority_multiplier)
+
     solver_provider = SolverProvider(
         id=provider.id,
         is_active=provider.is_active,
         provider_type=provider.provider_type,
+        fairness_debt=fairness_debt,
+        favor_credit=favor_credit,
+        fairness_priority_multiplier=fairness_priority_multiplier,
         provider_room_type_skills=provider_room_type_skills,
         week_availability=week_availability,
     )
@@ -276,6 +300,16 @@ def load_provider_weekly_availability(
     return weekly_availability_rows
 
 
+def load_provider_fairness_states(
+    organization_id: UUID,
+    session: Session,
+) -> list[ProviderFairnessState]:
+    statement = select(ProviderFairnessState)
+    statement = statement.where(ProviderFairnessState.organization_id == organization_id)
+    fairness_states = list(session.scalars(statement))
+    return fairness_states
+
+
 def build_solver_input(
     schedule_period: SchedulePeriod,
     organization_id: UUID,
@@ -290,6 +324,7 @@ def build_solver_input(
         organization_id,
         session,
     )
+    fairness_states = load_provider_fairness_states(organization_id, session)
     has_requested_assignments = requested_assignments is not None
 
     if has_requested_assignments:
@@ -313,7 +348,7 @@ def build_solver_input(
         for room in rooms
     ]
     solver_providers = [
-        solver_provider_from_model(provider, weekly_availability_rows)
+        solver_provider_from_model(provider, weekly_availability_rows, fairness_states)
         for provider in providers
     ]
     solver_credentials = [

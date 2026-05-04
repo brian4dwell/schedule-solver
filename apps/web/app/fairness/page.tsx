@@ -1,5 +1,7 @@
 import { FairnessDashboard } from "@/components/fairness/fairness-dashboard";
+import { getFairnessReport } from "@/lib/api";
 
-export default function FairnessPage() {
-  return <FairnessDashboard />;
+export default async function FairnessPage() {
+  const report = await getFairnessReport();
+  return <FairnessDashboard report={report} />;
 }

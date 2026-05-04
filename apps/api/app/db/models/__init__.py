@@ -1,10 +1,14 @@
 from app.db.models.scheduling import Assignment
 from app.db.models.scheduling import Center
 from app.db.models.scheduling import ConstraintViolation
+from app.db.models.scheduling import FairnessConfigVersion
 from app.db.models.scheduling import Organization
 from app.db.models.scheduling import Provider
 from app.db.models.scheduling import ProviderAvailability
 from app.db.models.scheduling import ProviderCenterCredential
+from app.db.models.scheduling import ProviderFairnessEvent
+from app.db.models.scheduling import ProviderFairnessSnapshot
+from app.db.models.scheduling import ProviderFairnessState
 from app.db.models.scheduling import ProviderRoomTypeSkill
 from app.db.models.scheduling import ProviderScheduleWeekAvailability
 from app.db.models.scheduling import Room
@@ -20,10 +24,14 @@ __all__ = [
     "Assignment",
     "Center",
     "ConstraintViolation",
+    "FairnessConfigVersion",
     "Organization",
     "Provider",
     "ProviderAvailability",
     "ProviderCenterCredential",
+    "ProviderFairnessEvent",
+    "ProviderFairnessSnapshot",
+    "ProviderFairnessState",
     "ProviderRoomTypeSkill",
     "ProviderScheduleWeekAvailability",
     "Room",

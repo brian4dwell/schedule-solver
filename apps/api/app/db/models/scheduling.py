@@ -216,6 +216,79 @@ class ProviderScheduleWeekAvailability(Base, TimestampMixin):
     max_shifts_requested: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
+class FairnessConfigVersion(Base, TimestampMixin):
+    __tablename__ = "fairness_config_versions"
+    __table_args__ = (UniqueConstraint("organization_id", "version_number"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    decay_factor: Mapped[float] = mapped_column(Numeric, nullable=False)
+    debt_weight: Mapped[float] = mapped_column(Numeric, nullable=False)
+    favor_weight: Mapped[float] = mapped_column(Numeric, nullable=False)
+    standard_priority_multiplier: Mapped[float] = mapped_column(Numeric, nullable=False)
+    elevated_priority_multiplier: Mapped[float] = mapped_column(Numeric, nullable=False)
+    critical_priority_multiplier: Mapped[float] = mapped_column(Numeric, nullable=False)
+
+
+class ProviderFairnessState(Base, TimestampMixin):
+    __tablename__ = "provider_fairness_states"
+    __table_args__ = (UniqueConstraint("organization_id", "provider_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
+    config_version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("fairness_config_versions.id"), nullable=True)
+    fairness_debt: Mapped[float] = mapped_column(Numeric, nullable=False, default=0)
+    favor_credit: Mapped[float] = mapped_column(Numeric, nullable=False, default=0)
+    priority_tier: Mapped[str] = mapped_column(String(40), nullable=False, default="standard")
+    priority_multiplier: Mapped[float] = mapped_column(Numeric, nullable=False, default=1)
+    last_applied_schedule_period_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("schedule_periods.id"), nullable=True)
+    last_applied_schedule_version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("schedule_versions.id"), nullable=True)
+
+
+class ProviderFairnessEvent(Base, TimestampMixin):
+    __tablename__ = "provider_fairness_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
+    schedule_period_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("schedule_periods.id"), nullable=False)
+    schedule_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("schedule_versions.id"), nullable=False)
+    assignment_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("assignments.id"), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    category: Mapped[str] = mapped_column(String(40), nullable=False)
+    debt_delta: Mapped[float] = mapped_column(Numeric, nullable=False)
+    favor_delta: Mapped[float] = mapped_column(Numeric, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class ProviderFairnessSnapshot(Base, TimestampMixin):
+    __tablename__ = "provider_fairness_snapshots"
+    __table_args__ = (UniqueConstraint("organization_id", "schedule_version_id", "provider_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
+    schedule_period_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("schedule_periods.id"), nullable=False)
+    schedule_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("schedule_versions.id"), nullable=False)
+    config_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("fairness_config_versions.id"), nullable=False)
+    starting_debt: Mapped[float] = mapped_column(Numeric, nullable=False)
+    starting_favor_credit: Mapped[float] = mapped_column(Numeric, nullable=False)
+    weekly_debt_delta: Mapped[float] = mapped_column(Numeric, nullable=False)
+    weekly_favor_delta: Mapped[float] = mapped_column(Numeric, nullable=False)
+    ending_debt: Mapped[float] = mapped_column(Numeric, nullable=False)
+    ending_favor_credit: Mapped[float] = mapped_column(Numeric, nullable=False)
+    fairness_pressure: Mapped[float] = mapped_column(Numeric, nullable=False)
+    priority_tier: Mapped[str] = mapped_column(String(40), nullable=False)
+    priority_multiplier: Mapped[float] = mapped_column(Numeric, nullable=False)
+    assignment_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    negative_event_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    positive_event_count: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class ShiftRequirement(Base, TimestampMixin):
     __tablename__ = "shift_requirements"
 

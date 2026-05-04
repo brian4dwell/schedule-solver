@@ -1,6 +1,11 @@
 import { centerSchema, type CenterFormValues } from "@/lib/schemas/center";
 import { nextPublicApiBaseUrl } from "@/lib/env";
 import {
+  fairnessReportApiSchema,
+  type FairnessReportApi,
+  type FairnessStatus,
+} from "@/lib/schemas/fairness";
+import {
   providerApiSchema,
   providerSchema,
   providersApiSchema,
@@ -87,6 +92,8 @@ export type ScheduleGenerateResponse = ScheduleGenerateResponseApi;
 export type SchedulePublishResponse = SchedulePublishResponseApi;
 export type ProviderSlotEligibility = ProviderSlotEligibilityApi;
 export type ProviderWeeklyAvailabilityRecord = ProviderWeeklyAvailability;
+export type FairnessReport = FairnessReportApi;
+export type { FairnessStatus };
 
 export type ScheduleAssignmentSavePayload = {
   provider_id: string | null;
@@ -529,4 +536,12 @@ export async function deleteProviderWeeklyAvailability(
 ): Promise<void> {
   const path = `/schedule-weeks/${scheduleWeekId}/providers/${providerId}/availability`;
   await requestJson<unknown>(path, { method: "DELETE", cache: "no-store" });
+}
+
+export async function getFairnessReport(): Promise<FairnessReport> {
+  const responseJson = await requestJson<unknown>("/fairness/report", {
+    cache: "no-store",
+  });
+  const report = fairnessReportApiSchema.parse(responseJson);
+  return report;
 }
