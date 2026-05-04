@@ -31,6 +31,7 @@ import {
 import {
   persistedScheduleVersionApiSchema,
   providerSlotEligibilityApiSchema,
+  schedulePeriodCloneResponseApiSchema,
   scheduleDraftSaveResponseApiSchema,
   scheduleGenerateResponseApiSchema,
   schedulePeriodApiSchema,
@@ -42,6 +43,7 @@ import {
   type SchedulePeriodApi,
   type SchedulePeriodFormValues,
   type SchedulePeriodRenameValues,
+  type SchedulePeriodCloneResponseApi,
   type PersistedScheduleVersionApi,
   type ScheduleGenerateResponseApi,
   type SchedulePublishResponseApi,
@@ -96,6 +98,8 @@ export type ManagerProviderPreferences = ManagerProviderPreferencesApi;
 export type ManagerProviderPreferencesSavePayload = ManagerProviderPreferencesPayload;
 
 export type SchedulePeriod = SchedulePeriodApi;
+
+export type SchedulePeriodCloneResponse = SchedulePeriodCloneResponseApi;
 
 export type PersistedScheduleVersion = PersistedScheduleVersionApi;
 
@@ -469,6 +473,20 @@ export async function renameSchedulePeriod(
   return period;
 }
 
+export async function cloneSchedulePeriod(
+  periodId: string,
+): Promise<SchedulePeriodCloneResponse> {
+  const responseJson = await requestJson<unknown>(
+    `/schedule-periods/${periodId}/clone`,
+    {
+      method: "POST",
+      cache: "no-store",
+    },
+  );
+  const response = schedulePeriodCloneResponseApiSchema.parse(responseJson);
+  return response;
+}
+
 export async function getSchedulePeriod(periodId: string): Promise<SchedulePeriod> {
   const responseJson = await requestJson<unknown>(`/schedule-periods/${periodId}`, {
     cache: "no-store",
@@ -506,20 +524,6 @@ export async function saveDraftScheduleVersion(
 ): Promise<ScheduleVersionDetail> {
   const init = jsonRequestInit("POST", payload);
   const responseJson = await requestJson<unknown>("/schedule-versions/draft", init);
-  const detail = scheduleDraftSaveResponseApiSchema.parse(responseJson);
-  return detail;
-}
-
-export async function duplicateScheduleVersion(
-  versionId: string,
-): Promise<ScheduleVersionDetail> {
-  const responseJson = await requestJson<unknown>(
-    `/schedule-versions/${versionId}/duplicate`,
-    {
-      method: "POST",
-      cache: "no-store",
-    },
-  );
   const detail = scheduleDraftSaveResponseApiSchema.parse(responseJson);
   return detail;
 }

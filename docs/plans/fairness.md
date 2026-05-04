@@ -164,10 +164,15 @@ Implemented backend surfaces:
 
 Implemented scoring events:
 
-- `assigned_shift` adds workload debt for each assigned shift.
 - `below_minimum_shift_request` adds debt when a provider receives fewer shifts than their requested weekly minimum.
 - `above_maximum_shift_request` adds debt when a provider receives more shifts than their requested weekly maximum.
+- `full_shift_availability_accommodation` adds debt when full-day availability is used to cover a shorter shift.
 - `under_average_workload` adds favor credit when a provider receives materially lighter workload than the active-provider average.
+
+Planned debt events:
+
+- Center preference accommodations.
+- Skill or shift-type preference accommodations.
 
 Implemented solver integration:
 

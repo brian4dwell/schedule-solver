@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Assignment
 from app.db.models import ConstraintViolation
+from app.db.models import Provider
 from app.db.models import ProviderFairnessEvent
 from app.db.models import ProviderFairnessSnapshot
 from app.db.models import ProviderFairnessState
@@ -30,6 +31,7 @@ from app.schemas.schedule import ScheduleDraftSaveResponse
 from app.schemas.schedule import ScheduleGenerateRequest
 from app.schemas.schedule import ScheduleGenerateResponse
 from app.schemas.schedule import ScheduleAssignmentCreate
+from app.schemas.schedule import SchedulePeriodCloneResponse
 from app.schemas.schedule import SchedulePeriodCreate
 from app.schemas.schedule import SchedulePeriodRead
 from app.schemas.schedule import SchedulePeriodRenameRequest
@@ -41,7 +43,7 @@ from app.services.scheduling.provider_eligibility import check_provider_slot_eli
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityViolation
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityInput
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityResult
-from app.services.scheduling.fairness import apply_fairness_state_for_schedule_version
+from app.services.scheduling.fairness import rebuild_published_fairness_state
 from app.services.scheduling.fairness import record_fairness_for_schedule_version
 from app.services.scheduling.solver_service import generate_schedule_draft
 
@@ -512,6 +514,254 @@ def duplicate_assignment_request(assignment: Assignment) -> ScheduleAssignmentCr
     return requested_assignment
 
 
+def clone_schedule_period_name(schedule_period: SchedulePeriod) -> str:
+    name = f"Copy of {schedule_period.name}"
+    return name
+
+
+def latest_schedule_version_for_period(
+    schedule_period_id: UUID,
+    organization_id: UUID,
+    session: Session,
+) -> ScheduleVersion | None:
+    statement = select(ScheduleVersion)
+    statement = statement.where(ScheduleVersion.schedule_period_id == schedule_period_id)
+    statement = statement.where(ScheduleVersion.organization_id == organization_id)
+    statement = statement.order_by(ScheduleVersion.version_number.desc())
+    schedule_version = session.scalar(statement)
+    return schedule_version
+
+
+def duplicate_assignment_requests(assignments: list[Assignment]) -> list[ScheduleAssignmentCreate]:
+    requested_assignments: list[ScheduleAssignmentCreate] = []
+
+    for assignment in assignments:
+        requested_assignment = duplicate_assignment_request(assignment)
+        requested_assignments.append(requested_assignment)
+
+    return requested_assignments
+
+
+def weekly_availability_rows_for_period(
+    schedule_period_id: UUID,
+    organization_id: UUID,
+    session: Session,
+) -> list[ProviderScheduleWeekAvailability]:
+    statement = select(ProviderScheduleWeekAvailability)
+    statement = statement.where(ProviderScheduleWeekAvailability.schedule_week_id == schedule_period_id)
+    statement = statement.where(ProviderScheduleWeekAvailability.organization_id == organization_id)
+    statement = statement.order_by(
+        ProviderScheduleWeekAvailability.provider_id,
+        ProviderScheduleWeekAvailability.weekday,
+    )
+    availability_rows = list(session.scalars(statement))
+    return availability_rows
+
+
+def create_cloned_weekly_availability_row(
+    source_availability: ProviderScheduleWeekAvailability,
+    target_schedule_period_id: UUID,
+) -> ProviderScheduleWeekAvailability:
+    availability_options = list(source_availability.availability_options)
+    availability = ProviderScheduleWeekAvailability(
+        organization_id=source_availability.organization_id,
+        schedule_week_id=target_schedule_period_id,
+        provider_id=source_availability.provider_id,
+        weekday=source_availability.weekday,
+        availability_options=availability_options,
+        min_shifts_requested=source_availability.min_shifts_requested,
+        max_shifts_requested=source_availability.max_shifts_requested,
+    )
+    return availability
+
+
+def clone_weekly_availability_for_period(
+    source_schedule_period_id: UUID,
+    target_schedule_period_id: UUID,
+    organization_id: UUID,
+    session: Session,
+) -> None:
+    source_availability_rows = weekly_availability_rows_for_period(
+        source_schedule_period_id,
+        organization_id,
+        session,
+    )
+
+    for source_availability in source_availability_rows:
+        availability = create_cloned_weekly_availability_row(
+            source_availability,
+            target_schedule_period_id,
+        )
+        session.add(availability)
+
+
+def active_providers_for_shift_request_warnings(
+    organization_id: UUID,
+    session: Session,
+) -> list[Provider]:
+    statement = select(Provider)
+    statement = statement.where(Provider.organization_id == organization_id)
+    statement = statement.where(Provider.is_active.is_(True))
+    statement = statement.order_by(Provider.display_name)
+    providers = list(session.scalars(statement))
+    return providers
+
+
+def weekly_availability_rows_for_shift_request_warnings(
+    schedule_period_id: UUID,
+    organization_id: UUID,
+    session: Session,
+) -> list[ProviderScheduleWeekAvailability]:
+    statement = select(ProviderScheduleWeekAvailability)
+    statement = statement.where(ProviderScheduleWeekAvailability.organization_id == organization_id)
+    statement = statement.where(ProviderScheduleWeekAvailability.schedule_week_id == schedule_period_id)
+    statement = statement.order_by(
+        ProviderScheduleWeekAvailability.provider_id,
+        ProviderScheduleWeekAvailability.weekday,
+    )
+    availability_rows = list(session.scalars(statement))
+    return availability_rows
+
+
+def weekly_availability_for_shift_request_warning(
+    provider_id: UUID,
+    availability_rows: list[ProviderScheduleWeekAvailability],
+) -> ProviderScheduleWeekAvailability | None:
+    for availability in availability_rows:
+        provider_matches = availability.provider_id == provider_id
+
+        if provider_matches:
+            return availability
+
+    return None
+
+
+def assignment_count_for_provider(
+    provider_id: UUID,
+    assignments: list[Assignment],
+) -> int:
+    provider_assignments = [
+        assignment
+        for assignment in assignments
+        if assignment.provider_id == provider_id
+    ]
+    assignment_count = len(provider_assignments)
+    return assignment_count
+
+
+def create_shift_request_constraint_violation(
+    provider: Provider,
+    schedule_version: ScheduleVersion,
+    organization_id: UUID,
+    constraint_type: str,
+    message: str,
+    assigned_shift_count: int,
+    requested_shift_count: int,
+) -> ConstraintViolation:
+    metadata_json = {
+        "provider_id": str(provider.id),
+        "assigned_shift_count": assigned_shift_count,
+        "requested_shift_count": requested_shift_count,
+    }
+    constraint_violation = ConstraintViolation(
+        organization_id=organization_id,
+        schedule_version_id=schedule_version.id,
+        assignment_id=None,
+        severity="warning",
+        constraint_type=constraint_type,
+        message=message,
+        metadata_json=metadata_json,
+    )
+    return constraint_violation
+
+
+def shift_request_constraint_violations_for_provider(
+    provider: Provider,
+    assignments: list[Assignment],
+    availability: ProviderScheduleWeekAvailability,
+    schedule_version: ScheduleVersion,
+    organization_id: UUID,
+) -> list[ConstraintViolation]:
+    violations: list[ConstraintViolation] = []
+    assigned_shift_count = assignment_count_for_provider(provider.id, assignments)
+    min_shifts_requested = availability.min_shifts_requested
+    max_shifts_requested = availability.max_shifts_requested
+    provider_is_below_minimum = assigned_shift_count < min_shifts_requested
+    provider_is_above_maximum = assigned_shift_count > max_shifts_requested
+
+    if provider_is_below_minimum:
+        message = (
+            f"{provider.display_name} is scheduled for "
+            f"{assigned_shift_count}/{min_shifts_requested} requested minimum shifts."
+        )
+        violation = create_shift_request_constraint_violation(
+            provider,
+            schedule_version,
+            organization_id,
+            "provider_min_shifts_not_met",
+            message,
+            assigned_shift_count,
+            min_shifts_requested,
+        )
+        violations.append(violation)
+
+    if provider_is_above_maximum:
+        message = (
+            f"{provider.display_name} is scheduled for "
+            f"{assigned_shift_count}/{max_shifts_requested} requested maximum shifts."
+        )
+        violation = create_shift_request_constraint_violation(
+            provider,
+            schedule_version,
+            organization_id,
+            "provider_max_shifts_exceeded",
+            message,
+            assigned_shift_count,
+            max_shifts_requested,
+        )
+        violations.append(violation)
+
+    return violations
+
+
+def shift_request_constraint_violations(
+    assignments: list[Assignment],
+    schedule_version: ScheduleVersion,
+    organization_id: UUID,
+    session: Session,
+) -> list[ConstraintViolation]:
+    providers = active_providers_for_shift_request_warnings(
+        organization_id,
+        session,
+    )
+    availability_rows = weekly_availability_rows_for_shift_request_warnings(
+        schedule_version.schedule_period_id,
+        organization_id,
+        session,
+    )
+    violations: list[ConstraintViolation] = []
+
+    for provider in providers:
+        availability = weekly_availability_for_shift_request_warning(
+            provider.id,
+            availability_rows,
+        )
+
+        if availability is None:
+            continue
+
+        provider_violations = shift_request_constraint_violations_for_provider(
+            provider,
+            assignments,
+            availability,
+            schedule_version,
+            organization_id,
+        )
+        violations.extend(provider_violations)
+
+    return violations
+
+
 def save_schedule_version(
     request: ScheduleDraftSaveRequest,
     source: str,
@@ -594,6 +844,17 @@ def save_schedule_version(
             )
             session.add(constraint_violation)
             violations.append(constraint_violation)
+
+    shift_request_violations = shift_request_constraint_violations(
+        assignments,
+        schedule_version,
+        organization_id,
+        session,
+    )
+
+    for violation in shift_request_violations:
+        session.add(violation)
+        violations.append(violation)
 
     session.flush()
     record_fairness_for_schedule_version(
@@ -704,6 +965,64 @@ def delete_schedule_period(
     session.delete(schedule_period)
     session.commit()
     return schedule_period_read
+
+
+@router.post(
+    "/schedule-periods/{period_id}/clone",
+    response_model=SchedulePeriodCloneResponse,
+    status_code=201,
+)
+def clone_schedule_period(
+    period_id: UUID,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> SchedulePeriodCloneResponse:
+    source_schedule_period = require_schedule_period(period_id, organization_id, session)
+    source_schedule_version = latest_schedule_version_for_period(
+        period_id,
+        organization_id,
+        session,
+    )
+
+    if source_schedule_version is None:
+        raise HTTPException(status_code=409, detail="Save a version before cloning this schedule")
+
+    cloned_name = clone_schedule_period_name(source_schedule_period)
+    cloned_schedule_period = SchedulePeriod(
+        organization_id=organization_id,
+        name=cloned_name,
+        start_date=source_schedule_period.start_date,
+        end_date=source_schedule_period.end_date,
+        status="draft",
+    )
+    session.add(cloned_schedule_period)
+    session.flush()
+    clone_weekly_availability_for_period(
+        source_schedule_period.id,
+        cloned_schedule_period.id,
+        organization_id,
+        session,
+    )
+    session.flush()
+    source_assignments = assignments_for_version(
+        source_schedule_version.id,
+        organization_id,
+        session,
+    )
+    requested_assignments = duplicate_assignment_requests(source_assignments)
+    request = ScheduleDraftSaveRequest(
+        schedule_period_id=cloned_schedule_period.id,
+        parent_schedule_version_id=None,
+        notes=source_schedule_version.notes,
+        assignments=requested_assignments,
+    )
+    schedule_version = save_schedule_version(request, "duplicate", session, organization_id)
+    session.refresh(cloned_schedule_period)
+    response = SchedulePeriodCloneResponse(
+        schedule_period=cloned_schedule_period,
+        schedule_version=schedule_version,
+    )
+    return response
 
 
 @router.get("/schedule-periods/{period_id}/versions", response_model=list[ScheduleVersionRead])
@@ -861,34 +1180,6 @@ def read_schedule_version_violations(
     return violations
 
 
-@router.post(
-    "/schedule-versions/{schedule_version_id}/duplicate",
-    response_model=ScheduleDraftSaveResponse,
-    status_code=201,
-)
-def duplicate_schedule_version(
-    schedule_version_id: UUID,
-    session: Session = Depends(get_db),
-    organization_id: UUID = Depends(get_current_organization_id),
-) -> ScheduleDraftSaveResponse:
-    schedule_version = require_schedule_version(schedule_version_id, organization_id, session)
-    assignments = assignments_for_version(schedule_version_id, organization_id, session)
-    requested_assignments: list[ScheduleAssignmentCreate] = []
-
-    for assignment in assignments:
-        requested_assignment = duplicate_assignment_request(assignment)
-        requested_assignments.append(requested_assignment)
-
-    request = ScheduleDraftSaveRequest(
-        schedule_period_id=schedule_version.schedule_period_id,
-        parent_schedule_version_id=schedule_version.id,
-        notes=schedule_version.notes,
-        assignments=requested_assignments,
-    )
-    response = save_schedule_version(request, "duplicate", session, organization_id)
-    return response
-
-
 @router.post("/schedule-versions/{schedule_version_id}/publish", response_model=SchedulePublishResponse)
 def publish_schedule_version(
     schedule_version_id: UUID,
@@ -953,20 +1244,13 @@ def publish_schedule_version(
         session,
     )
     published_at = current_utc_time()
-    record_fairness_for_schedule_version(
-        schedule_version,
-        assignments,
-        organization_id,
-        session,
-    )
-    apply_fairness_state_for_schedule_version(
-        schedule_version,
-        organization_id,
-        session,
-    )
     schedule_version.status = "published"
     schedule_version.published_at = published_at
     schedule_period.status = "published"
+    rebuild_published_fairness_state(
+        organization_id,
+        session,
+    )
     session.commit()
     session.refresh(schedule_version)
     response = SchedulePublishResponse(

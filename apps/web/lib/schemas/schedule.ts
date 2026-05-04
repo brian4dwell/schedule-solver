@@ -155,6 +155,11 @@ export const scheduleVersionDetailApiSchema = z.object({
 
 export const scheduleDraftSaveResponseApiSchema = scheduleVersionDetailApiSchema;
 
+export const schedulePeriodCloneResponseApiSchema = z.object({
+  schedule_period: schedulePeriodApiSchema,
+  schedule_version: scheduleDraftSaveResponseApiSchema,
+});
+
 export const solverRunMetricsApiSchema = z.object({
   solve_duration_ms: z.number().int().min(0),
   payload_size_bytes: z.number().int().min(0),
@@ -230,6 +235,10 @@ export type PersistedScheduleVersionApi = z.infer<
 
 export type ScheduleVersionDetailApi = z.infer<
   typeof scheduleVersionDetailApiSchema
+>;
+
+export type SchedulePeriodCloneResponseApi = z.infer<
+  typeof schedulePeriodCloneResponseApiSchema
 >;
 
 export type ScheduleGenerateResponseApi = z.infer<

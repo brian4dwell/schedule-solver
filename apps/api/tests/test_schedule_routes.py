@@ -7,9 +7,17 @@ import pytest
 from fastapi import HTTPException
 
 from app.db.models import Assignment
+from app.db.models import Provider
+from app.db.models import ProviderScheduleWeekAvailability
+from app.db.models import SchedulePeriod
+from app.db.models import ScheduleVersion
+from app.routers.schedules import clone_schedule_period_name
+from app.routers.schedules import create_cloned_weekly_availability_row
 from app.routers.schedules import create_assignment_from_request
 from app.routers.schedules import duplicate_assignment_request
+from app.routers.schedules import duplicate_assignment_requests
 from app.routers.schedules import router
+from app.routers.schedules import shift_request_constraint_violations_for_provider
 from app.routers.schedules import stable_assignment_request
 from app.routers.schedules import unassigned_provider_violation
 from app.routers.schedules import validate_schedule_period_dates
@@ -47,19 +55,100 @@ def test_schedule_period_route_accepts_patch() -> None:
     assert len(patch_routes) == 1
 
 
-def test_schedule_version_route_accepts_duplicate() -> None:
-    version_routes = [
+def test_schedule_period_route_accepts_clone() -> None:
+    period_routes = [
         route
         for route in router.routes
-        if route.path == "/schedule-versions/{schedule_version_id}/duplicate"
+        if route.path == "/schedule-periods/{period_id}/clone"
     ]
-    duplicate_routes = [
+    clone_routes = [
         route
-        for route in version_routes
+        for route in period_routes
         if "POST" in route.methods
     ]
 
-    assert len(duplicate_routes) == 1
+    assert len(clone_routes) == 1
+
+
+def create_provider_for_shift_requests(display_name: str) -> Provider:
+    provider = Provider(
+        id=uuid4(),
+        organization_id=uuid4(),
+        first_name=display_name,
+        last_name="Provider",
+        display_name=display_name,
+        email=None,
+        phone=None,
+        provider_type="doctor",
+        employment_type="employee",
+        is_active=True,
+        notes=None,
+    )
+    return provider
+
+
+def create_schedule_version_for_shift_requests(provider: Provider) -> ScheduleVersion:
+    schedule_version = ScheduleVersion(
+        id=uuid4(),
+        organization_id=provider.organization_id,
+        schedule_period_id=uuid4(),
+        schedule_job_id=None,
+        version_number=1,
+        status="draft",
+        source="manual",
+        parent_schedule_version_id=None,
+        published_at=None,
+        published_by_user_id=None,
+        created_by_user_id=None,
+        solver_score=None,
+        notes=None,
+    )
+    return schedule_version
+
+
+def create_assignment_for_shift_requests(
+    provider: Provider,
+    schedule_version: ScheduleVersion,
+) -> Assignment:
+    assignment = Assignment(
+        id=uuid4(),
+        room_slot_id=uuid4(),
+        organization_id=provider.organization_id,
+        schedule_version_id=schedule_version.id,
+        schedule_period_id=schedule_version.schedule_period_id,
+        provider_id=provider.id,
+        center_id=uuid4(),
+        room_id=uuid4(),
+        shift_requirement_id=None,
+        required_provider_type=None,
+        shift_type="full_shift",
+        schedule_date=date(2026, 5, 4),
+        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=UTC),
+        end_time=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
+        assignment_status="draft",
+        source="manual",
+        notes=None,
+    )
+    return assignment
+
+
+def create_availability_for_shift_requests(
+    provider: Provider,
+    schedule_version: ScheduleVersion,
+    min_shifts_requested: int,
+    max_shifts_requested: int,
+) -> ProviderScheduleWeekAvailability:
+    availability = ProviderScheduleWeekAvailability(
+        id=uuid4(),
+        organization_id=provider.organization_id,
+        schedule_week_id=schedule_version.schedule_period_id,
+        provider_id=provider.id,
+        weekday="monday",
+        availability_options=["full_shift"],
+        min_shifts_requested=min_shifts_requested,
+        max_shifts_requested=max_shifts_requested,
+    )
+    return availability
 
 
 def test_schedule_period_end_date_must_not_precede_start_date() -> None:
@@ -238,6 +327,99 @@ def test_duplicate_assignment_request_preserves_stable_room_slot_key() -> None:
     assert request.room_slot_id == room_slot_id
 
 
+def test_duplicate_assignment_requests_copies_each_assignment() -> None:
+    schedule_period_id = uuid4()
+    schedule_version_id = uuid4()
+    organization_id = uuid4()
+    first_assignment = Assignment(
+        room_slot_id=uuid4(),
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        schedule_version_id=schedule_version_id,
+        provider_id=uuid4(),
+        center_id=uuid4(),
+        room_id=uuid4(),
+        shift_requirement_id=None,
+        required_provider_type=None,
+        shift_type="full_shift",
+        schedule_date=date(2026, 5, 4),
+        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=UTC),
+        end_time=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
+        assignment_status="draft",
+        source="manual",
+        notes=None,
+    )
+    second_assignment = Assignment(
+        room_slot_id=uuid4(),
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        schedule_version_id=schedule_version_id,
+        provider_id=uuid4(),
+        center_id=uuid4(),
+        room_id=uuid4(),
+        shift_requirement_id=None,
+        required_provider_type=None,
+        shift_type="first_half",
+        schedule_date=date(2026, 5, 5),
+        start_time=datetime(2026, 5, 5, 7, 0, tzinfo=UTC),
+        end_time=datetime(2026, 5, 5, 11, 0, tzinfo=UTC),
+        assignment_status="draft",
+        source="manual",
+        notes=None,
+    )
+
+    requests = duplicate_assignment_requests([first_assignment, second_assignment])
+
+    assert len(requests) == 2
+    assert requests[0].room_slot_id == first_assignment.room_slot_id
+    assert requests[1].room_slot_id == second_assignment.room_slot_id
+
+
+def test_clone_schedule_period_name_marks_copy() -> None:
+    schedule_period = SchedulePeriod(
+        id=uuid4(),
+        organization_id=uuid4(),
+        name="Week of May 4",
+        start_date=date(2026, 5, 4),
+        end_date=date(2026, 5, 10),
+        status="draft",
+    )
+
+    name = clone_schedule_period_name(schedule_period)
+
+    assert name == "Copy of Week of May 4"
+
+
+def test_create_cloned_weekly_availability_row_targets_new_period() -> None:
+    source_period_id = uuid4()
+    target_period_id = uuid4()
+    organization_id = uuid4()
+    provider_id = uuid4()
+    source_availability = ProviderScheduleWeekAvailability(
+        id=uuid4(),
+        organization_id=organization_id,
+        schedule_week_id=source_period_id,
+        provider_id=provider_id,
+        weekday="monday",
+        availability_options=["full_shift"],
+        min_shifts_requested=1,
+        max_shifts_requested=3,
+    )
+
+    availability = create_cloned_weekly_availability_row(
+        source_availability,
+        target_period_id,
+    )
+
+    assert availability.organization_id == organization_id
+    assert availability.schedule_week_id == target_period_id
+    assert availability.provider_id == provider_id
+    assert availability.weekday == "monday"
+    assert availability.availability_options == ["full_shift"]
+    assert availability.min_shifts_requested == 1
+    assert availability.max_shifts_requested == 3
+
+
 def test_stable_assignment_request_preserves_parent_slot_date() -> None:
     organization_id = uuid4()
     schedule_period_id = uuid4()
@@ -348,3 +530,56 @@ def test_unassigned_provider_violation_blocks_publish() -> None:
 
     assert violation.severity == "hard_violation"
     assert violation.constraint_type == "provider_assignment_required"
+
+
+def test_shift_request_warning_lists_provider_below_minimum() -> None:
+    provider = create_provider_for_shift_requests("Avery")
+    schedule_version = create_schedule_version_for_shift_requests(provider)
+    assignment = create_assignment_for_shift_requests(provider, schedule_version)
+    availability = create_availability_for_shift_requests(
+        provider,
+        schedule_version,
+        min_shifts_requested=2,
+        max_shifts_requested=3,
+    )
+
+    violations = shift_request_constraint_violations_for_provider(
+        provider,
+        [assignment],
+        availability,
+        schedule_version,
+        provider.organization_id,
+    )
+
+    assert len(violations) == 1
+    assert violations[0].severity == "warning"
+    assert violations[0].assignment_id is None
+    assert violations[0].constraint_type == "provider_min_shifts_not_met"
+    assert violations[0].message == "Avery is scheduled for 1/2 requested minimum shifts."
+
+
+def test_shift_request_warning_lists_provider_above_maximum() -> None:
+    provider = create_provider_for_shift_requests("Blair")
+    schedule_version = create_schedule_version_for_shift_requests(provider)
+    first_assignment = create_assignment_for_shift_requests(provider, schedule_version)
+    second_assignment = create_assignment_for_shift_requests(provider, schedule_version)
+    availability = create_availability_for_shift_requests(
+        provider,
+        schedule_version,
+        min_shifts_requested=0,
+        max_shifts_requested=1,
+    )
+
+    violations = shift_request_constraint_violations_for_provider(
+        provider,
+        [first_assignment, second_assignment],
+        availability,
+        schedule_version,
+        provider.organization_id,
+    )
+
+    assert len(violations) == 1
+    assert violations[0].severity == "warning"
+    assert violations[0].assignment_id is None
+    assert violations[0].constraint_type == "provider_max_shifts_exceeded"
+    assert violations[0].message == "Blair is scheduled for 2/1 requested maximum shifts."

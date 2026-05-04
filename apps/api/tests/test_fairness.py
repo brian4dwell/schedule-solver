@@ -9,9 +9,11 @@ from app.db.models import Provider
 from app.db.models import ProviderScheduleWeekAvailability
 from app.db.models import ScheduleVersion
 from app.services.scheduling.fairness import ProviderFairnessInputs
+from app.services.scheduling.fairness import ProviderFairnessLedgerState
 from app.services.scheduling.fairness import fairness_events_for_provider
 from app.services.scheduling.fairness import fairness_metrics
 from app.services.scheduling.fairness import fairness_snapshot_for_provider
+from app.services.scheduling.fairness import ledger_states_from_snapshots
 
 
 def create_provider(display_name: str) -> Provider:
@@ -103,11 +105,38 @@ def create_weekly_availability(provider: Provider) -> ProviderScheduleWeekAvaila
     return weekly_availability
 
 
-def test_fairness_events_use_assignments_and_shift_requests() -> None:
+def test_requested_assignment_does_not_create_fairness_debt_event() -> None:
     provider = create_provider("Avery")
     assignment = create_assignment(provider)
     schedule_version = create_schedule_version(provider.organization_id)
     weekly_availability = create_weekly_availability(provider)
+    weekly_availability.min_shifts_requested = 0
+    weekly_availability.max_shifts_requested = 2
+    provider_inputs = ProviderFairnessInputs(
+        provider=provider,
+        state=None,
+        weekly_availability=weekly_availability,
+        assignment_count=1,
+        average_assignment_count=1.0,
+    )
+
+    events = fairness_events_for_provider(
+        provider_inputs,
+        [assignment],
+        schedule_version,
+        provider.organization_id,
+    )
+
+    assert events == []
+
+
+def test_fairness_events_use_shift_request_debt_events() -> None:
+    provider = create_provider("Avery")
+    assignment = create_assignment(provider)
+    schedule_version = create_schedule_version(provider.organization_id)
+    weekly_availability = create_weekly_availability(provider)
+    weekly_availability.min_shifts_requested = 0
+    weekly_availability.max_shifts_requested = 1
     provider_inputs = ProviderFairnessInputs(
         provider=provider,
         state=None,
@@ -129,8 +158,6 @@ def test_fairness_events_use_assignments_and_shift_requests() -> None:
     ]
 
     assert event_types == [
-        "assigned_shift",
-        "assigned_shift",
         "above_maximum_shift_request",
     ]
 
@@ -196,15 +223,142 @@ def test_fairness_snapshot_applies_decay_and_pressure() -> None:
         config,
     )
 
-    assert snapshot.ending_debt == 3.0
+    assert snapshot.ending_debt == 2.0
     assert snapshot.ending_favor_credit == 0.0
-    assert snapshot.fairness_pressure == 3.0
-    assert snapshot.negative_event_count == 2
+    assert snapshot.fairness_pressure == 2.0
+    assert snapshot.negative_event_count == 1
+
+
+def test_fairness_snapshot_can_start_from_ledger_state() -> None:
+    provider = create_provider("Briar")
+    assignment = create_assignment(provider)
+    schedule_version = create_schedule_version(provider.organization_id)
+    weekly_availability = create_weekly_availability(provider)
+    config = create_config(provider.organization_id)
+    ledger_state = ProviderFairnessLedgerState(
+        provider_id=provider.id,
+        config_version_id=config.id,
+        fairness_debt=4.0,
+        favor_credit=1.0,
+        priority_tier="standard",
+        priority_multiplier=1.0,
+    )
+    provider_inputs = ProviderFairnessInputs(
+        provider=provider,
+        state=ledger_state,
+        weekly_availability=weekly_availability,
+        assignment_count=1,
+        average_assignment_count=1.0,
+    )
+    events = fairness_events_for_provider(
+        provider_inputs,
+        [assignment],
+        schedule_version,
+        provider.organization_id,
+    )
+
+    snapshot = fairness_snapshot_for_provider(
+        provider_inputs,
+        events,
+        schedule_version,
+        provider.organization_id,
+        config,
+    )
+
+    assert snapshot.starting_debt == 4.0
+    assert snapshot.starting_favor_credit == 1.0
+    assert snapshot.ending_debt == 5.8
+    assert snapshot.ending_favor_credit == 0.95
+
+
+def test_replacement_period_fairness_uses_rebuilt_ledger_state() -> None:
+    provider = create_provider("Brooke")
+    assignment = create_assignment(provider)
+    assignment.shift_type = "first_half"
+    schedule_period_id = uuid4()
+    first_version = create_schedule_version(provider.organization_id)
+    first_version.schedule_period_id = schedule_period_id
+    second_version = create_schedule_version(provider.organization_id)
+    second_version.schedule_period_id = schedule_period_id
+    config = create_config(provider.organization_id)
+    weekly_availability = create_weekly_availability(provider)
+    weekly_availability.min_shifts_requested = 0
+    weekly_availability.max_shifts_requested = 2
+    first_inputs = ProviderFairnessInputs(
+        provider=provider,
+        state=None,
+        weekly_availability=weekly_availability,
+        assignment_count=1,
+        average_assignment_count=1.0,
+    )
+    first_events = fairness_events_for_provider(
+        first_inputs,
+        [assignment],
+        first_version,
+        provider.organization_id,
+    )
+    first_snapshot = fairness_snapshot_for_provider(
+        first_inputs,
+        first_events,
+        first_version,
+        provider.organization_id,
+        config,
+    )
+    inflated_ledger_states = ledger_states_from_snapshots(
+        [first_snapshot],
+        first_version,
+    )
+    inflated_state = inflated_ledger_states[0]
+    inflated_inputs = ProviderFairnessInputs(
+        provider=provider,
+        state=inflated_state,
+        weekly_availability=weekly_availability,
+        assignment_count=1,
+        average_assignment_count=1.0,
+    )
+    rebuilt_inputs = ProviderFairnessInputs(
+        provider=provider,
+        state=None,
+        weekly_availability=weekly_availability,
+        assignment_count=1,
+        average_assignment_count=1.0,
+    )
+    inflated_events = fairness_events_for_provider(
+        inflated_inputs,
+        [assignment],
+        second_version,
+        provider.organization_id,
+    )
+    rebuilt_events = fairness_events_for_provider(
+        rebuilt_inputs,
+        [assignment],
+        second_version,
+        provider.organization_id,
+    )
+
+    inflated_snapshot = fairness_snapshot_for_provider(
+        inflated_inputs,
+        inflated_events,
+        second_version,
+        provider.organization_id,
+        config,
+    )
+    rebuilt_snapshot = fairness_snapshot_for_provider(
+        rebuilt_inputs,
+        rebuilt_events,
+        second_version,
+        provider.organization_id,
+        config,
+    )
+
+    assert inflated_snapshot.ending_debt == 1.95
+    assert rebuilt_snapshot.ending_debt == 1.0
 
 
 def test_fairness_metrics_flag_repeat_hits() -> None:
     provider = create_provider("Casey")
     assignment = create_assignment(provider)
+    assignment.shift_type = "first_half"
     schedule_version = create_schedule_version(provider.organization_id)
     weekly_availability = create_weekly_availability(provider)
     config = create_config(provider.organization_id)

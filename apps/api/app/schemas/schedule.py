@@ -132,6 +132,11 @@ class ScheduleDraftSaveResponse(BaseModel):
     violations: list[ConstraintViolationRead]
 
 
+class SchedulePeriodCloneResponse(BaseModel):
+    schedule_period: SchedulePeriodRead
+    schedule_version: ScheduleDraftSaveResponse
+
+
 class ScheduleGenerateResponse(BaseModel):
     version: ScheduleVersionRead
     assignments: list[AssignmentRead]

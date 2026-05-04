@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { deleteSchedulePeriod, renameSchedulePeriod } from "@/lib/api";
+import {
+  cloneSchedulePeriod,
+  deleteSchedulePeriod,
+  renameSchedulePeriod,
+} from "@/lib/api";
 import type { SchedulePeriodSummary } from "@/lib/schemas/schedule";
 
 type SchedulesTableProps = {
@@ -39,6 +43,7 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [openMenuPeriodId, setOpenMenuPeriodId] = useState<string | null>(null);
+  const [cloningPeriodId, setCloningPeriodId] = useState<string | null>(null);
 
   function toggleActionMenu(periodId: string) {
     const nextMenuPeriodId = openMenuPeriodId === periodId ? null : periodId;
@@ -91,6 +96,23 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
     }
   }
 
+  async function handleCloneSchedule(period: SchedulePeriodSummary) {
+    setErrorMessage(null);
+    setOpenMenuPeriodId(null);
+    setCloningPeriodId(period.id);
+
+    try {
+      const response = await cloneSchedulePeriod(period.id);
+      const schedulePeriodId = response.schedule_period.id;
+      router.push(`/schedules/${schedulePeriodId}`);
+    } catch (error) {
+      const nextErrorMessage =
+        error instanceof Error ? error.message : "Schedule clone failed.";
+      setErrorMessage(nextErrorMessage);
+      setCloningPeriodId(null);
+    }
+  }
+
   return (
     <section className="rounded-md border border-slate-200 bg-white">
       {errorMessage ? (
@@ -113,6 +135,7 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
         {periods.map((period) => {
           const status = publishStatus(period);
           const isActionMenuOpen = openMenuPeriodId === period.id;
+          const isCloning = cloningPeriodId === period.id;
           const lastPublished =
             period.lastPublishedAt === null
               ? "Not published"
@@ -161,7 +184,7 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
                   {isActionMenuOpen ? (
                     <div
                       role="menu"
-                      className="absolute right-0 z-10 mt-2 w-36 rounded-md border border-slate-200 bg-white py-1 shadow-lg"
+                      className="absolute right-0 z-10 mt-2 w-40 rounded-md border border-slate-200 bg-white py-1 shadow-lg"
                     >
                       <button
                         type="button"
@@ -170,6 +193,15 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
                         className="flex w-full px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
                       >
                         Rename
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => handleCloneSchedule(period)}
+                        disabled={isCloning}
+                        className="flex w-full px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                      >
+                        {isCloning ? "Cloning" : "Clone"}
                       </button>
                       <button
                         type="button"

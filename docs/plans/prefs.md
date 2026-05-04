@@ -133,7 +133,7 @@ Use `GET /fairness/report` for manager-facing report data.
 
 Use `apps/web/lib/schemas/fairness.ts` as the web Zod boundary for fairness report rendering.
 
-The implemented event catalog currently includes `assigned_shift`, `below_minimum_shift_request`, `above_maximum_shift_request`, and `under_average_workload`.
+The implemented event catalog currently includes `below_minimum_shift_request`, `above_maximum_shift_request`, `full_shift_availability_accommodation`, and `under_average_workload`.
 
 The implemented solver input path passes `fairness_debt`, `favor_credit`, and `fairness_priority_multiplier` into `SolverProvider`.
 

@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   checkProviderSlotEligibility,
-  duplicateScheduleVersion,
   generateScheduleVersion,
   getScheduleVersion,
   getProviderWeeklyAvailability,
@@ -456,6 +455,106 @@ function fullShiftAvailabilityAccommodatesShiftType(
   return shiftTypeIsAccommodated;
 }
 
+function shiftTypePairIsSplitDay(
+  firstShiftType: ScheduleRoomAssignment["shiftType"],
+  secondShiftType: ScheduleRoomAssignment["shiftType"],
+) {
+  const firstIsFirstHalf = firstShiftType === "first_half";
+  const secondIsSecondHalf = secondShiftType === "second_half";
+  const firstPairMatches = firstIsFirstHalf && secondIsSecondHalf;
+  const firstIsSecondHalf = firstShiftType === "second_half";
+  const secondIsFirstHalf = secondShiftType === "first_half";
+  const secondPairMatches = firstIsSecondHalf && secondIsFirstHalf;
+  const isSplitDayPair = firstPairMatches || secondPairMatches;
+  return isSplitDayPair;
+}
+
+function overlappingAssignmentIsAllowed(
+  requestCenterId: string,
+  requestShiftType: ScheduleRoomAssignment["shiftType"],
+  existingCenterId: string,
+  existingShiftType: ScheduleRoomAssignment["shiftType"],
+) {
+  const centersMatch = requestCenterId === existingCenterId;
+
+  if (!centersMatch) {
+    return false;
+  }
+
+  const splitDayPair = shiftTypePairIsSplitDay(
+    requestShiftType,
+    existingShiftType,
+  );
+  return splitDayPair;
+}
+
+function assignmentDateTimeValue(
+  assignment: ScheduleRoomAssignment,
+  timeValue: string,
+) {
+  const dateTime = dateTimeForAssignment(
+    assignment.slotDate,
+    timeValue,
+  );
+  return dateTime;
+}
+
+function assignmentsOverlap(
+  firstAssignment: ScheduleRoomAssignment,
+  secondAssignment: ScheduleRoomAssignment,
+) {
+  const firstStartTime = assignmentDateTimeValue(
+    firstAssignment,
+    firstAssignment.startTime,
+  );
+  const firstEndTime = assignmentDateTimeValue(
+    firstAssignment,
+    firstAssignment.endTime,
+  );
+  const secondStartTime = assignmentDateTimeValue(
+    secondAssignment,
+    secondAssignment.startTime,
+  );
+  const secondEndTime = assignmentDateTimeValue(
+    secondAssignment,
+    secondAssignment.endTime,
+  );
+  const startsBeforeSecondEnds = firstStartTime < secondEndTime;
+  const endsAfterSecondStarts = firstEndTime > secondStartTime;
+  const overlaps = startsBeforeSecondEnds && endsAfterSecondStarts;
+  return overlaps;
+}
+
+function providerHasOverlappingAssignment(
+  assignments: ScheduleRoomAssignment[],
+  assignment: ScheduleRoomAssignment,
+  providerId: string,
+) {
+  const overlappingAssignment = assignments.find((candidate) => {
+    const isSameAssignment = candidate.id === assignment.id;
+    const isProviderAssignment = candidate.providerId === providerId;
+    const assignmentsAreOverlapping = assignmentsOverlap(
+      assignment,
+      candidate,
+    );
+    const overlapIsAllowed = overlappingAssignmentIsAllowed(
+      assignment.centerId,
+      assignment.shiftType,
+      candidate.centerId,
+      candidate.shiftType,
+    );
+    const shouldBlock = (
+      !isSameAssignment
+      && isProviderAssignment
+      && assignmentsAreOverlapping
+      && !overlapIsAllowed
+    );
+    return shouldBlock;
+  });
+  const hasOverlappingAssignment = overlappingAssignment !== undefined;
+  return hasOverlappingAssignment;
+}
+
 function hasHardProviderReasons(reasons: ProviderIneligibilityReason[]) {
   const hardReasons = reasons.filter((reason) => {
     return reason.severity === "hard_violation";
@@ -655,6 +754,21 @@ function providerEligibilityForAssignment(
 
   }
 
+  const hasOverlappingAssignment = providerHasOverlappingAssignment(
+    assignments,
+    assignment,
+    provider.id,
+  );
+
+  if (hasOverlappingAssignment) {
+    const reason = createHardProviderReason(
+      "provider_double_booked",
+      "other_hard_constraint",
+      "Provider is already assigned to an overlapping slot.",
+    );
+    reasons.push(reason);
+  }
+
   const hasHardReasons = hasHardProviderReasons(reasons);
   const isEligible = !hasHardReasons;
   const option = {
@@ -683,6 +797,46 @@ function sortProviderOptions(
     return comparison;
   });
   return sortedOptions;
+}
+
+function providerOptionHasReason(
+  option: ProviderPickerOption,
+  reasonCode: string,
+) {
+  const reason = option.reasons.find((candidate) => {
+    return candidate.code === reasonCode;
+  });
+  const hasReason = reason !== undefined;
+  return hasReason;
+}
+
+function providerOptionIsDoubleBooked(option: ProviderPickerOption) {
+  const hasDoubleBooking = providerOptionHasReason(
+    option,
+    "provider_double_booked",
+  );
+  return hasDoubleBooking;
+}
+
+function providerOptionIsSelectable(option: ProviderPickerOption) {
+  const hasDoubleBooking = providerOptionIsDoubleBooked(option);
+  const isSelectable = !hasDoubleBooking;
+  return isSelectable;
+}
+
+function providerOptionButtonClassName(
+  isSelected: boolean,
+  isSelectable: boolean,
+) {
+  if (!isSelectable) {
+    return "w-full cursor-not-allowed rounded-md border border-red-200 bg-red-50 px-2 py-2 text-left opacity-75";
+  }
+
+  if (isSelected) {
+    return "w-full rounded-md border border-teal-600 bg-teal-50 px-2 py-2 text-left";
+  }
+
+  return "w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-left hover:bg-slate-50";
 }
 
 function providerOptionsForAssignment(
@@ -1229,12 +1383,14 @@ export function ScheduleWorkspace({
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isCloning, setIsCloning] = useState(false);
   const [isLoadingVersion, setIsLoadingVersion] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [showWeekends, setShowWeekends] = useState(false);
   const [showUnsetAvailabilityProviders, setShowUnsetAvailabilityProviders] = useState(false);
   const [openProviderAssignmentId, setOpenProviderAssignmentId] = useState<
+    string | null
+  >(null);
+  const [openShiftTypeAssignmentId, setOpenShiftTypeAssignmentId] = useState<
     string | null
   >(null);
   const [availabilityByProviderId, setAvailabilityByProviderId] = useState<
@@ -1508,33 +1664,6 @@ export function ScheduleWorkspace({
     }
   }
 
-  async function handleCloneDraft() {
-    if (savedVersionDetail === null) {
-      setActionMessage("Save a draft before cloning.");
-      return;
-    }
-
-    setIsCloning(true);
-    setActionMessage(null);
-
-    try {
-      const detail = await duplicateScheduleVersion(savedVersionDetail.version.id);
-      const nextVersion = versionFromDetail(schedulePeriod, detail);
-      setSavedVersionDetail(detail);
-      setSelectedVersionId(detail.version.id);
-      setVersionOptions((currentOptions) => {
-        const nextOptions = upsertVersionOption(currentOptions, detail.version);
-        return nextOptions;
-      });
-      updateWorkingVersion(nextVersion);
-      setActionMessage("Draft cloned.");
-    } catch {
-      setActionMessage("Draft clone failed.");
-    } finally {
-      setIsCloning(false);
-    }
-  }
-
   async function handleVersionSelected(versionId: string) {
     setSelectedVersionId(versionId);
     setIsLoadingVersion(true);
@@ -1740,6 +1869,13 @@ export function ScheduleWorkspace({
       assignments,
     });
     updateWorkingVersion(nextVersion);
+    setOpenShiftTypeAssignmentId(null);
+  }
+
+  function handleShiftTypePickerToggled(assignmentId: string) {
+    const assignmentIsOpen = openShiftTypeAssignmentId === assignmentId;
+    const nextAssignmentId = assignmentIsOpen ? null : assignmentId;
+    setOpenShiftTypeAssignmentId(nextAssignmentId);
   }
 
   function savedAssignmentIdForRequest(assignment: ScheduleRoomAssignment) {
@@ -1811,6 +1947,14 @@ export function ScheduleWorkspace({
 
     const validationStatus = validationStatusForSelection(selectedOption);
     const validationMessages = validationMessagesForSelection(selectedOption);
+    const optionIsSelectable = providerOptionIsSelectable(selectedOption);
+
+    if (!optionIsSelectable) {
+      setActionMessage("Provider is already assigned to an overlapping slot.");
+      setOpenProviderAssignmentId(null);
+      return;
+    }
+
     const assignments = workingVersion.assignments.map((currentAssignment) => {
       if (currentAssignment.id !== assignment.id) {
         return currentAssignment;
@@ -2002,7 +2146,7 @@ export function ScheduleWorkspace({
               disabled={isGenerating}
               className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
             >
-              {isGenerating ? "Generating" : "Generate draft"}
+              {isGenerating ? "Running solver" : "Run Solver"}
             </button>
             <button
               type="button"
@@ -2011,14 +2155,6 @@ export function ScheduleWorkspace({
               className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
             >
               {isSaving ? "Saving" : "Save draft"}
-            </button>
-            <button
-              type="button"
-              onClick={handleCloneDraft}
-              disabled={!hasSavedVersion || isCloning}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
-            >
-              {isCloning ? "Cloning" : "Clone draft"}
             </button>
             <button
               type="button"
@@ -2146,6 +2282,12 @@ export function ScheduleWorkspace({
                       const assignmentContainerClassName = shiftTypeContainerClassName(
                         assignment.shiftType,
                       );
+                      const shiftTypePickerIsOpen =
+                        openShiftTypeAssignmentId === assignment.id;
+                      const assignmentUsesFullShift =
+                        assignment.shiftType === "full_shift";
+                      const shiftTypePickerShouldShow =
+                        shiftTypePickerIsOpen || !assignmentUsesFullShift;
                       const assignmentShiftTypeLabel = shiftTypeLabel(
                         assignment.shiftType,
                       );
@@ -2169,9 +2311,9 @@ export function ScheduleWorkspace({
                           <div className="flex items-start justify-between gap-2">
                             <div>
                               <p className="text-sm font-semibold text-slate-950">
-                                {roomName}
+                                {centerName}
                               </p>
-                              <p className="text-xs text-slate-500">{centerName}</p>
+                              <p className="text-xs text-slate-500">{roomName}</p>
                             </div>
                             <button
                               type="button"
@@ -2208,24 +2350,42 @@ export function ScheduleWorkspace({
                             })}
                           </div>
                           <div className="mt-2">
-                            <label className="text-xs font-semibold uppercase text-slate-500">
-                              Shift type
-                            </label>
-                            <select
-                              value={assignment.shiftType}
-                              onChange={(event) =>
-                                handleShiftTypeChanged(
-                                  assignment.id,
-                                  event.target.value as ScheduleRoomAssignment["shiftType"],
-                                )
-                              }
-                              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-700"
-                            >
-                              <option value="full_shift">Full shift</option>
-                              <option value="first_half">1st half</option>
-                              <option value="second_half">2nd half</option>
-                              <option value="short_shift">Short</option>
-                            </select>
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-xs font-semibold uppercase text-slate-500">
+                                Shift type
+                              </p>
+                              {assignmentUsesFullShift ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleShiftTypePickerToggled(assignment.id)
+                                  }
+                                  aria-expanded={shiftTypePickerShouldShow}
+                                  aria-label={`Edit shift type for ${roomName}`}
+                                  className="rounded-md px-2 text-sm font-semibold leading-5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                                >
+                                  ...
+                                </button>
+                              ) : null}
+                            </div>
+                            {shiftTypePickerShouldShow ? (
+                              <select
+                                value={assignment.shiftType}
+                                onChange={(event) =>
+                                  handleShiftTypeChanged(
+                                    assignment.id,
+                                    event.target.value as ScheduleRoomAssignment["shiftType"],
+                                  )
+                                }
+                                aria-label={`Shift type for ${roomName}`}
+                                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-700"
+                              >
+                                <option value="full_shift">Full shift</option>
+                                <option value="first_half">1st half</option>
+                                <option value="second_half">2nd half</option>
+                                <option value="short_shift">Short</option>
+                              </select>
+                            ) : null}
                           </div>
                           <div className="mt-3 border-t border-slate-100 pt-3">
                             <div className="flex items-center justify-between gap-2">
@@ -2290,6 +2450,13 @@ export function ScheduleWorkspace({
                                 ? providerOptions.map((option) => {
                                     const isSelected =
                                       option.provider.id === assignment.providerId;
+                                    const optionIsSelectable =
+                                      providerOptionIsSelectable(option);
+                                    const optionButtonClassName =
+                                      providerOptionButtonClassName(
+                                        isSelected,
+                                        optionIsSelectable,
+                                      );
                                     const firstReason = option.reasons.at(0);
                                     const optionHasWarnings = hasWarningProviderReasons(
                                       option.reasons,
@@ -2318,14 +2485,11 @@ export function ScheduleWorkspace({
                                       <button
                                         key={option.provider.id}
                                         type="button"
+                                        disabled={!optionIsSelectable}
                                         onClick={() =>
                                           handleProviderSelected(assignment, option)
                                         }
-                                        className={
-                                          isSelected
-                                            ? "w-full rounded-md border border-teal-600 bg-teal-50 px-2 py-2 text-left"
-                                            : "w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-left hover:bg-slate-50"
-                                        }
+                                        className={optionButtonClassName}
                                       >
                                         <span className="block text-sm font-semibold text-slate-950">
                                           {option.provider.display_name}

@@ -31,7 +31,6 @@ DEFAULT_FAVOR_WEIGHT = 1.0
 DEFAULT_STANDARD_PRIORITY_MULTIPLIER = 1.0
 DEFAULT_ELEVATED_PRIORITY_MULTIPLIER = 1.25
 DEFAULT_CRITICAL_PRIORITY_MULTIPLIER = 1.5
-ASSIGNMENT_WORKLOAD_DEBT = 1.0
 BELOW_MINIMUM_SHIFT_DEBT = 2.0
 ABOVE_MAXIMUM_SHIFT_DEBT = 3.0
 FULL_SHIFT_ACCOMMODATION_DEBT = 1.0
@@ -48,9 +47,24 @@ WEEKDAY_VALUES = [
 
 
 @dataclass
+class ProviderFairnessLedgerState:
+    provider_id: UUID
+    config_version_id: UUID | None
+    fairness_debt: float
+    favor_credit: float
+    priority_tier: str
+    priority_multiplier: float
+    last_applied_schedule_period_id: UUID | None = None
+    last_applied_schedule_version_id: UUID | None = None
+
+
+FairnessStateSource = ProviderFairnessState | ProviderFairnessLedgerState
+
+
+@dataclass
 class ProviderFairnessInputs:
     provider: Provider
-    state: ProviderFairnessState | None
+    state: FairnessStateSource | None
     weekly_availability: ProviderScheduleWeekAvailability | None
     assignment_count: int
     average_assignment_count: float
@@ -127,7 +141,7 @@ def priority_multiplier_for_tier(
     return multiplier
 
 
-def provider_priority_tier(state: ProviderFairnessState | None) -> str:
+def provider_priority_tier(state: FairnessStateSource | None) -> str:
     if state is None:
         return "standard"
 
@@ -135,7 +149,7 @@ def provider_priority_tier(state: ProviderFairnessState | None) -> str:
     return priority_tier
 
 
-def provider_starting_debt(state: ProviderFairnessState | None) -> float:
+def provider_starting_debt(state: FairnessStateSource | None) -> float:
     if state is None:
         return 0.0
 
@@ -143,12 +157,25 @@ def provider_starting_debt(state: ProviderFairnessState | None) -> float:
     return starting_debt
 
 
-def provider_starting_favor_credit(state: ProviderFairnessState | None) -> float:
+def provider_starting_favor_credit(state: FairnessStateSource | None) -> float:
     if state is None:
         return 0.0
 
     starting_favor_credit = numeric_value(state.favor_credit)
     return starting_favor_credit
+
+
+def ledger_state_for_provider(
+    provider_id: UUID,
+    ledger_states: list[ProviderFairnessLedgerState],
+) -> ProviderFairnessLedgerState | None:
+    for ledger_state in ledger_states:
+        provider_matches = ledger_state.provider_id == provider_id
+
+        if provider_matches:
+            return ledger_state
+
+    return None
 
 
 def providers_for_fairness(
@@ -302,36 +329,6 @@ def create_fairness_event(
     return event
 
 
-def assignment_workload_events(
-    provider_inputs: ProviderFairnessInputs,
-    assignments: list[Assignment],
-    schedule_version: ScheduleVersion,
-    organization_id: UUID,
-) -> list[ProviderFairnessEvent]:
-    events: list[ProviderFairnessEvent] = []
-
-    for assignment in assignments:
-        provider_matches = assignment.provider_id == provider_inputs.provider.id
-
-        if not provider_matches:
-            continue
-
-        event = create_fairness_event(
-            provider_inputs,
-            schedule_version,
-            organization_id,
-            "assigned_shift",
-            "workload",
-            ASSIGNMENT_WORKLOAD_DEBT,
-            0.0,
-            "Assigned shift added workload burden to the fairness account.",
-            assignment.id,
-        )
-        events.append(event)
-
-    return events
-
-
 def full_shift_accommodation_events(
     provider_inputs: ProviderFairnessInputs,
     assignments: list[Assignment],
@@ -474,12 +471,7 @@ def fairness_events_for_provider(
     schedule_version: ScheduleVersion,
     organization_id: UUID,
 ) -> list[ProviderFairnessEvent]:
-    events = assignment_workload_events(
-        provider_inputs,
-        assignments,
-        schedule_version,
-        organization_id,
-    )
+    events: list[ProviderFairnessEvent] = []
     accommodation_events = full_shift_accommodation_events(
         provider_inputs,
         assignments,
@@ -616,15 +608,33 @@ def delete_existing_fairness_records(
     session.execute(snapshot_statement)
 
 
+def starting_state_for_provider(
+    provider_id: UUID,
+    organization_id: UUID,
+    session: Session,
+    ledger_states: list[ProviderFairnessLedgerState] | None,
+) -> FairnessStateSource | None:
+    has_ledger_states = ledger_states is not None
+
+    if has_ledger_states:
+        ledger_state = ledger_state_for_provider(provider_id, ledger_states)
+        return ledger_state
+
+    persisted_state = provider_fairness_state(provider_id, organization_id, session)
+    return persisted_state
+
+
 def record_fairness_for_schedule_version(
     schedule_version: ScheduleVersion,
     assignments: list[Assignment],
     organization_id: UUID,
     session: Session,
-) -> None:
+    ledger_states: list[ProviderFairnessLedgerState] | None = None,
+) -> list[ProviderFairnessSnapshot]:
     config = active_fairness_config(organization_id, session)
     providers = providers_for_fairness(organization_id, session)
     average_count = average_assignment_count(assignments, providers)
+    snapshots: list[ProviderFairnessSnapshot] = []
     delete_existing_fairness_records(
         schedule_version.id,
         organization_id,
@@ -632,7 +642,12 @@ def record_fairness_for_schedule_version(
     )
 
     for provider in providers:
-        state = provider_fairness_state(provider.id, organization_id, session)
+        state = starting_state_for_provider(
+            provider.id,
+            organization_id,
+            session,
+            ledger_states,
+        )
         weekly_availability = weekly_availability_for_provider(
             provider.id,
             schedule_version.schedule_period_id,
@@ -672,6 +687,74 @@ def record_fairness_for_schedule_version(
             config,
         )
         session.add(snapshot)
+        snapshots.append(snapshot)
+
+    session.flush()
+    return snapshots
+
+
+def ledger_state_from_snapshot(
+    snapshot: ProviderFairnessSnapshot,
+    schedule_version: ScheduleVersion,
+) -> ProviderFairnessLedgerState:
+    ledger_state = ProviderFairnessLedgerState(
+        provider_id=snapshot.provider_id,
+        config_version_id=snapshot.config_version_id,
+        fairness_debt=numeric_value(snapshot.ending_debt),
+        favor_credit=numeric_value(snapshot.ending_favor_credit),
+        priority_tier=snapshot.priority_tier,
+        priority_multiplier=numeric_value(snapshot.priority_multiplier),
+        last_applied_schedule_period_id=schedule_version.schedule_period_id,
+        last_applied_schedule_version_id=schedule_version.id,
+    )
+    return ledger_state
+
+
+def ledger_states_from_snapshots(
+    snapshots: list[ProviderFairnessSnapshot],
+    schedule_version: ScheduleVersion,
+) -> list[ProviderFairnessLedgerState]:
+    ledger_states = [
+        ledger_state_from_snapshot(snapshot, schedule_version)
+        for snapshot in snapshots
+    ]
+    return ledger_states
+
+
+def write_provider_fairness_ledger_states(
+    ledger_states: list[ProviderFairnessLedgerState],
+    organization_id: UUID,
+    session: Session,
+) -> None:
+    for ledger_state in ledger_states:
+        state = provider_fairness_state(
+            ledger_state.provider_id,
+            organization_id,
+            session,
+        )
+
+        if state is None:
+            state = ProviderFairnessState(
+                organization_id=organization_id,
+                provider_id=ledger_state.provider_id,
+                config_version_id=ledger_state.config_version_id,
+                fairness_debt=ledger_state.fairness_debt,
+                favor_credit=ledger_state.favor_credit,
+                priority_tier=ledger_state.priority_tier,
+                priority_multiplier=ledger_state.priority_multiplier,
+                last_applied_schedule_period_id=ledger_state.last_applied_schedule_period_id,
+                last_applied_schedule_version_id=ledger_state.last_applied_schedule_version_id,
+            )
+            session.add(state)
+            continue
+
+        state.config_version_id = ledger_state.config_version_id
+        state.fairness_debt = ledger_state.fairness_debt
+        state.favor_credit = ledger_state.favor_credit
+        state.priority_tier = ledger_state.priority_tier
+        state.priority_multiplier = ledger_state.priority_multiplier
+        state.last_applied_schedule_period_id = ledger_state.last_applied_schedule_period_id
+        state.last_applied_schedule_version_id = ledger_state.last_applied_schedule_version_id
 
     session.flush()
 
@@ -712,6 +795,71 @@ def apply_fairness_state_for_schedule_version(
         state.last_applied_schedule_version_id = schedule_version.id
 
     session.flush()
+
+
+def assignments_for_fairness_version(
+    schedule_version: ScheduleVersion,
+    organization_id: UUID,
+    session: Session,
+) -> list[Assignment]:
+    statement = select(Assignment)
+    statement = statement.where(Assignment.organization_id == organization_id)
+    statement = statement.where(Assignment.schedule_version_id == schedule_version.id)
+    assignments = list(session.scalars(statement))
+    return assignments
+
+
+def published_schedule_versions_for_fairness(
+    organization_id: UUID,
+    session: Session,
+) -> list[ScheduleVersion]:
+    statement = select(ScheduleVersion)
+    statement = statement.join(SchedulePeriod, SchedulePeriod.id == ScheduleVersion.schedule_period_id)
+    statement = statement.where(ScheduleVersion.organization_id == organization_id)
+    statement = statement.where(ScheduleVersion.status == "published")
+    statement = statement.order_by(
+        SchedulePeriod.start_date,
+        SchedulePeriod.end_date,
+        ScheduleVersion.created_at,
+        ScheduleVersion.id,
+    )
+    schedule_versions = list(session.scalars(statement))
+    return schedule_versions
+
+
+def rebuild_published_fairness_state(
+    organization_id: UUID,
+    session: Session,
+) -> None:
+    schedule_versions = published_schedule_versions_for_fairness(
+        organization_id,
+        session,
+    )
+    ledger_states: list[ProviderFairnessLedgerState] = []
+
+    for schedule_version in schedule_versions:
+        assignments = assignments_for_fairness_version(
+            schedule_version,
+            organization_id,
+            session,
+        )
+        snapshots = record_fairness_for_schedule_version(
+            schedule_version,
+            assignments,
+            organization_id,
+            session,
+            ledger_states,
+        )
+        ledger_states = ledger_states_from_snapshots(
+            snapshots,
+            schedule_version,
+        )
+
+    write_provider_fairness_ledger_states(
+        ledger_states,
+        organization_id,
+        session,
+    )
 
 
 def latest_schedule_version_with_fairness(
