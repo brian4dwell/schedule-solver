@@ -30,7 +30,7 @@ Treat `docs/plans/fairness.md` as the cross-cycle fairness-accounting plan.
 
 Avoid redefining fairness account mechanics here.
 
-Reference fairness pressure outputs as solver inputs for preference balancing.
+Use the implemented fairness pressure outputs as solver inputs for preference balancing.
 
 Keep shared concepts in one place and link instead of duplicating details.
 
@@ -59,7 +59,7 @@ Each eligible provider and shift candidate gets a preference score.
 
 The solver objective maximizes the sum of candidate preference scores.
 
-The solver objective also includes existing fairness terms.
+The solver objective already includes persisted fairness pressure terms.
 
 The solver objective does not relax hard constraints.
 
@@ -101,17 +101,65 @@ Use that candidate score in the objective.
 
 ## Fairness Integration
 
-Use fairness pressure signals from `docs/plans/fairness.md` during objective composition.
+Use the implemented fairness pressure signals during objective composition.
 
 Keep this document focused on preference scoring inputs and explainability outputs.
 
-Keep min and max shift requests as soft terms.
+Do not duplicate min and max shift request accounting in the preference layer.
+
+The fairness implementation already records `below_minimum_shift_request` and `above_maximum_shift_request` ledger events.
+
+Treat min and max shift request outcomes as fairness-accounting inputs unless a separate preference-specific behavior is intentionally designed.
 
 Keep hard eligibility as candidate filtering before variable creation.
 
 Record preference contribution metadata in solver output for manager diagnostics.
 
 Do not include hidden manager details in practitioner-visible payloads.
+
+### Implemented Fairness Baseline
+
+Fairness state is now persisted and available to the solver.
+
+Use `provider_fairness_states` as the durable solver-facing source for each provider's `fairness_debt`, `favor_credit`, `priority_tier`, and `priority_multiplier`.
+
+Use `provider_fairness_events` as the schedule-version event ledger.
+
+Use `provider_fairness_snapshots` as the per-run audit snapshot.
+
+Use `fairness_config_versions` as the active decay, debt weight, favor weight, and priority multiplier configuration.
+
+Use `GET /fairness/report` for manager-facing report data.
+
+Use `apps/web/lib/schemas/fairness.ts` as the web Zod boundary for fairness report rendering.
+
+The implemented event catalog currently includes `assigned_shift`, `below_minimum_shift_request`, `above_maximum_shift_request`, and `under_average_workload`.
+
+The implemented solver input path passes `fairness_debt`, `favor_credit`, and `fairness_priority_multiplier` into `SolverProvider`.
+
+The implemented solver objective penalizes additional assignments for providers with higher computed fairness pressure.
+
+Saving or generating a schedule version records fairness events and snapshots.
+
+Publishing a schedule version applies its snapshots to durable provider fairness state.
+
+Preference scoring should compose beside this baseline rather than recalculate fairness balances.
+
+### Preference Objective Composition With Fairness
+
+Compute candidate preference scores independently from fairness pressure.
+
+Use preference scores as assignment-level benefits.
+
+Use fairness pressure as provider-level assignment cost.
+
+Keep the two terms separately named in objective construction.
+
+Keep preference weights separate from fairness config weights.
+
+Do not write preference outcomes into fairness ledger tables unless the event catalog is explicitly expanded in `docs/plans/fairness.md`.
+
+When a preference outcome should affect rolling fairness, first add a named fairness event type and then consume it through the fairness accounting lifecycle.
 
 ## Data Contracts
 
@@ -231,9 +279,17 @@ Store candidate score and breakdown for objective construction.
 
 Add preference score terms to the CP-SAT objective.
 
-Compose preference terms with fairness pressure terms defined in `docs/plans/fairness.md`.
+Compose preference terms with the implemented fairness pressure terms already added to the solver objective.
 
-Tune relative coefficients in one centralized weight config.
+Read fairness values from `SolverProvider`.
+
+Do not recompute fairness pressure from database rows inside preference scoring.
+
+Keep the objective terms inspectable as separate preference and fairness contributions.
+
+Tune preference coefficients in a centralized preference weight config.
+
+Treat fairness config values as external inputs from `fairness_config_versions`.
 
 ### Step 6: Output And Diagnostics
 
@@ -242,6 +298,8 @@ Return solver score with preference summary metadata.
 Persist manager-visible diagnostics.
 
 Keep practitioner-visible payloads free of hidden manager details.
+
+If diagnostics need fairness context, link to fairness snapshot or report data instead of copying fairness ledger details into preference payloads.
 
 ### Step 7: API Surfaces
 
@@ -266,6 +324,10 @@ Add unit tests for preference contract validation.
 Add unit tests for score calculation with deterministic fixtures.
 
 Add solver integration tests for tie-breaking behavior.
+
+Add solver integration tests proving preference wins when fairness pressure is equal.
+
+Add solver integration tests proving high fairness pressure can outweigh lower-priority preference gains when weights are configured that way.
 
 Add authorization tests for hidden preference endpoints.
 
@@ -297,6 +359,6 @@ Should manager-only preferences support expiration dates by default.
 
 Should hidden preferences support per-shift-type granularity.
 
-Should fairness include weekly caps on repeated in-a-pinch assignments.
+Should preference-specific in-a-pinch outcomes be added as fairness event types or remain preference diagnostics only.
 
 Should diagnostics include practitioner-visible aggregate satisfaction percentages.
