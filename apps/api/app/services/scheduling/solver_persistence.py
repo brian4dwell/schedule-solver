@@ -78,6 +78,7 @@ def create_assignment(
         shift_requirement_id=solver_assignment.shift_requirement_id,
         required_provider_type=solver_assignment.required_provider_type,
         shift_type=solver_assignment.shift_type,
+        schedule_date=solver_assignment.start_time.date(),
         start_time=solver_assignment.start_time,
         end_time=solver_assignment.end_time,
         assignment_status="draft",

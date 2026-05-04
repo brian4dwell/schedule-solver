@@ -83,7 +83,7 @@ Current hard blockers:
 - MD-only requirement not met.
 - Weekly availability is unset for the slot day.
 - Weekly availability is `none` for the slot day.
-- Weekly availability does not include the slot shift type.
+- Weekly availability does not include the slot shift type, except `full_shift` availability can cover `first_half`, `second_half`, and `short_shift` with a warning.
 - Provider is double-booked in the same schedule version.
 
 Warnings and soft constraints should be visible but should not block publish.
@@ -92,11 +92,11 @@ Current warning constraints:
 
 - Provider is below `min_shifts_requested`.
 - Provider is above `max_shifts_requested`.
+- Provider offered `full_shift` availability and is assigned to a shorter shift.
 
 Future soft constraints:
 
 - Provider preference misses.
-- Assigning a half or short shift to satisfy a full-shift request.
 - Avoid-if-possible availability.
 - Assignment imbalance.
 - Too many consecutive work days.
@@ -365,6 +365,7 @@ Solver soft constraints should eventually include:
 - Provider preferences.
 - Preference for full-shift matches.
 - Penalty when a full-shift request is fulfilled by a half or short shift.
+- Warning when full-day availability is used to cover a shorter shift.
 - Assignment balance.
 - Avoid-if-possible availability.
 
@@ -390,7 +391,7 @@ Min/max values represent requested workload shape, not eligibility. They should 
 
 ### Availability Is Hard For Slot Eligibility
 
-Unset availability, explicit `none`, and missing shift-type availability currently make the Provider ineligible for that slot.
+Unset availability, explicit `none`, and missing shift-type availability currently make the Provider ineligible for that slot. A Provider with `full_shift` availability may be assigned to `first_half`, `second_half`, or `short_shift` slots as a warning-level accommodation.
 
 ### No Broad Clinician Entity
 

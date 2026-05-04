@@ -111,12 +111,14 @@ export type { FairnessStatus };
 
 export type ScheduleAssignmentSavePayload = {
   room_slot_id: string;
+  allow_slot_date_change: boolean;
   provider_id: string | null;
   center_id: string;
   room_id: string | null;
   shift_requirement_id: string | null;
   required_provider_type: string | null;
   shift_type: "full_shift" | "first_half" | "second_half" | "short_shift";
+  schedule_date: string;
   start_time: string;
   end_time: string;
   source: string;

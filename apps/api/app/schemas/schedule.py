@@ -26,12 +26,14 @@ class ProviderEligibilityRequest(BaseModel):
 
 class ScheduleAssignmentCreate(BaseModel):
     room_slot_id: UUID
+    allow_slot_date_change: bool = False
     provider_id: UUID | None
     center_id: UUID
     room_id: UUID | None = None
     shift_requirement_id: UUID | None = None
     required_provider_type: str | None = None
     shift_type: str = "full_shift"
+    schedule_date: date
     start_time: datetime
     end_time: datetime
     source: str = "manual"
@@ -81,6 +83,7 @@ class AssignmentRead(TimestampedSchema):
     shift_requirement_id: UUID | None
     required_provider_type: str | None
     shift_type: str
+    schedule_date: date
     start_time: datetime
     end_time: datetime
     assignment_status: str

@@ -1,3 +1,5 @@
+from datetime import date
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -373,6 +375,7 @@ def create_assignment_from_request(
         shift_requirement_id=requested_assignment.shift_requirement_id,
         required_provider_type=requested_assignment.required_provider_type,
         shift_type=requested_assignment.shift_type,
+        schedule_date=requested_assignment.schedule_date,
         start_time=requested_assignment.start_time,
         end_time=requested_assignment.end_time,
         assignment_status="draft",
@@ -382,15 +385,125 @@ def create_assignment_from_request(
     return assignment
 
 
+def datetime_with_date(source_datetime: datetime, target_date: date) -> datetime:
+    source_time = source_datetime.timetz()
+    updated_datetime = datetime.combine(target_date, source_time)
+    return updated_datetime
+
+
+def assignment_request_with_schedule_date_times(
+    requested_assignment: ScheduleAssignmentCreate,
+) -> ScheduleAssignmentCreate:
+    start_time = datetime_with_date(
+        requested_assignment.start_time,
+        requested_assignment.schedule_date,
+    )
+    end_time = datetime_with_date(
+        requested_assignment.end_time,
+        requested_assignment.schedule_date,
+    )
+    updated_assignment = requested_assignment.model_copy(
+        update={
+            "start_time": start_time,
+            "end_time": end_time,
+        },
+    )
+    return updated_assignment
+
+
+def parent_assignments_for_version(
+    parent_schedule_version_id: UUID | None,
+    organization_id: UUID,
+    session: Session,
+) -> list[Assignment]:
+    if parent_schedule_version_id is None:
+        return []
+
+    parent_assignments = assignments_for_version(
+        parent_schedule_version_id,
+        organization_id,
+        session,
+    )
+    return parent_assignments
+
+
+def preserve_parent_assignment_dates(
+    requested_assignment: ScheduleAssignmentCreate,
+    parent_assignment: Assignment,
+) -> ScheduleAssignmentCreate:
+    start_date = parent_assignment.schedule_date
+    end_date = parent_assignment.schedule_date
+    start_time = datetime_with_date(requested_assignment.start_time, start_date)
+    end_time = datetime_with_date(requested_assignment.end_time, end_date)
+    updated_assignment = requested_assignment.model_copy(
+        update={
+            "schedule_date": parent_assignment.schedule_date,
+            "start_time": start_time,
+            "end_time": end_time,
+        },
+    )
+    return updated_assignment
+
+
+def stable_assignment_request(
+    requested_assignment: ScheduleAssignmentCreate,
+    parent_assignments: list[Assignment],
+) -> ScheduleAssignmentCreate:
+    parent_assignment = None
+
+    for candidate in parent_assignments:
+        room_slot_matches = candidate.room_slot_id == requested_assignment.room_slot_id
+
+        if not room_slot_matches:
+            continue
+
+        parent_assignment = candidate
+        break
+
+    if parent_assignment is None:
+        stable_assignment = assignment_request_with_schedule_date_times(requested_assignment)
+        return stable_assignment
+
+    if requested_assignment.allow_slot_date_change:
+        stable_assignment = assignment_request_with_schedule_date_times(requested_assignment)
+        return stable_assignment
+
+    stable_assignment = preserve_parent_assignment_dates(
+        requested_assignment,
+        parent_assignment,
+    )
+    return stable_assignment
+
+
+def stable_assignment_requests(
+    requested_assignments: list[ScheduleAssignmentCreate],
+    parent_schedule_version_id: UUID | None,
+    organization_id: UUID,
+    session: Session,
+) -> list[ScheduleAssignmentCreate]:
+    parent_assignments = parent_assignments_for_version(
+        parent_schedule_version_id,
+        organization_id,
+        session,
+    )
+    stable_assignments = [
+        stable_assignment_request(requested_assignment, parent_assignments)
+        for requested_assignment in requested_assignments
+    ]
+    return stable_assignments
+
+
 def duplicate_assignment_request(assignment: Assignment) -> ScheduleAssignmentCreate:
     requested_assignment = ScheduleAssignmentCreate(
         room_slot_id=assignment.room_slot_id,
+        allow_slot_date_change=False,
         provider_id=assignment.provider_id,
         center_id=assignment.center_id,
         room_id=assignment.room_id,
         shift_requirement_id=assignment.shift_requirement_id,
         required_provider_type=assignment.required_provider_type,
         shift_type=assignment.shift_type,
+        schedule_date=assignment.schedule_date,
         start_time=assignment.start_time,
         end_time=assignment.end_time,
         source="duplicate",
@@ -417,6 +530,12 @@ def save_schedule_version(
         organization_id,
         session,
     )
+    requested_assignments = stable_assignment_requests(
+        request.assignments,
+        request.parent_schedule_version_id,
+        organization_id,
+        session,
+    )
     schedule_version = ScheduleVersion(
         organization_id=organization_id,
         schedule_period_id=request.schedule_period_id,
@@ -435,7 +554,7 @@ def save_schedule_version(
     session.flush()
     assignments: list[Assignment] = []
 
-    for requested_assignment in request.assignments:
+    for requested_assignment in requested_assignments:
         assignment = create_assignment_from_request(
             requested_assignment,
             request.schedule_period_id,
@@ -454,7 +573,7 @@ def save_schedule_version(
         if not assignment_has_provider:
             continue
 
-        requested_assignment = request.assignments[assignment_index]
+        requested_assignment = requested_assignments[assignment_index]
         eligibility_input = eligibility_input_from_assignment(
             assignment,
             requested_assignment.required_provider_type,
@@ -624,13 +743,23 @@ def generate_schedule_period(
         organization_id,
         session,
     )
+    requested_assignments = None
+
+    if generate_request.assignments is not None:
+        requested_assignments = stable_assignment_requests(
+            generate_request.assignments,
+            generate_request.parent_schedule_version_id,
+            organization_id,
+            session,
+        )
+
     generated_draft = generate_schedule_draft(
         schedule_period,
         generate_request.parent_schedule_version_id,
         generate_request.notes,
         organization_id,
         session,
-        generate_request.assignments,
+        requested_assignments,
     )
     response = ScheduleGenerateResponse(
         version=generated_draft.version,

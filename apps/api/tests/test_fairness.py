@@ -1,4 +1,5 @@
 from datetime import UTC
+from datetime import date
 from datetime import datetime
 from uuid import uuid4
 
@@ -43,6 +44,7 @@ def create_assignment(provider: Provider) -> Assignment:
         shift_requirement_id=uuid4(),
         required_provider_type="doctor",
         shift_type="full_shift",
+        schedule_date=date(2026, 5, 4),
         start_time=datetime(2026, 5, 4, 7, 0, tzinfo=UTC),
         end_time=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
         assignment_status="draft",
@@ -131,6 +133,39 @@ def test_fairness_events_use_assignments_and_shift_requests() -> None:
         "assigned_shift",
         "above_maximum_shift_request",
     ]
+
+
+def test_fairness_events_credit_full_shift_availability_accommodation() -> None:
+    provider = create_provider("Arden")
+    assignment = create_assignment(provider)
+    assignment.shift_type = "first_half"
+    schedule_version = create_schedule_version(provider.organization_id)
+    weekly_availability = create_weekly_availability(provider)
+    provider_inputs = ProviderFairnessInputs(
+        provider=provider,
+        state=None,
+        weekly_availability=weekly_availability,
+        assignment_count=1,
+        average_assignment_count=1.0,
+        weekly_availability_rows=[weekly_availability],
+    )
+
+    events = fairness_events_for_provider(
+        provider_inputs,
+        [assignment],
+        schedule_version,
+        provider.organization_id,
+    )
+
+    accommodation_events = [
+        event
+        for event in events
+        if event.event_type == "full_shift_availability_accommodation"
+    ]
+
+    assert len(accommodation_events) == 1
+    assert accommodation_events[0].debt_delta == 1.0
+    assert accommodation_events[0].assignment_id == assignment.id
 
 
 def test_fairness_snapshot_applies_decay_and_pressure() -> None:

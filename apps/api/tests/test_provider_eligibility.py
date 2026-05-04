@@ -10,6 +10,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from app.services.scheduling.provider_eligibility import credential_is_active_for_slot
 from app.services.scheduling.provider_eligibility import evaluate_provider_slot_eligibility
+from app.services.scheduling.provider_eligibility import full_shift_availability_accommodates_shift_type
 from app.services.scheduling.provider_eligibility import overlapping_assignment_is_allowed
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityContext
 from app.services.scheduling.provider_eligibility_contracts import ProviderRoomTypeSkillSummary
@@ -219,6 +220,29 @@ def test_missing_shift_type_availability_creates_visible_reason() -> None:
     assert result.is_eligible is False
     assert result.violations[0].constraint_type == "provider_shift_type_unavailable"
     assert result.violations[0].category == "availability_conflict"
+
+
+def test_full_shift_availability_can_cover_shorter_shift_with_warning() -> None:
+    provider_id = uuid4()
+    request = create_request(provider_id)
+    request.shift_type = "first_half"
+    context = create_context(provider_id)
+
+    result = evaluate_provider_slot_eligibility(request, context)
+
+    assert result.is_eligible is True
+    assert result.violations[0].severity == "warning"
+    assert result.violations[0].constraint_type == "full_shift_availability_accommodation"
+    assert result.violations[0].category == "shift_request_conflict"
+
+
+def test_full_shift_availability_does_not_warn_when_exact_shorter_shift_is_available() -> None:
+    shift_type_is_accommodated = full_shift_availability_accommodates_shift_type(
+        "first_half",
+        ["full_shift", "first_half"],
+    )
+
+    assert shift_type_is_accommodated is False
 
 
 def test_max_shift_request_creates_visible_reason() -> None:

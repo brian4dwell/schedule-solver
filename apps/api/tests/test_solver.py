@@ -1,4 +1,5 @@
 from datetime import UTC
+from datetime import date
 from datetime import datetime
 from uuid import UUID
 from uuid import uuid4
@@ -352,6 +353,7 @@ def test_solver_shift_from_assignment_preserves_room_slot_id() -> None:
         shift_requirement_id=None,
         required_provider_type=None,
         shift_type="full_shift",
+        schedule_date=date(2026, 5, 6),
         start_time=datetime(2026, 5, 6, 7, 0, tzinfo=UTC),
         end_time=datetime(2026, 5, 6, 15, 0, tzinfo=UTC),
         source="manual",
@@ -390,6 +392,37 @@ def test_solver_rejects_provider_without_matching_shift_type_availability() -> N
     assert result.is_feasible is False
     assert result.assignments == []
     assert result.violations[0].constraint_type == "unfillable_shift_requirement"
+
+
+def test_solver_allows_full_shift_availability_for_shorter_shift_with_warning() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    center_id = uuid4()
+    room_type_id = uuid4()
+    room = create_room(center_id, room_type_id)
+    provider = create_provider(
+        center_id,
+        room_type_id,
+        availability_options=["full_shift"],
+    )
+    credential = create_credential(provider.id, center_id)
+    shift = create_shift(center_id, room.id, 7, 11, shift_type="first_half")
+    solver_input = SolverInput(
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        rooms=[room],
+        providers=[provider],
+        center_credentials=[credential],
+        shift_requirements=[shift],
+    )
+
+    result = solve_schedule(solver_input)
+
+    assert result.is_feasible is True
+    assert len(result.assignments) == 1
+    assert result.assignments[0].provider_id == provider.id
+    assert result.violations[0].severity == "warning"
+    assert result.violations[0].constraint_type == "full_shift_availability_accommodation"
 
 
 def test_solver_rejects_provider_without_active_center_credential() -> None:

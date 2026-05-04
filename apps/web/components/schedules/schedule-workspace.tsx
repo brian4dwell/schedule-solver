@@ -140,6 +140,7 @@ function createInitialVersion(schedulePeriod: SchedulePeriod): ScheduleVersion {
     name: `${schedulePeriod.name} Working Version`,
     status: "working",
     createdAt,
+    notes: "",
     assignments: [],
   };
   const parsedVersion = scheduleVersionSchema.parse(version);
@@ -197,17 +198,30 @@ function dateForDayKey(schedulePeriod: SchedulePeriod, dayKey: ScheduleDayKey) {
 }
 
 function dateTimeForAssignment(
-  schedulePeriod: SchedulePeriod,
-  dayKey: ScheduleDayKey,
+  slotDate: string,
   timeValue: string,
 ) {
-  const date = dateForDayKey(schedulePeriod, dayKey);
   const timeParts = timeValue.split(":");
   const hour = Number(timeParts[0]);
   const minute = Number(timeParts[1]);
+  const date = dateAtUtcMidnight(slotDate);
   date.setUTCHours(hour, minute, 0, 0);
   const value = date.toISOString();
   return value;
+}
+
+function slotDateForDayKey(
+  schedulePeriod: SchedulePeriod,
+  dayKey: ScheduleDayKey,
+) {
+  const date = dateForDayKey(schedulePeriod, dayKey);
+  const value = date.toISOString().slice(0, 10);
+  return value;
+}
+
+function scheduleNotesPayload(notes: string) {
+  const payloadNotes = notes === "" ? null : notes;
+  return payloadNotes;
 }
 
 function versionFromDetail(
@@ -225,11 +239,24 @@ function versionFromDetail(
     const validationMessages = violations.map((violation) => {
       return violation.message;
     });
-    const hasViolations = violations.length > 0;
-    const validationStatus = hasViolations ? "invalid" : "valid";
+    const hardViolations = violations.filter((violation) => {
+      return violation.severity === "hard_violation";
+    });
+    const warningViolations = violations.filter((violation) => {
+      return violation.severity === "warning";
+    });
+    const hasHardViolations = hardViolations.length > 0;
+    const hasWarningViolations = warningViolations.length > 0;
+    const validationStatus = hasHardViolations
+      ? "invalid"
+      : hasWarningViolations
+        ? "warning"
+        : "valid";
     const roomAssignment = {
       id: assignment.room_slot_id,
-      dayKey: dayKeyForAssignment(assignment.start_time),
+      dayKey: dayKeyForAssignment(assignment.schedule_date),
+      slotDate: assignment.schedule_date,
+      slotDateChanged: false,
       centerId: assignment.center_id,
       roomId: assignment.room_id,
       shiftType: assignment.shift_type,
@@ -247,6 +274,7 @@ function versionFromDetail(
     name: `${schedulePeriod.name} Version ${detail.version.version_number}`,
     status: detail.version.status,
     createdAt: detail.version.created_at,
+    notes: detail.version.notes ?? "",
     assignments,
   };
   const parsedVersion = scheduleVersionSchema.parse(version);
@@ -327,14 +355,44 @@ function availableRoomsFromRows(rows: RoomRow[]): AvailableRoom[] {
 
 function createProviderReason(
   code: string,
+  severity: ProviderIneligibilityReason["severity"],
   category: ProviderIneligibilityReason["category"],
   message: string,
 ): ProviderIneligibilityReason {
   const reason = {
     code,
+    severity,
     category,
     message,
   };
+  return reason;
+}
+
+function createHardProviderReason(
+  code: string,
+  category: ProviderIneligibilityReason["category"],
+  message: string,
+): ProviderIneligibilityReason {
+  const reason = createProviderReason(
+    code,
+    "hard_violation",
+    category,
+    message,
+  );
+  return reason;
+}
+
+function createWarningProviderReason(
+  code: string,
+  category: ProviderIneligibilityReason["category"],
+  message: string,
+): ProviderIneligibilityReason {
+  const reason = createProviderReason(
+    code,
+    "warning",
+    category,
+    message,
+  );
   return reason;
 }
 
@@ -371,19 +429,47 @@ function normalizedReasonCategory(
 function reasonsFromBackendEligibility(
   response: ProviderSlotEligibility,
 ): ProviderIneligibilityReason[] {
-  const hardViolations = response.violations.filter((violation) => {
-    return violation.severity === "hard_violation";
-  });
-  const reasons = hardViolations.map((violation) => {
+  const reasons = response.violations.map((violation) => {
     const category = normalizedReasonCategory(violation.category);
+    const severity =
+      violation.severity === "warning" ? "warning" : "hard_violation";
     const reason = createProviderReason(
       violation.constraint_type,
+      severity,
       category,
       violation.message,
     );
     return reason;
   });
   return reasons;
+}
+
+function fullShiftAvailabilityAccommodatesShiftType(
+  shiftType: ScheduleRoomAssignment["shiftType"],
+  availabilityOptions: AvailabilityOption[],
+) {
+  const shiftTypeIsAvailable = availabilityOptions.includes(shiftType);
+  const fullShiftIsAvailable = availabilityOptions.includes("full_shift");
+  const shiftTypeIsShorter = shiftType !== "full_shift";
+  const fullShiftCanCover = fullShiftIsAvailable && shiftTypeIsShorter;
+  const shiftTypeIsAccommodated = !shiftTypeIsAvailable && fullShiftCanCover;
+  return shiftTypeIsAccommodated;
+}
+
+function hasHardProviderReasons(reasons: ProviderIneligibilityReason[]) {
+  const hardReasons = reasons.filter((reason) => {
+    return reason.severity === "hard_violation";
+  });
+  const hasHardReasons = hardReasons.length > 0;
+  return hasHardReasons;
+}
+
+function hasWarningProviderReasons(reasons: ProviderIneligibilityReason[]) {
+  const warningReasons = reasons.filter((reason) => {
+    return reason.severity === "warning";
+  });
+  const hasWarningReasons = warningReasons.length > 0;
+  return hasWarningReasons;
 }
 
 function mergeProviderReasons(
@@ -463,7 +549,7 @@ function providerEligibilityForAssignment(
   const maxShiftsRequested = availability?.maxShiftsRequested ?? 0;
 
   if (!provider.is_active) {
-    const reason = createProviderReason(
+    const reason = createHardProviderReason(
       "inactive_provider",
       "other_hard_constraint",
       "Provider is inactive.",
@@ -474,7 +560,7 @@ function providerEligibilityForAssignment(
   const hasCenterCredential = provider.credentialed_center_ids.includes(room.centerId);
 
   if (!hasCenterCredential) {
-    const reason = createProviderReason(
+    const reason = createHardProviderReason(
       "missing_center_credential",
       "missing_credential",
       "Missing credential for this center.",
@@ -489,7 +575,7 @@ function providerEligibilityForAssignment(
       continue;
     }
 
-    const reason = createProviderReason(
+    const reason = createHardProviderReason(
       "missing_required_skill",
       "missing_skill",
       "Missing required room type skill.",
@@ -501,7 +587,7 @@ function providerEligibilityForAssignment(
     const providerIsDoctor = provider.provider_type === "doctor";
 
     if (!providerIsDoctor) {
-      const reason = createProviderReason(
+      const reason = createHardProviderReason(
         "md_requirement_not_met",
         "md_requirement_not_met",
         "MD requirement not met.",
@@ -513,7 +599,7 @@ function providerEligibilityForAssignment(
   const availabilityIsLoading = availability === undefined;
 
   if (availabilityIsLoading) {
-    const reason = createProviderReason(
+    const reason = createHardProviderReason(
       "provider_availability_unset",
       "availability_conflict",
       "Provider availability is still loading.",
@@ -523,7 +609,7 @@ function providerEligibilityForAssignment(
     const availabilityIsUnset = availabilityOptions.includes("unset");
 
     if (availabilityIsUnset) {
-      const reason = createProviderReason(
+      const reason = createHardProviderReason(
         "provider_availability_unset",
         "availability_conflict",
         "Provider has not supplied availability for this day.",
@@ -534,7 +620,7 @@ function providerEligibilityForAssignment(
     const providerIsUnavailable = availabilityOptions.includes("none");
 
     if (providerIsUnavailable) {
-      const reason = createProviderReason(
+      const reason = createHardProviderReason(
         "provider_unavailable",
         "availability_conflict",
         "Provider is unavailable on this day.",
@@ -544,9 +630,13 @@ function providerEligibilityForAssignment(
 
     const hasWorkAvailability = !availabilityIsUnset && !providerIsUnavailable;
     const shiftTypeIsAvailable = availabilityOptions.includes(assignment.shiftType);
+    const shiftTypeIsAccommodated = fullShiftAvailabilityAccommodatesShiftType(
+      assignment.shiftType,
+      availabilityOptions,
+    );
 
-    if (hasWorkAvailability && !shiftTypeIsAvailable) {
-      const reason = createProviderReason(
+    if (hasWorkAvailability && !shiftTypeIsAvailable && !shiftTypeIsAccommodated) {
+      const reason = createHardProviderReason(
         "provider_shift_type_unavailable",
         "availability_conflict",
         "Provider availability does not include this shift type.",
@@ -554,9 +644,19 @@ function providerEligibilityForAssignment(
       reasons.push(reason);
     }
 
+    if (hasWorkAvailability && shiftTypeIsAccommodated) {
+      const reason = createWarningProviderReason(
+        "full_shift_availability_accommodation",
+        "shift_request_conflict",
+        "Provider offered full-day availability and is accommodating a shorter shift.",
+      );
+      reasons.push(reason);
+    }
+
   }
 
-  const isEligible = reasons.length === 0;
+  const hasHardReasons = hasHardProviderReasons(reasons);
+  const isEligible = !hasHardReasons;
   const option = {
     provider,
     isEligible,
@@ -645,6 +745,12 @@ function validationStatusForSelection(
     return "invalid";
   }
 
+  const hasWarnings = hasWarningProviderReasons(option.reasons);
+
+  if (hasWarnings) {
+    return "warning";
+  }
+
   return "valid";
 }
 
@@ -664,6 +770,12 @@ function providerPickerStatusLabel(option: ProviderPickerOption | null): string 
 
   if (!option.isEligible) {
     return "Not eligible";
+  }
+
+  const hasWarnings = hasWarningProviderReasons(option.reasons);
+
+  if (hasWarnings) {
+    return "Eligible with warning";
   }
 
   return "Eligible";
@@ -718,6 +830,10 @@ function constraintLabelForReason(reason: ProviderIneligibilityReason) {
 
   if (reason.code === "provider_shift_type_unavailable") {
     return "Shift availability";
+  }
+
+  if (reason.code === "full_shift_availability_accommodation") {
+    return "Availability accommodation";
   }
 
   if (reason.code === "provider_double_booked") {
@@ -856,9 +972,11 @@ function assignmentConstraintRows(
         return [];
       }
 
+      const severity: ConstraintSeverity =
+        reason.severity === "warning" ? "Warning" : "Hard";
       const row = {
         id: `${assignment.id}-${reason.code}`,
-        severity: "Hard" as const,
+        severity,
         scope: "Slot",
         subject,
         constraint: constraintLabelForReason(reason),
@@ -1018,6 +1136,7 @@ function reorderAssignments(
 function moveAssignment(
   assignments: ScheduleRoomAssignment[],
   draggedAssignment: DraggedAssignment,
+  schedulePeriod: SchedulePeriod,
   targetDayKey: ScheduleDayKey,
   targetIndex: number,
 ) {
@@ -1037,6 +1156,8 @@ function moveAssignment(
   const updatedMovingAssignment = {
     ...movingAssignment,
     dayKey: targetDayKey,
+    slotDate: slotDateForDayKey(schedulePeriod, targetDayKey),
+    slotDateChanged: true,
     sortOrder: boundedIndex,
   };
   const assignmentsBeforeTarget = remainingAssignments.filter((assignment) => {
@@ -1054,12 +1175,15 @@ function moveAssignment(
 
 function createRoomAssignment(
   room: AvailableRoom,
+  schedulePeriod: SchedulePeriod,
   dayKey: ScheduleDayKey,
   sortOrder: number,
 ): ScheduleRoomAssignment {
   const assignment: ScheduleRoomAssignment = {
     id: createAssignmentId(),
     dayKey,
+    slotDate: slotDateForDayKey(schedulePeriod, dayKey),
+    slotDateChanged: false,
     centerId: room.centerId,
     roomId: room.id,
     shiftType: "full_shift",
@@ -1173,28 +1297,36 @@ export function ScheduleWorkspace({
     setWorkingVersion(nextVersion);
   }
 
+  function handleNotesChanged(notes: string) {
+    const nextVersion = scheduleVersionSchema.parse({
+      ...workingVersion,
+      notes,
+    });
+    updateWorkingVersion(nextVersion);
+  }
+
   function savePayloadFromAssignments(
     assignments: ScheduleRoomAssignment[],
   ): ScheduleAssignmentSavePayload[] {
     const payload = assignments.map((assignment) => {
       const startTime = dateTimeForAssignment(
-        schedulePeriod,
-        assignment.dayKey,
+        assignment.slotDate,
         assignment.startTime,
       );
       const endTime = dateTimeForAssignment(
-        schedulePeriod,
-        assignment.dayKey,
+        assignment.slotDate,
         assignment.endTime,
       );
       const assignmentPayload = {
         room_slot_id: assignment.id,
+        allow_slot_date_change: assignment.slotDateChanged,
         provider_id: assignment.providerId,
         center_id: assignment.centerId,
         room_id: assignment.roomId,
         shift_requirement_id: null,
         required_provider_type: null,
         shift_type: assignment.shiftType,
+        schedule_date: assignment.slotDate,
         start_time: startTime,
         end_time: endTime,
         source: "manual",
@@ -1309,7 +1441,7 @@ export function ScheduleWorkspace({
     const payload = {
       schedule_period_id: scheduleId,
       parent_schedule_version_id: parentVersionId,
-      notes: null,
+      notes: scheduleNotesPayload(workingVersion.notes),
       assignments: savePayload,
     };
 
@@ -1340,7 +1472,7 @@ export function ScheduleWorkspace({
       savedVersionDetail === null ? null : savedVersionDetail.version.id;
     const payload = {
       parent_schedule_version_id: parentVersionId,
-      notes: null,
+      notes: scheduleNotesPayload(workingVersion.notes),
       assignments: savePayloadFromAssignments(workingVersion.assignments),
     };
 
@@ -1449,7 +1581,12 @@ export function ScheduleWorkspace({
       }
 
       const sortOrder = nextSortOrder(workingVersion.assignments, dayKey);
-      const assignment = createRoomAssignment(room, dayKey, sortOrder);
+      const assignment = createRoomAssignment(
+        room,
+        schedulePeriod,
+        dayKey,
+        sortOrder,
+      );
       const assignments = [...workingVersion.assignments, assignment];
       const nextVersion = scheduleVersionSchema.parse({
         ...workingVersion,
@@ -1467,6 +1604,7 @@ export function ScheduleWorkspace({
     const assignments = moveAssignment(
       workingVersion.assignments,
       draggedAssignment,
+      schedulePeriod,
       dayKey,
       sortOrder,
     );
@@ -1501,7 +1639,12 @@ export function ScheduleWorkspace({
         return;
       }
 
-      const assignment = createRoomAssignment(room, dayKey, targetIndex);
+      const assignment = createRoomAssignment(
+        room,
+        schedulePeriod,
+        dayKey,
+        targetIndex,
+      );
       const sameDayAssignments = assignmentsForKey(
         workingVersion.assignments,
         dayKey,
@@ -1533,6 +1676,7 @@ export function ScheduleWorkspace({
     const assignments = moveAssignment(
       workingVersion.assignments,
       draggedAssignment,
+      schedulePeriod,
       dayKey,
       targetIndex,
     );
@@ -1611,13 +1755,11 @@ export function ScheduleWorkspace({
     option: ProviderPickerOption,
   ) {
     const startTime = dateTimeForAssignment(
-      schedulePeriod,
-      assignment.dayKey,
+      assignment.slotDate,
       assignment.startTime,
     );
     const endTime = dateTimeForAssignment(
-      schedulePeriod,
-      assignment.dayKey,
+      assignment.slotDate,
       assignment.endTime,
     );
     const savedAssignmentId = savedAssignmentIdForRequest(assignment);
@@ -1654,7 +1796,7 @@ export function ScheduleWorkspace({
     try {
       selectedOption = await verifiedProviderOption(assignment, option);
     } catch {
-      const reason = createProviderReason(
+      const reason = createHardProviderReason(
         "provider_eligibility_check_failed",
         "other_hard_constraint",
         "Provider eligibility could not be verified.",
@@ -1897,6 +2039,22 @@ export function ScheduleWorkspace({
           </div>
         </div>
       </section>
+      <section className="rounded-md border border-slate-200 bg-white">
+        <div className="border-b border-slate-200 px-4 py-3">
+          <h3 className="text-base font-semibold text-slate-950">
+            Freeform notes
+          </h3>
+        </div>
+        <div className="p-4">
+          <textarea
+            value={workingVersion.notes}
+            onChange={(event) => handleNotesChanged(event.target.value)}
+            rows={5}
+            className="min-h-32 w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-sm leading-6 text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+            aria-label="Freeform notes"
+          />
+        </div>
+      </section>
       <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_18rem]">
         <section className="min-w-0 rounded-md border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-4 py-3">
@@ -1962,6 +2120,23 @@ export function ScheduleWorkspace({
                       const selectedStatus = validationStatusForSelection(
                         selectedOption,
                       );
+                      const selectedProviderIsMissing = selectedOption === null;
+                      const selectedStatusIsValid = selectedStatus === "valid";
+                      const selectedStatusIsInvalid = selectedStatus === "invalid";
+                      const selectedStatusIsWarning =
+                        selectedStatus === "warning" && !selectedProviderIsMissing;
+                      const selectedStatusLabel = selectedStatusIsValid
+                        ? "Eligible"
+                        : selectedStatusIsWarning
+                          ? "Warning"
+                          : "Not publishable";
+                      const selectedStatusClassName = selectedStatusIsValid
+                        ? "rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700"
+                        : "rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800";
+                      const selectedMessageClassName =
+                        selectedStatusIsInvalid || selectedProviderIsMissing
+                          ? "text-xs leading-5 text-red-700"
+                          : "text-xs leading-5 text-amber-700";
                       const providerPickerIsOpen =
                         openProviderAssignmentId === assignment.id;
                       const providerPickerLabel =
@@ -2058,15 +2233,9 @@ export function ScheduleWorkspace({
                                 Provider
                               </p>
                               <span
-                                className={
-                                  selectedStatus === "valid"
-                                    ? "rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700"
-                                    : "rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800"
-                                }
+                                className={selectedStatusClassName}
                               >
-                                {selectedStatus === "valid"
-                                  ? "Eligible"
-                                  : "Not publishable"}
+                                {selectedStatusLabel}
                               </span>
                             </div>
                             <div className="mt-2 max-h-44 space-y-1 overflow-y-auto">
@@ -2090,9 +2259,11 @@ export function ScheduleWorkspace({
                                   {providerPickerStatus === null ? null : (
                                     <span
                                       className={
-                                        selectedOption?.isEligible
+                                        selectedStatusIsValid
                                           ? "block text-xs text-emerald-700"
-                                          : "block text-xs text-red-700"
+                                          : selectedStatusIsWarning
+                                            ? "block text-xs text-amber-700"
+                                            : "block text-xs text-red-700"
                                       }
                                     >
                                       {providerPickerStatus}
@@ -2120,6 +2291,27 @@ export function ScheduleWorkspace({
                                     const isSelected =
                                       option.provider.id === assignment.providerId;
                                     const firstReason = option.reasons.at(0);
+                                    const optionHasWarnings = hasWarningProviderReasons(
+                                      option.reasons,
+                                    );
+                                    const optionStatusClassName =
+                                      option.isEligible && !optionHasWarnings
+                                        ? "block text-xs text-emerald-700"
+                                        : option.isEligible
+                                          ? "block text-xs text-amber-700"
+                                          : "block text-xs text-red-700";
+                                    const optionStatusLabel =
+                                      option.isEligible && !optionHasWarnings
+                                        ? "Eligible"
+                                        : option.isEligible
+                                          ? `Warning: ${
+                                              firstReason?.message ??
+                                              "Review recommended."
+                                            }`
+                                          : `Not eligible: ${
+                                              firstReason?.message ??
+                                              "Review required."
+                                            }`;
                                     const availabilityLabel = optionAvailabilityLabel(option);
                                     const shiftCountLabel = optionShiftCountLabel(option);
                                     return (
@@ -2142,18 +2334,9 @@ export function ScheduleWorkspace({
                                           {availabilityLabel} - {shiftCountLabel}
                                         </span>
                                         <span
-                                          className={
-                                            option.isEligible
-                                              ? "block text-xs text-emerald-700"
-                                              : "block text-xs text-red-700"
-                                          }
+                                          className={optionStatusClassName}
                                         >
-                                          {option.isEligible
-                                            ? "Eligible"
-                                            : `Not eligible: ${
-                                                firstReason?.message ??
-                                                "Review required."
-                                              }`}
+                                          {optionStatusLabel}
                                         </span>
                                       </button>
                                     );
@@ -2171,7 +2354,7 @@ export function ScheduleWorkspace({
                                   return (
                                     <p
                                       key={message}
-                                      className="text-xs leading-5 text-red-700"
+                                      className={selectedMessageClassName}
                                     >
                                       {message}
                                     </p>
@@ -2254,13 +2437,13 @@ export function ScheduleWorkspace({
           ) : null}
         </section>
         <div className="space-y-6">
-          <aside className="rounded-md border border-slate-200 bg-white">
+          <aside className="rounded-md border border-slate-200 bg-white 2xl:sticky 2xl:top-4 2xl:self-start">
             <div className="border-b border-slate-200 px-4 py-3">
               <h3 className="text-sm font-semibold text-slate-950">
                 Available rooms
               </h3>
             </div>
-            <div className="max-h-[42rem] space-y-2 overflow-y-auto p-3">
+            <div className="max-h-[42rem] space-y-2 overflow-y-auto p-3 2xl:max-h-[calc(100vh-7rem)]">
               {availableRooms.length === 0 ? (
                 <p className="text-sm leading-6 text-slate-500">
                   Add active rooms before building schedules.

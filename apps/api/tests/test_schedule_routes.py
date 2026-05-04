@@ -10,6 +10,7 @@ from app.db.models import Assignment
 from app.routers.schedules import create_assignment_from_request
 from app.routers.schedules import duplicate_assignment_request
 from app.routers.schedules import router
+from app.routers.schedules import stable_assignment_request
 from app.routers.schedules import unassigned_provider_violation
 from app.routers.schedules import validate_schedule_period_dates
 from app.schemas.schedule import ScheduleAssignmentCreate
@@ -92,6 +93,7 @@ def test_create_assignment_from_request_maps_provider_slot_fields() -> None:
         shift_requirement_id=None,
         required_provider_type="doctor",
         shift_type="first_half",
+        schedule_date=date(2026, 5, 4),
         start_time=start_time,
         end_time=end_time,
         source="manual",
@@ -114,6 +116,7 @@ def test_create_assignment_from_request_maps_provider_slot_fields() -> None:
     assert assignment.room_id == room_id
     assert assignment.required_provider_type == "doctor"
     assert assignment.shift_type == "first_half"
+    assert assignment.schedule_date == date(2026, 5, 4)
     assert assignment.assignment_status == "draft"
     assert assignment.source == "manual"
 
@@ -134,6 +137,7 @@ def test_create_assignment_from_request_allows_unassigned_provider() -> None:
         room_id=room_id,
         shift_requirement_id=None,
         required_provider_type="doctor",
+        schedule_date=date(2026, 5, 4),
         start_time=start_time,
         end_time=end_time,
         source="manual",
@@ -176,6 +180,7 @@ def test_duplicate_assignment_request_copies_assignment_fields() -> None:
         shift_requirement_id=shift_requirement_id,
         required_provider_type="doctor",
         shift_type="first_half",
+        schedule_date=date(2026, 5, 4),
         start_time=start_time,
         end_time=end_time,
         assignment_status="draft",
@@ -192,6 +197,7 @@ def test_duplicate_assignment_request_copies_assignment_fields() -> None:
     assert request.shift_requirement_id == shift_requirement_id
     assert request.required_provider_type == "doctor"
     assert request.shift_type == "first_half"
+    assert request.schedule_date == date(2026, 5, 4)
     assert request.start_time == start_time
     assert request.end_time == end_time
     assert request.source == "duplicate"
@@ -219,6 +225,7 @@ def test_duplicate_assignment_request_preserves_stable_room_slot_key() -> None:
         shift_requirement_id=None,
         required_provider_type=None,
         shift_type="full_shift",
+        schedule_date=date(2026, 5, 6),
         start_time=start_time,
         end_time=end_time,
         assignment_status="draft",
@@ -229,6 +236,111 @@ def test_duplicate_assignment_request_preserves_stable_room_slot_key() -> None:
     request = duplicate_assignment_request(assignment)
 
     assert request.room_slot_id == room_slot_id
+
+
+def test_stable_assignment_request_preserves_parent_slot_date() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    schedule_version_id = uuid4()
+    provider_id = uuid4()
+    center_id = uuid4()
+    room_id = uuid4()
+    room_slot_id = uuid4()
+    parent_assignment = Assignment(
+        room_slot_id=room_slot_id,
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        schedule_version_id=schedule_version_id,
+        provider_id=provider_id,
+        center_id=center_id,
+        room_id=room_id,
+        shift_requirement_id=None,
+        required_provider_type=None,
+        shift_type="full_shift",
+        schedule_date=date(2026, 5, 4),
+        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=UTC),
+        end_time=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
+        assignment_status="draft",
+        source="manual",
+        notes=None,
+    )
+    requested_assignment = ScheduleAssignmentCreate(
+        room_slot_id=room_slot_id,
+        provider_id=provider_id,
+        center_id=center_id,
+        room_id=room_id,
+        shift_requirement_id=None,
+        required_provider_type=None,
+        shift_type="full_shift",
+        schedule_date=date(2026, 5, 5),
+        start_time=datetime(2026, 5, 5, 8, 30, tzinfo=UTC),
+        end_time=datetime(2026, 5, 5, 16, 30, tzinfo=UTC),
+        source="manual",
+        notes=None,
+    )
+
+    stable_assignment = stable_assignment_request(
+        requested_assignment,
+        [parent_assignment],
+    )
+
+    assert stable_assignment.start_time == datetime(2026, 5, 4, 8, 30, tzinfo=UTC)
+    assert stable_assignment.end_time == datetime(2026, 5, 4, 16, 30, tzinfo=UTC)
+    assert stable_assignment.schedule_date == date(2026, 5, 4)
+
+
+def test_stable_assignment_request_allows_explicit_slot_date_change() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    schedule_version_id = uuid4()
+    provider_id = uuid4()
+    center_id = uuid4()
+    room_id = uuid4()
+    room_slot_id = uuid4()
+    requested_start_time = datetime(2026, 5, 5, 8, 30, tzinfo=UTC)
+    requested_end_time = datetime(2026, 5, 5, 16, 30, tzinfo=UTC)
+    parent_assignment = Assignment(
+        room_slot_id=room_slot_id,
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        schedule_version_id=schedule_version_id,
+        provider_id=provider_id,
+        center_id=center_id,
+        room_id=room_id,
+        shift_requirement_id=None,
+        required_provider_type=None,
+        shift_type="full_shift",
+        schedule_date=date(2026, 5, 4),
+        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=UTC),
+        end_time=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
+        assignment_status="draft",
+        source="manual",
+        notes=None,
+    )
+    requested_assignment = ScheduleAssignmentCreate(
+        room_slot_id=room_slot_id,
+        allow_slot_date_change=True,
+        provider_id=provider_id,
+        center_id=center_id,
+        room_id=room_id,
+        shift_requirement_id=None,
+        required_provider_type=None,
+        shift_type="full_shift",
+        schedule_date=date(2026, 5, 5),
+        start_time=requested_start_time,
+        end_time=requested_end_time,
+        source="manual",
+        notes=None,
+    )
+
+    stable_assignment = stable_assignment_request(
+        requested_assignment,
+        [parent_assignment],
+    )
+
+    assert stable_assignment.start_time == requested_start_time
+    assert stable_assignment.end_time == requested_end_time
+    assert stable_assignment.schedule_date == date(2026, 5, 5)
 
 
 def test_unassigned_provider_violation_blocks_publish() -> None:

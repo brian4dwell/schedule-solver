@@ -20,6 +20,7 @@ export const scheduleVersionStatusSchema = z.enum([
 
 export const providerIneligibilityReasonSchema = z.object({
   code: z.string().min(1),
+  severity: z.enum(["hard_violation", "warning"]).default("hard_violation"),
   category: z.enum([
     "missing_credential",
     "credential_inactive",
@@ -54,6 +55,8 @@ export const providerSlotEligibilityApiSchema = z.object({
 export const scheduleRoomAssignmentSchema = z.object({
   id: z.string().min(1),
   dayKey: scheduleDayKeySchema,
+  slotDate: z.string().min(1),
+  slotDateChanged: z.boolean(),
   centerId: z.string().uuid(),
   roomId: z.string().uuid(),
   shiftType: z.enum(["full_shift", "first_half", "second_half", "short_shift"]),
@@ -70,6 +73,7 @@ export const scheduleVersionSchema = z.object({
   name: z.string().min(1),
   status: scheduleVersionStatusSchema,
   createdAt: z.string().min(1),
+  notes: z.string(),
   assignments: z.array(scheduleRoomAssignmentSchema),
 });
 
@@ -104,6 +108,7 @@ export const scheduleAssignmentApiSchema = z.object({
   shift_requirement_id: z.string().uuid().nullable(),
   required_provider_type: z.string().nullable(),
   shift_type: z.enum(["full_shift", "first_half", "second_half", "short_shift"]),
+  schedule_date: z.string().min(1),
   start_time: z.string().min(1),
   end_time: z.string().min(1),
   assignment_status: z.string().min(1),

@@ -7,6 +7,7 @@ from ortools.sat.python import cp_model
 
 from app.services.scheduling.provider_eligibility import credential_is_active_for_slot
 from app.services.scheduling.provider_eligibility import evaluate_provider_slot_eligibility
+from app.services.scheduling.provider_eligibility import full_shift_availability_accommodates_shift_type
 from app.services.scheduling.provider_eligibility import overlapping_assignment_is_allowed
 from app.services.scheduling.provider_eligibility import weekday_for_start_time
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityContext
@@ -763,6 +764,67 @@ def assignment_count_for_provider(
     return assignment_count
 
 
+def provider_for_assignment(
+    providers: list[SolverProvider],
+    assignment: SolverAssignment,
+) -> SolverProvider:
+    for provider in providers:
+        provider_matches_assignment = provider.id == assignment.provider_id
+
+        if provider_matches_assignment:
+            return provider
+
+    raise ValueError("Provider not found for solver assignment.")
+
+
+def availability_options_for_assignment(
+    provider: SolverProvider,
+    assignment: SolverAssignment,
+) -> list[str]:
+    assignment_weekday = weekday_for_start_time(assignment.start_time)
+
+    for day in provider.week_availability.days:
+        weekday_matches = day.weekday == assignment_weekday
+
+        if not weekday_matches:
+            continue
+
+        return day.options
+
+    return ["unset"]
+
+
+def full_shift_accommodation_warnings(
+    solver_input: SolverInput,
+    assignments: list[SolverAssignment],
+) -> list[SolverViolation]:
+    warnings: list[SolverViolation] = []
+
+    for assignment in assignments:
+        provider = provider_for_assignment(solver_input.providers, assignment)
+        availability_options = availability_options_for_assignment(
+            provider,
+            assignment,
+        )
+        uses_full_shift_accommodation = full_shift_availability_accommodates_shift_type(
+            assignment.shift_type,
+            availability_options,
+        )
+
+        if not uses_full_shift_accommodation:
+            continue
+
+        message = f"Provider {provider.id} offered full-day availability and is accommodating a shorter shift."
+        warning = SolverViolation(
+            severity="warning",
+            constraint_type="full_shift_availability_accommodation",
+            message=message,
+        )
+        warnings.append(warning)
+
+    return warnings
+
+
 def shift_request_warnings(
     solver_input: SolverInput,
     assignments: list[SolverAssignment],
@@ -794,6 +856,19 @@ def shift_request_warnings(
             )
             warnings.append(warning)
 
+    return warnings
+
+
+def solver_warnings(
+    solver_input: SolverInput,
+    assignments: list[SolverAssignment],
+) -> list[SolverViolation]:
+    shift_warnings = shift_request_warnings(solver_input, assignments)
+    availability_warnings = full_shift_accommodation_warnings(
+        solver_input,
+        assignments,
+    )
+    warnings = [*shift_warnings, *availability_warnings]
     return warnings
 
 
@@ -833,7 +908,7 @@ def solver_result_from_solution(
         assignments.append(assignment)
 
     objective_value = solver.ObjectiveValue()
-    warnings = shift_request_warnings(solver_input, assignments)
+    warnings = solver_warnings(solver_input, assignments)
     result = SolverResult(
         assignments=assignments,
         violations=warnings,

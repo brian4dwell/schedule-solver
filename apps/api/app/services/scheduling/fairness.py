@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from dataclasses import field
 from uuid import UUID
 
 from sqlalchemy import delete as sqlalchemy_delete
@@ -22,6 +23,7 @@ from app.schemas.fairness import ProviderFairnessEventRead
 from app.schemas.fairness import ProviderFairnessSnapshotRead
 from app.schemas.schedule import SchedulePeriodRead
 from app.schemas.schedule import ScheduleVersionRead
+from app.services.scheduling.provider_eligibility import full_shift_availability_accommodates_shift_type
 
 DEFAULT_DECAY_FACTOR = 0.95
 DEFAULT_DEBT_WEIGHT = 1.0
@@ -32,7 +34,17 @@ DEFAULT_CRITICAL_PRIORITY_MULTIPLIER = 1.5
 ASSIGNMENT_WORKLOAD_DEBT = 1.0
 BELOW_MINIMUM_SHIFT_DEBT = 2.0
 ABOVE_MAXIMUM_SHIFT_DEBT = 3.0
+FULL_SHIFT_ACCOMMODATION_DEBT = 1.0
 UNDER_AVERAGE_FAVOR_CREDIT = 1.0
+WEEKDAY_VALUES = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+]
 
 
 @dataclass
@@ -42,6 +54,7 @@ class ProviderFairnessInputs:
     weekly_availability: ProviderScheduleWeekAvailability | None
     assignment_count: int
     average_assignment_count: float
+    weekly_availability_rows: list[ProviderScheduleWeekAvailability] = field(default_factory=list)
 
 
 @dataclass
@@ -176,6 +189,52 @@ def weekly_availability_for_provider(
     return weekly_availability
 
 
+def weekly_availability_rows_for_provider(
+    provider_id: UUID,
+    schedule_period_id: UUID,
+    organization_id: UUID,
+    session: Session,
+) -> list[ProviderScheduleWeekAvailability]:
+    statement = select(ProviderScheduleWeekAvailability)
+    statement = statement.where(ProviderScheduleWeekAvailability.organization_id == organization_id)
+    statement = statement.where(ProviderScheduleWeekAvailability.schedule_week_id == schedule_period_id)
+    statement = statement.where(ProviderScheduleWeekAvailability.provider_id == provider_id)
+    statement = statement.order_by(ProviderScheduleWeekAvailability.weekday)
+    weekly_availability_rows = list(session.scalars(statement))
+    return weekly_availability_rows
+
+
+def weekday_for_assignment(assignment: Assignment) -> str:
+    weekday_index = assignment.start_time.weekday()
+    weekday = WEEKDAY_VALUES[weekday_index]
+    return weekday
+
+
+def availability_for_assignment(
+    provider_inputs: ProviderFairnessInputs,
+    assignment: Assignment,
+) -> ProviderScheduleWeekAvailability | None:
+    assignment_weekday = weekday_for_assignment(assignment)
+
+    for availability in provider_inputs.weekly_availability_rows:
+        weekday_matches = availability.weekday == assignment_weekday
+
+        if weekday_matches:
+            return availability
+
+    weekly_availability = provider_inputs.weekly_availability
+
+    if weekly_availability is None:
+        return None
+
+    weekday_matches = weekly_availability.weekday == assignment_weekday
+
+    if weekday_matches:
+        return weekly_availability
+
+    return None
+
+
 def assignment_count_for_provider(
     provider_id: UUID,
     assignments: list[Assignment],
@@ -266,6 +325,49 @@ def assignment_workload_events(
             ASSIGNMENT_WORKLOAD_DEBT,
             0.0,
             "Assigned shift added workload burden to the fairness account.",
+            assignment.id,
+        )
+        events.append(event)
+
+    return events
+
+
+def full_shift_accommodation_events(
+    provider_inputs: ProviderFairnessInputs,
+    assignments: list[Assignment],
+    schedule_version: ScheduleVersion,
+    organization_id: UUID,
+) -> list[ProviderFairnessEvent]:
+    events: list[ProviderFairnessEvent] = []
+
+    for assignment in assignments:
+        provider_matches = assignment.provider_id == provider_inputs.provider.id
+
+        if not provider_matches:
+            continue
+
+        availability = availability_for_assignment(provider_inputs, assignment)
+
+        if availability is None:
+            continue
+
+        uses_full_shift_accommodation = full_shift_availability_accommodates_shift_type(
+            assignment.shift_type,
+            availability.availability_options,
+        )
+
+        if not uses_full_shift_accommodation:
+            continue
+
+        event = create_fairness_event(
+            provider_inputs,
+            schedule_version,
+            organization_id,
+            "full_shift_availability_accommodation",
+            "workload",
+            FULL_SHIFT_ACCOMMODATION_DEBT,
+            0.0,
+            "Provider accommodated a shorter shift after offering full-day availability.",
             assignment.id,
         )
         events.append(event)
@@ -378,6 +480,13 @@ def fairness_events_for_provider(
         schedule_version,
         organization_id,
     )
+    accommodation_events = full_shift_accommodation_events(
+        provider_inputs,
+        assignments,
+        schedule_version,
+        organization_id,
+    )
+    events.extend(accommodation_events)
     below_minimum = below_minimum_event(
         provider_inputs,
         schedule_version,
@@ -530,6 +639,12 @@ def record_fairness_for_schedule_version(
             organization_id,
             session,
         )
+        weekly_availability_rows = weekly_availability_rows_for_provider(
+            provider.id,
+            schedule_version.schedule_period_id,
+            organization_id,
+            session,
+        )
         assignment_count = assignment_count_for_provider(provider.id, assignments)
         provider_inputs = ProviderFairnessInputs(
             provider=provider,
@@ -537,6 +652,7 @@ def record_fairness_for_schedule_version(
             weekly_availability=weekly_availability,
             assignment_count=assignment_count,
             average_assignment_count=average_count,
+            weekly_availability_rows=weekly_availability_rows,
         )
         events = fairness_events_for_provider(
             provider_inputs,

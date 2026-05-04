@@ -56,6 +56,7 @@ class AssignmentRead(TimestampedSchema):
     center_id: UUID
     room_id: UUID | None
     shift_requirement_id: UUID | None
+    schedule_date: date
     start_time: datetime
     end_time: datetime
     assignment_status: str

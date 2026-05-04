@@ -63,6 +63,12 @@ WEEKDAY_VALUES = [
     "sunday",
 ]
 
+SHORTER_SHIFT_TYPES = [
+    "first_half",
+    "second_half",
+    "short_shift",
+]
+
 
 def create_violation(
     constraint_type: str,
@@ -90,6 +96,45 @@ def create_warning(
         message=message,
     )
     return violation
+
+
+def full_shift_availability_can_cover_shift_type(
+    requested_shift_type: str,
+    availability_options: list[str],
+) -> bool:
+    full_shift_is_available = "full_shift" in availability_options
+    requested_shift_is_shorter = requested_shift_type in SHORTER_SHIFT_TYPES
+    can_cover_shift_type = full_shift_is_available and requested_shift_is_shorter
+    return can_cover_shift_type
+
+
+def full_shift_availability_accommodates_shift_type(
+    requested_shift_type: str,
+    availability_options: list[str],
+) -> bool:
+    shift_type_is_available = requested_shift_type in availability_options
+    full_shift_can_cover = full_shift_availability_can_cover_shift_type(
+        requested_shift_type,
+        availability_options,
+    )
+    shift_type_is_accommodated = not shift_type_is_available and full_shift_can_cover
+    return shift_type_is_accommodated
+
+
+def shift_type_is_available_or_accommodated(
+    requested_shift_type: str,
+    availability_options: list[str],
+) -> bool:
+    shift_type_is_available = requested_shift_type in availability_options
+
+    if shift_type_is_available:
+        return True
+
+    shift_type_is_accommodated = full_shift_availability_can_cover_shift_type(
+        requested_shift_type,
+        availability_options,
+    )
+    return shift_type_is_accommodated
 
 
 def skill_for_room_type(
@@ -207,7 +252,10 @@ def evaluate_provider_slot_eligibility(
             )
             violations.append(violation)
         else:
-            shift_type_is_available = request.shift_type in weekly_availability.options
+            shift_type_is_available = shift_type_is_available_or_accommodated(
+                request.shift_type,
+                weekly_availability.options,
+            )
 
             if not shift_type_is_available:
                 violation = create_violation(
@@ -216,6 +264,19 @@ def evaluate_provider_slot_eligibility(
                     "Provider availability does not include this slot shift type.",
                 )
                 violations.append(violation)
+            else:
+                full_shift_covers_shorter_shift = full_shift_availability_accommodates_shift_type(
+                    request.shift_type,
+                    weekly_availability.options,
+                )
+
+                if full_shift_covers_shorter_shift:
+                    warning = create_warning(
+                        "full_shift_availability_accommodation",
+                        "shift_request_conflict",
+                        "Provider offered full-day availability and is accommodating a shorter shift.",
+                    )
+                    violations.append(warning)
 
         exceeds_maximum_shifts = context.schedule_week_assignment_count > weekly_availability.max_shifts_requested
 

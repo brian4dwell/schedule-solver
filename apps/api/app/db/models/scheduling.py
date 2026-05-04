@@ -403,6 +403,7 @@ class Assignment(Base, TimestampMixin):
     shift_requirement_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("shift_requirements.id"), nullable=True)
     required_provider_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
     shift_type: Mapped[str] = mapped_column(String(40), nullable=False, default="full_shift")
+    schedule_date: Mapped[date] = mapped_column(Date, nullable=False)
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     assignment_status: Mapped[str] = mapped_column(String(40), nullable=False)
