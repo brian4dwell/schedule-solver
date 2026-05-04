@@ -1,4 +1,3 @@
-from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -57,23 +56,6 @@ def distinct_ids(ids: list[UUID]) -> list[UUID]:
         distinct_ids.append(id_value)
 
     return distinct_ids
-
-
-def validate_effective_window(
-    start_date: date | None,
-    end_date: date | None,
-) -> None:
-    has_start_date = start_date is not None
-    has_end_date = end_date is not None
-    has_complete_window = has_start_date and has_end_date
-
-    if not has_complete_window:
-        return
-
-    end_precedes_start = end_date < start_date
-
-    if end_precedes_start:
-        raise HTTPException(status_code=400, detail="Preference effective end date cannot precede start date")
 
 
 def validate_no_duplicate_ids(
@@ -263,12 +245,6 @@ def replace_provider_preferences(
     ]
     validate_no_duplicate_values(requested_shift_types, "Duplicate shift type preference")
 
-    for preference in request.center_preferences:
-        validate_effective_window(preference.effective_start_date, preference.effective_end_date)
-
-    for preference in request.shift_type_preferences:
-        validate_effective_window(preference.effective_start_date, preference.effective_end_date)
-
     delete_visible_preferences(provider_id, organization_id, session)
 
     for preference in request.center_preferences:
@@ -278,8 +254,8 @@ def replace_provider_preferences(
             center_id=preference.center_id,
             preference_level=preference.preference_level,
             is_active=True,
-            effective_start_date=preference.effective_start_date,
-            effective_end_date=preference.effective_end_date,
+            effective_start_date=None,
+            effective_end_date=None,
         )
         session.add(row)
 
@@ -290,8 +266,8 @@ def replace_provider_preferences(
             shift_type=preference.shift_type,
             preference_level=preference.preference_level,
             is_active=True,
-            effective_start_date=preference.effective_start_date,
-            effective_end_date=preference.effective_end_date,
+            effective_start_date=None,
+            effective_end_date=None,
         )
         session.add(row)
 
@@ -326,9 +302,6 @@ def replace_manager_provider_preferences(
     validate_center_ids(requested_center_ids, organization_id, session)
     validate_no_duplicate_ids(requested_center_ids, "Duplicate manager center preference")
 
-    for preference in request.center_preferences:
-        validate_effective_window(preference.effective_start_date, preference.effective_end_date)
-
     delete_manager_preferences(provider_id, organization_id, session)
 
     for preference in request.center_preferences:
@@ -338,8 +311,8 @@ def replace_manager_provider_preferences(
             center_id=preference.center_id,
             preference_level=preference.preference_level,
             is_active=True,
-            effective_start_date=preference.effective_start_date,
-            effective_end_date=preference.effective_end_date,
+            effective_start_date=None,
+            effective_end_date=None,
             manager_note=preference.manager_note,
         )
         session.add(row)
