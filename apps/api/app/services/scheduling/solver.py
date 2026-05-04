@@ -15,6 +15,7 @@ from app.services.scheduling.provider_eligibility_contracts import RequiredRoomT
 from app.services.scheduling.solver_contracts import SolverAssignment
 from app.services.scheduling.solver_contracts import SolverCenterCredential
 from app.services.scheduling.solver_contracts import SolverInput
+from app.services.scheduling.solver_contracts import SolverPreferenceWeights
 from app.services.scheduling.solver_contracts import SolverProvider
 from app.services.scheduling.solver_contracts import SolverProviderRoomTypeSkill
 from app.services.scheduling.solver_contracts import SolverResult
@@ -45,6 +46,18 @@ class CandidateDecision:
 class ProviderAssignmentTotal:
     provider: SolverProvider
     variable: cp_model.IntVar
+
+
+@dataclass
+class CandidatePreferenceScore:
+    center_score: int
+    shift_type_score: int
+    manager_hidden_score: int
+
+    @property
+    def total_score(self) -> int:
+        total_score = self.center_score + self.shift_type_score + self.manager_hidden_score
+        return total_score
 
 
 def time_ranges_overlap(
@@ -526,6 +539,92 @@ def add_fairness_objective_terms(
         objective_terms.append(objective_term)
 
 
+def provider_center_preference_level(
+    provider: SolverProvider,
+    center_id: UUID,
+) -> int:
+    for preference in provider.center_preferences:
+        center_matches = preference.center_id == center_id
+
+        if not center_matches:
+            continue
+
+        preference_level = preference.preference_level
+        return preference_level
+
+    return 0
+
+
+def provider_shift_type_preference_level(
+    provider: SolverProvider,
+    shift_type: str,
+) -> int:
+    for preference in provider.shift_type_preferences:
+        shift_type_matches = preference.shift_type == shift_type
+
+        if not shift_type_matches:
+            continue
+
+        preference_level = preference.preference_level
+        return preference_level
+
+    return 0
+
+
+def manager_center_preference_level(
+    provider: SolverProvider,
+    center_id: UUID,
+) -> int:
+    for preference in provider.manager_center_preferences:
+        center_matches = preference.center_id == center_id
+
+        if not center_matches:
+            continue
+
+        preference_level = preference.preference_level
+        return preference_level
+
+    return 0
+
+
+def candidate_preference_score(
+    candidate: SolverCandidate,
+    weights: SolverPreferenceWeights,
+) -> CandidatePreferenceScore:
+    provider = candidate.provider
+    shift_requirement = candidate.shift_requirement
+    center_points = provider_center_preference_level(provider, shift_requirement.center_id)
+    shift_type_points = provider_shift_type_preference_level(provider, shift_requirement.shift_type)
+    manager_points = manager_center_preference_level(provider, shift_requirement.center_id)
+    center_score = center_points * weights.center_weight
+    shift_type_score = shift_type_points * weights.shift_type_weight
+    manager_hidden_score = manager_points * weights.manager_hidden_weight
+    score = CandidatePreferenceScore(
+        center_score=center_score,
+        shift_type_score=shift_type_score,
+        manager_hidden_score=manager_hidden_score,
+    )
+    return score
+
+
+def add_preference_objective_terms(
+    solver_input: SolverInput,
+    decisions: list[CandidateDecision],
+    objective_terms: list[cp_model.LinearExpr],
+) -> None:
+    weights = solver_input.preference_weights
+
+    for decision in decisions:
+        score = candidate_preference_score(decision.candidate, weights)
+        preference_score = score.total_score
+
+        if preference_score == 0:
+            continue
+
+        objective_term = decision.variable * preference_score
+        objective_terms.append(objective_term)
+
+
 def add_objective(
     model: cp_model.CpModel,
     solver_input: SolverInput,
@@ -552,6 +651,11 @@ def add_objective(
     add_fairness_objective_terms(
         solver_input,
         provider_assignment_totals,
+        objective_terms,
+    )
+    add_preference_objective_terms(
+        solver_input,
+        decisions,
         objective_terms,
     )
 

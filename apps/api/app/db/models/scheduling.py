@@ -216,6 +216,49 @@ class ProviderScheduleWeekAvailability(Base, TimestampMixin):
     max_shifts_requested: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
+class ProviderCenterPreference(Base, TimestampMixin):
+    __tablename__ = "provider_center_preferences"
+    __table_args__ = (UniqueConstraint("organization_id", "provider_id", "center_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
+    center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("centers.id"), nullable=False)
+    preference_level: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    effective_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    effective_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+
+class ProviderShiftTypePreference(Base, TimestampMixin):
+    __tablename__ = "provider_shift_type_preferences"
+    __table_args__ = (UniqueConstraint("organization_id", "provider_id", "shift_type"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
+    shift_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    preference_level: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    effective_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    effective_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+
+class ManagerProviderCenterPreference(Base, TimestampMixin):
+    __tablename__ = "manager_provider_center_preferences"
+    __table_args__ = (UniqueConstraint("organization_id", "provider_id", "center_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
+    center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("centers.id"), nullable=False)
+    preference_level: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    effective_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    effective_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    manager_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class FairnessConfigVersion(Base, TimestampMixin):
     __tablename__ = "fairness_config_versions"
     __table_args__ = (UniqueConstraint("organization_id", "version_number"),)

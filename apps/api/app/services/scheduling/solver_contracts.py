@@ -49,6 +49,27 @@ class SolverProviderRoomTypeSkill(BaseModel):
     proficiency_level: int = 1
 
 
+class SolverProviderCenterPreference(BaseModel):
+    center_id: UUID
+    preference_level: int = Field(ge=-3, le=3)
+
+
+class SolverProviderShiftTypePreference(BaseModel):
+    shift_type: str
+    preference_level: int = Field(ge=-3, le=3)
+
+
+class SolverManagerCenterPreference(BaseModel):
+    center_id: UUID
+    preference_level: int = Field(ge=-3, le=3)
+
+
+class SolverPreferenceWeights(BaseModel):
+    center_weight: int = 4
+    shift_type_weight: int = 6
+    manager_hidden_weight: int = 5
+
+
 class SolverProvider(BaseModel):
     id: UUID
     is_active: bool
@@ -57,6 +78,9 @@ class SolverProvider(BaseModel):
     favor_credit: float = 0.0
     fairness_priority_multiplier: float = 1.0
     provider_room_type_skills: list[SolverProviderRoomTypeSkill] = Field(default_factory=list)
+    center_preferences: list[SolverProviderCenterPreference] = Field(default_factory=list)
+    shift_type_preferences: list[SolverProviderShiftTypePreference] = Field(default_factory=list)
+    manager_center_preferences: list[SolverManagerCenterPreference] = Field(default_factory=list)
     week_availability: SolverProviderWeekAvailability
 
 
@@ -75,6 +99,7 @@ class SolverInput(BaseModel):
     providers: list[SolverProvider] = Field(default_factory=list)
     center_credentials: list[SolverCenterCredential] = Field(default_factory=list)
     shift_requirements: list[SolverShiftRequirement] = Field(default_factory=list)
+    preference_weights: SolverPreferenceWeights = Field(default_factory=SolverPreferenceWeights)
 
 
 class SolverAssignment(BaseModel):

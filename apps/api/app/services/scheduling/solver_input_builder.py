@@ -6,13 +6,17 @@ from uuid import UUID
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
+from app.db.models import ManagerProviderCenterPreference
 from app.db.models import Provider
 from app.db.models import ProviderCenterCredential
+from app.db.models import ProviderCenterPreference
 from app.db.models import ProviderFairnessState
 from app.db.models import ProviderScheduleWeekAvailability
+from app.db.models import ProviderShiftTypePreference
 from app.db.models import Room
 from app.db.models import RoomRoomType
 from app.db.models import SchedulePeriod
@@ -20,8 +24,11 @@ from app.db.models import ShiftRequirement
 from app.schemas.schedule import ScheduleAssignmentCreate
 from app.services.scheduling.solver_contracts import SolverCenterCredential
 from app.services.scheduling.solver_contracts import SolverInput
+from app.services.scheduling.solver_contracts import SolverManagerCenterPreference
 from app.services.scheduling.solver_contracts import SolverProvider
+from app.services.scheduling.solver_contracts import SolverProviderCenterPreference
 from app.services.scheduling.solver_contracts import SolverProviderRoomTypeSkill
+from app.services.scheduling.solver_contracts import SolverProviderShiftTypePreference
 from app.services.scheduling.solver_contracts import SolverProviderWeekAvailability
 from app.services.scheduling.solver_contracts import SolverRequiredRoomTypeSkill
 from app.services.scheduling.solver_contracts import SolverRoom
@@ -101,6 +108,69 @@ def solver_provider_room_type_skills(
     return skill_summaries
 
 
+def solver_provider_center_preferences(
+    provider: Provider,
+    center_preferences: list[ProviderCenterPreference],
+) -> list[SolverProviderCenterPreference]:
+    preferences: list[SolverProviderCenterPreference] = []
+
+    for center_preference in center_preferences:
+        preference_matches_provider = center_preference.provider_id == provider.id
+
+        if not preference_matches_provider:
+            continue
+
+        preference = SolverProviderCenterPreference(
+            center_id=center_preference.center_id,
+            preference_level=center_preference.preference_level,
+        )
+        preferences.append(preference)
+
+    return preferences
+
+
+def solver_provider_shift_type_preferences(
+    provider: Provider,
+    shift_type_preferences: list[ProviderShiftTypePreference],
+) -> list[SolverProviderShiftTypePreference]:
+    preferences: list[SolverProviderShiftTypePreference] = []
+
+    for shift_type_preference in shift_type_preferences:
+        preference_matches_provider = shift_type_preference.provider_id == provider.id
+
+        if not preference_matches_provider:
+            continue
+
+        preference = SolverProviderShiftTypePreference(
+            shift_type=shift_type_preference.shift_type,
+            preference_level=shift_type_preference.preference_level,
+        )
+        preferences.append(preference)
+
+    return preferences
+
+
+def solver_manager_center_preferences(
+    provider: Provider,
+    manager_preferences: list[ManagerProviderCenterPreference],
+) -> list[SolverManagerCenterPreference]:
+    preferences: list[SolverManagerCenterPreference] = []
+
+    for manager_preference in manager_preferences:
+        preference_matches_provider = manager_preference.provider_id == provider.id
+
+        if not preference_matches_provider:
+            continue
+
+        preference = SolverManagerCenterPreference(
+            center_id=manager_preference.center_id,
+            preference_level=manager_preference.preference_level,
+        )
+        preferences.append(preference)
+
+    return preferences
+
+
 def solver_weekly_availability_days(
     provider: Provider,
     weekly_availability_rows: list[ProviderScheduleWeekAvailability],
@@ -157,8 +227,23 @@ def solver_provider_from_model(
     provider: Provider,
     weekly_availability_rows: list[ProviderScheduleWeekAvailability],
     fairness_states: list[ProviderFairnessState],
+    center_preferences: list[ProviderCenterPreference],
+    shift_type_preferences: list[ProviderShiftTypePreference],
+    manager_preferences: list[ManagerProviderCenterPreference],
 ) -> SolverProvider:
     provider_room_type_skills = solver_provider_room_type_skills(provider)
+    solver_center_preferences = solver_provider_center_preferences(
+        provider,
+        center_preferences,
+    )
+    solver_shift_type_preferences = solver_provider_shift_type_preferences(
+        provider,
+        shift_type_preferences,
+    )
+    solver_manager_preferences = solver_manager_center_preferences(
+        provider,
+        manager_preferences,
+    )
     week_availability = solver_provider_week_availability(
         provider,
         weekly_availability_rows,
@@ -185,6 +270,9 @@ def solver_provider_from_model(
         favor_credit=favor_credit,
         fairness_priority_multiplier=fairness_priority_multiplier,
         provider_room_type_skills=provider_room_type_skills,
+        center_preferences=solver_center_preferences,
+        shift_type_preferences=solver_shift_type_preferences,
+        manager_center_preferences=solver_manager_preferences,
         week_availability=week_availability,
     )
     return solver_provider
@@ -310,6 +398,78 @@ def load_provider_fairness_states(
     return fairness_states
 
 
+def load_provider_center_preferences(
+    schedule_period: SchedulePeriod,
+    organization_id: UUID,
+    session: Session,
+) -> list[ProviderCenterPreference]:
+    statement = select(ProviderCenterPreference)
+    statement = statement.where(ProviderCenterPreference.organization_id == organization_id)
+    statement = statement.where(ProviderCenterPreference.is_active.is_(True))
+    statement = statement.where(
+        or_(
+            ProviderCenterPreference.effective_start_date.is_(None),
+            ProviderCenterPreference.effective_start_date <= schedule_period.end_date,
+        )
+    )
+    statement = statement.where(
+        or_(
+            ProviderCenterPreference.effective_end_date.is_(None),
+            ProviderCenterPreference.effective_end_date >= schedule_period.start_date,
+        )
+    )
+    preferences = list(session.scalars(statement))
+    return preferences
+
+
+def load_provider_shift_type_preferences(
+    schedule_period: SchedulePeriod,
+    organization_id: UUID,
+    session: Session,
+) -> list[ProviderShiftTypePreference]:
+    statement = select(ProviderShiftTypePreference)
+    statement = statement.where(ProviderShiftTypePreference.organization_id == organization_id)
+    statement = statement.where(ProviderShiftTypePreference.is_active.is_(True))
+    statement = statement.where(
+        or_(
+            ProviderShiftTypePreference.effective_start_date.is_(None),
+            ProviderShiftTypePreference.effective_start_date <= schedule_period.end_date,
+        )
+    )
+    statement = statement.where(
+        or_(
+            ProviderShiftTypePreference.effective_end_date.is_(None),
+            ProviderShiftTypePreference.effective_end_date >= schedule_period.start_date,
+        )
+    )
+    preferences = list(session.scalars(statement))
+    return preferences
+
+
+def load_manager_provider_center_preferences(
+    schedule_period: SchedulePeriod,
+    organization_id: UUID,
+    session: Session,
+) -> list[ManagerProviderCenterPreference]:
+    statement = select(ManagerProviderCenterPreference)
+    statement = statement.where(ManagerProviderCenterPreference.organization_id == organization_id)
+    statement = statement.where(ManagerProviderCenterPreference.is_active.is_(True))
+    statement = statement.where(
+        or_(
+            ManagerProviderCenterPreference.effective_start_date.is_(None),
+            ManagerProviderCenterPreference.effective_start_date <= schedule_period.end_date,
+        )
+    )
+    statement = statement.where(
+        or_(
+            ManagerProviderCenterPreference.effective_end_date.is_(None),
+            ManagerProviderCenterPreference.effective_end_date >= schedule_period.start_date,
+        )
+    )
+    preferences = list(session.scalars(statement))
+    return preferences
+
+
 def build_solver_input(
     schedule_period: SchedulePeriod,
     organization_id: UUID,
@@ -325,6 +485,21 @@ def build_solver_input(
         session,
     )
     fairness_states = load_provider_fairness_states(organization_id, session)
+    center_preferences = load_provider_center_preferences(
+        schedule_period,
+        organization_id,
+        session,
+    )
+    shift_type_preferences = load_provider_shift_type_preferences(
+        schedule_period,
+        organization_id,
+        session,
+    )
+    manager_preferences = load_manager_provider_center_preferences(
+        schedule_period,
+        organization_id,
+        session,
+    )
     has_requested_assignments = requested_assignments is not None
 
     if has_requested_assignments:
@@ -348,7 +523,14 @@ def build_solver_input(
         for room in rooms
     ]
     solver_providers = [
-        solver_provider_from_model(provider, weekly_availability_rows, fairness_states)
+        solver_provider_from_model(
+            provider,
+            weekly_availability_rows,
+            fairness_states,
+            center_preferences,
+            shift_type_preferences,
+            manager_preferences,
+        )
         for provider in providers
     ]
     solver_credentials = [

@@ -6,8 +6,11 @@ from uuid import uuid4
 from app.services.scheduling.solver import solve_schedule
 from app.services.scheduling.solver_contracts import SolverCenterCredential
 from app.services.scheduling.solver_contracts import SolverInput
+from app.services.scheduling.solver_contracts import SolverManagerCenterPreference
 from app.services.scheduling.solver_contracts import SolverProvider
+from app.services.scheduling.solver_contracts import SolverProviderCenterPreference
 from app.services.scheduling.solver_contracts import SolverProviderRoomTypeSkill
+from app.services.scheduling.solver_contracts import SolverProviderShiftTypePreference
 from app.services.scheduling.solver_contracts import SolverProviderWeekAvailability
 from app.services.scheduling.solver_contracts import SolverRequiredRoomTypeSkill
 from app.services.scheduling.solver_contracts import SolverRoom
@@ -411,3 +414,137 @@ def test_solver_uses_fairness_pressure_to_protect_higher_debt_provider() -> None
     assert result.is_feasible is True
     assert len(result.assignments) == 1
     assert result.assignments[0].provider_id == low_debt_provider.id
+
+
+def test_solver_prefers_provider_with_matching_center_preference() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    center_id = uuid4()
+    room_type_id = uuid4()
+    room = create_room(center_id, room_type_id)
+    preferred_provider = create_provider(center_id, room_type_id)
+    neutral_provider = create_provider(center_id, room_type_id)
+    center_preference = SolverProviderCenterPreference(
+        center_id=center_id,
+        preference_level=3,
+    )
+    preferred_provider.center_preferences = [center_preference]
+    preferred_credential = create_credential(preferred_provider.id, center_id)
+    neutral_credential = create_credential(neutral_provider.id, center_id)
+    shift = create_shift(center_id, room.id, 7, 15)
+    solver_input = SolverInput(
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        rooms=[room],
+        providers=[preferred_provider, neutral_provider],
+        center_credentials=[preferred_credential, neutral_credential],
+        shift_requirements=[shift],
+    )
+
+    result = solve_schedule(solver_input)
+
+    assert result.is_feasible is True
+    assert len(result.assignments) == 1
+    assert result.assignments[0].provider_id == preferred_provider.id
+
+
+def test_solver_prefers_provider_with_matching_shift_type_preference() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    center_id = uuid4()
+    room_type_id = uuid4()
+    room = create_room(center_id, room_type_id)
+    preferred_provider = create_provider(center_id, room_type_id)
+    neutral_provider = create_provider(center_id, room_type_id)
+    shift_type_preference = SolverProviderShiftTypePreference(
+        shift_type="first_half",
+        preference_level=3,
+    )
+    preferred_provider.shift_type_preferences = [shift_type_preference]
+    preferred_provider.week_availability.days[0].options = ["first_half"]
+    neutral_provider.week_availability.days[0].options = ["first_half"]
+    preferred_credential = create_credential(preferred_provider.id, center_id)
+    neutral_credential = create_credential(neutral_provider.id, center_id)
+    shift = create_shift(center_id, room.id, 7, 11, shift_type="first_half")
+    solver_input = SolverInput(
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        rooms=[room],
+        providers=[preferred_provider, neutral_provider],
+        center_credentials=[preferred_credential, neutral_credential],
+        shift_requirements=[shift],
+    )
+
+    result = solve_schedule(solver_input)
+
+    assert result.is_feasible is True
+    assert len(result.assignments) == 1
+    assert result.assignments[0].provider_id == preferred_provider.id
+
+
+def test_solver_allows_fairness_pressure_to_outweigh_preference() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    center_id = uuid4()
+    room_type_id = uuid4()
+    room = create_room(center_id, room_type_id)
+    preferred_high_debt_provider = create_provider(center_id, room_type_id)
+    neutral_low_debt_provider = create_provider(center_id, room_type_id)
+    center_preference = SolverProviderCenterPreference(
+        center_id=center_id,
+        preference_level=3,
+    )
+    preferred_high_debt_provider.center_preferences = [center_preference]
+    preferred_high_debt_provider.fairness_debt = 2.0
+    preferred_high_debt_provider.favor_credit = 0.0
+    neutral_low_debt_provider.fairness_debt = 0.0
+    neutral_low_debt_provider.favor_credit = 0.0
+    preferred_credential = create_credential(preferred_high_debt_provider.id, center_id)
+    neutral_credential = create_credential(neutral_low_debt_provider.id, center_id)
+    shift = create_shift(center_id, room.id, 7, 15)
+    solver_input = SolverInput(
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        rooms=[room],
+        providers=[preferred_high_debt_provider, neutral_low_debt_provider],
+        center_credentials=[preferred_credential, neutral_credential],
+        shift_requirements=[shift],
+    )
+
+    result = solve_schedule(solver_input)
+
+    assert result.is_feasible is True
+    assert len(result.assignments) == 1
+    assert result.assignments[0].provider_id == neutral_low_debt_provider.id
+
+
+def test_solver_uses_manager_hidden_center_preference() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    center_id = uuid4()
+    room_type_id = uuid4()
+    room = create_room(center_id, room_type_id)
+    preferred_provider = create_provider(center_id, room_type_id)
+    neutral_provider = create_provider(center_id, room_type_id)
+    manager_preference = SolverManagerCenterPreference(
+        center_id=center_id,
+        preference_level=3,
+    )
+    preferred_provider.manager_center_preferences = [manager_preference]
+    preferred_credential = create_credential(preferred_provider.id, center_id)
+    neutral_credential = create_credential(neutral_provider.id, center_id)
+    shift = create_shift(center_id, room.id, 7, 15)
+    solver_input = SolverInput(
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        rooms=[room],
+        providers=[preferred_provider, neutral_provider],
+        center_credentials=[preferred_credential, neutral_credential],
+        shift_requirements=[shift],
+    )
+
+    result = solve_schedule(solver_input)
+
+    assert result.is_feasible is True
+    assert len(result.assignments) == 1
+    assert result.assignments[0].provider_id == preferred_provider.id

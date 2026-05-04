@@ -13,6 +13,16 @@ import {
   type ProviderFormValues,
 } from "@/lib/schemas/provider";
 import {
+  managerProviderPreferencesApiSchema,
+  managerProviderPreferencesPayloadSchema,
+  providerPreferencesApiSchema,
+  providerPreferencesPayloadSchema,
+  type ManagerProviderPreferencesApi,
+  type ManagerProviderPreferencesPayload,
+  type ProviderPreferencesApi,
+  type ProviderPreferencesPayload,
+} from "@/lib/schemas/preferences";
+import {
   roomSchema,
   roomTypeSchema,
   type RoomFormValues,
@@ -80,6 +90,10 @@ export type RoomType = {
 };
 
 export type Provider = ProviderApiValues;
+export type ProviderPreferences = ProviderPreferencesApi;
+export type ProviderPreferencesSavePayload = ProviderPreferencesPayload;
+export type ManagerProviderPreferences = ManagerProviderPreferencesApi;
+export type ManagerProviderPreferencesSavePayload = ManagerProviderPreferencesPayload;
 
 export type SchedulePeriod = SchedulePeriodApi;
 
@@ -352,6 +366,48 @@ export async function deactivateProvider(providerId: string): Promise<Provider> 
   });
   const provider = providerApiSchema.parse(responseJson);
   return provider;
+}
+
+export async function getProviderPreferences(
+  providerId: string,
+): Promise<ProviderPreferences> {
+  const responseJson = await requestJson<unknown>(`/providers/${providerId}/preferences`, {
+    cache: "no-store",
+  });
+  const preferences = providerPreferencesApiSchema.parse(responseJson);
+  return preferences;
+}
+
+export async function saveProviderPreferences(
+  providerId: string,
+  payload: ProviderPreferencesSavePayload,
+): Promise<ProviderPreferences> {
+  const parsedPayload = providerPreferencesPayloadSchema.parse(payload);
+  const init = jsonRequestInit("PUT", parsedPayload);
+  const responseJson = await requestJson<unknown>(`/providers/${providerId}/preferences`, init);
+  const preferences = providerPreferencesApiSchema.parse(responseJson);
+  return preferences;
+}
+
+export async function getManagerProviderPreferences(
+  providerId: string,
+): Promise<ManagerProviderPreferences> {
+  const responseJson = await requestJson<unknown>(`/manager/providers/${providerId}/preferences`, {
+    cache: "no-store",
+  });
+  const preferences = managerProviderPreferencesApiSchema.parse(responseJson);
+  return preferences;
+}
+
+export async function saveManagerProviderPreferences(
+  providerId: string,
+  payload: ManagerProviderPreferencesSavePayload,
+): Promise<ManagerProviderPreferences> {
+  const parsedPayload = managerProviderPreferencesPayloadSchema.parse(payload);
+  const init = jsonRequestInit("PUT", parsedPayload);
+  const responseJson = await requestJson<unknown>(`/manager/providers/${providerId}/preferences`, init);
+  const preferences = managerProviderPreferencesApiSchema.parse(responseJson);
+  return preferences;
 }
 
 export async function listSchedulePeriods(): Promise<SchedulePeriod[]> {
