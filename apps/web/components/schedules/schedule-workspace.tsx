@@ -163,16 +163,11 @@ function dayIndexForDayKey(dayKey: ScheduleDayKey) {
   return dayIndex;
 }
 
-function dayKeyForAssignment(
-  schedulePeriod: SchedulePeriod,
-  startTime: string,
-): ScheduleDayKey {
-  const periodStart = dateAtUtcMidnight(schedulePeriod.start_date);
-  const periodStartWeekday = periodStart.getUTCDay();
+function dayKeyForAssignment(startTime: string): ScheduleDayKey {
   const assignmentDate = new Date(startTime);
   const assignmentWeekday = assignmentDate.getUTCDay();
-  const weekdayOffset = (assignmentWeekday - periodStartWeekday + 7) % 7;
-  const dayColumn = dayColumns[weekdayOffset];
+  const dayColumnIndex = (assignmentWeekday + 6) % 7;
+  const dayColumn = dayColumns[dayColumnIndex];
 
   if (dayColumn === undefined) {
     throw new Error("Schedule weekday offset must resolve to a day column.");
@@ -192,7 +187,7 @@ function timeLabelFromDateTime(value: string) {
 
 function dateForDayKey(schedulePeriod: SchedulePeriod, dayKey: ScheduleDayKey) {
   const periodStart = dateAtUtcMidnight(schedulePeriod.start_date);
-  const periodStartWeekday = periodStart.getUTCDay();
+  const periodStartWeekday = (periodStart.getUTCDay() + 6) % 7;
   const targetDayIndex = dayIndexForDayKey(dayKey);
   const weekdayOffset = (targetDayIndex - periodStartWeekday + 7) % 7;
   const millisecondsPerDay = 24 * 60 * 60 * 1000;
@@ -233,8 +228,8 @@ function versionFromDetail(
     const hasViolations = violations.length > 0;
     const validationStatus = hasViolations ? "invalid" : "valid";
     const roomAssignment = {
-      id: assignment.id,
-      dayKey: dayKeyForAssignment(schedulePeriod, assignment.start_time),
+      id: assignment.room_slot_id,
+      dayKey: dayKeyForAssignment(assignment.start_time),
       centerId: assignment.center_id,
       roomId: assignment.room_id,
       shiftType: assignment.shift_type,
@@ -1193,6 +1188,7 @@ export function ScheduleWorkspace({
         assignment.endTime,
       );
       const assignmentPayload = {
+        room_slot_id: assignment.id,
         provider_id: assignment.providerId,
         center_id: assignment.centerId,
         room_id: assignment.roomId,
@@ -1604,7 +1600,7 @@ export function ScheduleWorkspace({
 
   function savedAssignmentIdForRequest(assignment: ScheduleRoomAssignment) {
     const savedAssignment = savedVersionDetail?.assignments.find((candidate) => {
-      return candidate.id === assignment.id;
+      return candidate.room_slot_id === assignment.id;
     });
     const assignmentId = savedAssignment?.id ?? null;
     return assignmentId;

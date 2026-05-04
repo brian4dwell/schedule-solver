@@ -3,6 +3,7 @@ from datetime import datetime
 from uuid import UUID
 from uuid import uuid4
 
+from app.schemas.schedule import ScheduleAssignmentCreate
 from app.services.scheduling.solver import solve_schedule
 from app.services.scheduling.solver_contracts import SolverCenterCredential
 from app.services.scheduling.solver_contracts import SolverInput
@@ -16,6 +17,7 @@ from app.services.scheduling.solver_contracts import SolverRequiredRoomTypeSkill
 from app.services.scheduling.solver_contracts import SolverRoom
 from app.services.scheduling.solver_contracts import SolverShiftRequirement
 from app.services.scheduling.solver_contracts import SolverWeeklyAvailabilityDay
+from app.services.scheduling.solver_input_builder import solver_shift_from_assignment
 
 
 def create_shift(
@@ -30,6 +32,7 @@ def create_shift(
     end_time = datetime(2026, 5, 4, end_hour, 0, tzinfo=UTC)
     shift = SolverShiftRequirement(
         id=shift_id,
+        room_slot_id=shift_id,
         source_shift_requirement_id=shift_id,
         center_id=center_id,
         room_id=room_id,
@@ -127,9 +130,44 @@ def test_solver_assigns_valid_provider_to_shift() -> None:
     assert result.is_feasible is True
     assert len(result.assignments) == 1
     assert result.assignments[0].provider_id == provider.id
+    assert result.assignments[0].room_slot_id == shift.id
     assert result.assignments[0].shift_requirement_id == shift.id
     assert result.assignments[0].shift_type == "full_shift"
     assert result.violations == []
+
+
+def test_solver_creates_distinct_room_slot_ids_for_multi_provider_shift() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    center_id = uuid4()
+    room_type_id = uuid4()
+    room = create_room(center_id, room_type_id)
+    first_provider = create_provider(center_id, room_type_id)
+    second_provider = create_provider(center_id, room_type_id)
+    first_credential = create_credential(first_provider.id, center_id)
+    second_credential = create_credential(second_provider.id, center_id)
+    shift = create_shift(center_id, room.id, 7, 15)
+    shift.required_provider_count = 2
+    solver_input = SolverInput(
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        rooms=[room],
+        providers=[first_provider, second_provider],
+        center_credentials=[first_credential, second_credential],
+        shift_requirements=[shift],
+    )
+
+    result = solve_schedule(solver_input)
+
+    room_slot_ids = [
+        assignment.room_slot_id
+        for assignment in result.assignments
+    ]
+    unique_room_slot_ids = set(room_slot_ids)
+
+    assert result.is_feasible is True
+    assert len(result.assignments) == 2
+    assert len(unique_room_slot_ids) == 2
 
 
 def test_solver_reports_unfillable_shift_without_fake_assignment() -> None:
@@ -272,6 +310,7 @@ def test_solver_assigns_provider_to_board_slot_without_stored_shift() -> None:
     shift_id = uuid4()
     shift = SolverShiftRequirement(
         id=shift_id,
+        room_slot_id=shift_id,
         source_shift_requirement_id=None,
         center_id=center_id,
         room_id=room.id,
@@ -296,8 +335,32 @@ def test_solver_assigns_provider_to_board_slot_without_stored_shift() -> None:
     assert result.is_feasible is True
     assert len(result.assignments) == 1
     assert result.assignments[0].provider_id == provider.id
+    assert result.assignments[0].room_slot_id == shift_id
     assert result.assignments[0].shift_requirement_id is None
     assert result.assignments[0].shift_type == "first_half"
+
+
+def test_solver_shift_from_assignment_preserves_room_slot_id() -> None:
+    room_slot_id = uuid4()
+    center_id = uuid4()
+    room_id = uuid4()
+    requested_assignment = ScheduleAssignmentCreate(
+        room_slot_id=room_slot_id,
+        provider_id=None,
+        center_id=center_id,
+        room_id=room_id,
+        shift_requirement_id=None,
+        required_provider_type=None,
+        shift_type="full_shift",
+        start_time=datetime(2026, 5, 6, 7, 0, tzinfo=UTC),
+        end_time=datetime(2026, 5, 6, 15, 0, tzinfo=UTC),
+        source="manual",
+        notes=None,
+    )
+
+    shift = solver_shift_from_assignment(requested_assignment)
+
+    assert shift.room_slot_id == room_slot_id
 
 
 def test_solver_rejects_provider_without_matching_shift_type_availability() -> None:

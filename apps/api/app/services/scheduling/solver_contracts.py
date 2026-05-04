@@ -32,6 +32,7 @@ class SolverRoom(BaseModel):
 
 class SolverShiftRequirement(BaseModel):
     id: UUID
+    room_slot_id: UUID
     assignment_id: UUID | None = None
     source_shift_requirement_id: UUID | None = None
     locked_provider_id: UUID | None = None
@@ -103,6 +104,7 @@ class SolverInput(BaseModel):
 
 
 class SolverAssignment(BaseModel):
+    room_slot_id: UUID
     provider_id: UUID
     shift_requirement_id: UUID | None
     center_id: UUID

@@ -68,6 +68,7 @@ def create_assignment(
     organization_id: UUID,
 ) -> Assignment:
     assignment = Assignment(
+        room_slot_id=solver_assignment.room_slot_id,
         organization_id=organization_id,
         schedule_version_id=schedule_version.id,
         schedule_period_id=schedule_version.schedule_period_id,

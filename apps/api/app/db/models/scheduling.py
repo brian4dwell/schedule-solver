@@ -390,8 +390,10 @@ class ScheduleVersion(Base, TimestampMixin):
 
 class Assignment(Base, TimestampMixin):
     __tablename__ = "assignments"
+    __table_args__ = (UniqueConstraint("organization_id", "schedule_version_id", "room_slot_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    room_slot_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
     schedule_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("schedule_versions.id"), nullable=False)
     schedule_period_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("schedule_periods.id"), nullable=False)

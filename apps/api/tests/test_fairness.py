@@ -33,6 +33,7 @@ def create_provider(display_name: str) -> Provider:
 def create_assignment(provider: Provider) -> Assignment:
     assignment = Assignment(
         id=uuid4(),
+        room_slot_id=uuid4(),
         organization_id=provider.organization_id,
         schedule_version_id=uuid4(),
         schedule_period_id=uuid4(),

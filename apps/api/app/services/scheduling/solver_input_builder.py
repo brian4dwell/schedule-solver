@@ -294,6 +294,7 @@ def solver_credential_from_model(
 def solver_shift_from_model(shift_requirement: ShiftRequirement) -> SolverShiftRequirement:
     solver_shift = SolverShiftRequirement(
         id=shift_requirement.id,
+        room_slot_id=shift_requirement.id,
         assignment_id=None,
         source_shift_requirement_id=shift_requirement.id,
         locked_provider_id=None,
@@ -314,6 +315,7 @@ def solver_shift_from_assignment(
     shift_id = uuid4()
     solver_shift = SolverShiftRequirement(
         id=shift_id,
+        room_slot_id=assignment.room_slot_id,
         assignment_id=None,
         source_shift_requirement_id=assignment.shift_requirement_id,
         locked_provider_id=assignment.provider_id,

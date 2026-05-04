@@ -81,9 +81,11 @@ def test_create_assignment_from_request_maps_provider_slot_fields() -> None:
     provider_id = uuid4()
     center_id = uuid4()
     room_id = uuid4()
+    room_slot_id = uuid4()
     start_time = datetime(2026, 5, 4, 7, 0, tzinfo=UTC)
     end_time = datetime(2026, 5, 4, 15, 0, tzinfo=UTC)
     request = ScheduleAssignmentCreate(
+        room_slot_id=room_slot_id,
         provider_id=provider_id,
         center_id=center_id,
         room_id=room_id,
@@ -104,6 +106,7 @@ def test_create_assignment_from_request_maps_provider_slot_fields() -> None:
     )
 
     assert assignment.organization_id == organization_id
+    assert assignment.room_slot_id == room_slot_id
     assert assignment.schedule_period_id == schedule_period_id
     assert assignment.schedule_version_id == schedule_version_id
     assert assignment.provider_id == provider_id
@@ -121,9 +124,11 @@ def test_create_assignment_from_request_allows_unassigned_provider() -> None:
     organization_id = uuid4()
     center_id = uuid4()
     room_id = uuid4()
+    room_slot_id = uuid4()
     start_time = datetime(2026, 5, 4, 7, 0, tzinfo=UTC)
     end_time = datetime(2026, 5, 4, 15, 0, tzinfo=UTC)
     request = ScheduleAssignmentCreate(
+        room_slot_id=room_slot_id,
         provider_id=None,
         center_id=center_id,
         room_id=room_id,
@@ -143,6 +148,7 @@ def test_create_assignment_from_request_allows_unassigned_provider() -> None:
     )
 
     assert assignment.provider_id is None
+    assert assignment.room_slot_id == room_slot_id
     assert assignment.center_id == center_id
     assert assignment.room_id == room_id
     assert assignment.assignment_status == "draft"
@@ -155,10 +161,12 @@ def test_duplicate_assignment_request_copies_assignment_fields() -> None:
     provider_id = uuid4()
     center_id = uuid4()
     room_id = uuid4()
+    room_slot_id = uuid4()
     shift_requirement_id = uuid4()
     start_time = datetime(2026, 5, 4, 7, 0, tzinfo=UTC)
     end_time = datetime(2026, 5, 4, 15, 0, tzinfo=UTC)
     assignment = Assignment(
+        room_slot_id=room_slot_id,
         organization_id=organization_id,
         schedule_period_id=schedule_period_id,
         schedule_version_id=schedule_version_id,
@@ -178,6 +186,7 @@ def test_duplicate_assignment_request_copies_assignment_fields() -> None:
     request = duplicate_assignment_request(assignment)
 
     assert request.provider_id == provider_id
+    assert request.room_slot_id == room_slot_id
     assert request.center_id == center_id
     assert request.room_id == room_id
     assert request.shift_requirement_id == shift_requirement_id
@@ -187,6 +196,39 @@ def test_duplicate_assignment_request_copies_assignment_fields() -> None:
     assert request.end_time == end_time
     assert request.source == "duplicate"
     assert request.notes == "Preserve this note."
+
+
+def test_duplicate_assignment_request_preserves_stable_room_slot_key() -> None:
+    schedule_period_id = uuid4()
+    schedule_version_id = uuid4()
+    organization_id = uuid4()
+    provider_id = uuid4()
+    center_id = uuid4()
+    room_id = uuid4()
+    room_slot_id = uuid4()
+    start_time = datetime(2026, 5, 6, 7, 0, tzinfo=UTC)
+    end_time = datetime(2026, 5, 6, 15, 0, tzinfo=UTC)
+    assignment = Assignment(
+        room_slot_id=room_slot_id,
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        schedule_version_id=schedule_version_id,
+        provider_id=provider_id,
+        center_id=center_id,
+        room_id=room_id,
+        shift_requirement_id=None,
+        required_provider_type=None,
+        shift_type="full_shift",
+        start_time=start_time,
+        end_time=end_time,
+        assignment_status="draft",
+        source="manual",
+        notes=None,
+    )
+
+    request = duplicate_assignment_request(assignment)
+
+    assert request.room_slot_id == room_slot_id
 
 
 def test_unassigned_provider_violation_blocks_publish() -> None:

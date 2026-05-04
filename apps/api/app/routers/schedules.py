@@ -363,6 +363,7 @@ def create_assignment_from_request(
     organization_id: UUID,
 ) -> Assignment:
     assignment = Assignment(
+        room_slot_id=requested_assignment.room_slot_id,
         organization_id=organization_id,
         schedule_version_id=schedule_version_id,
         schedule_period_id=schedule_period_id,
@@ -383,6 +384,7 @@ def create_assignment_from_request(
 
 def duplicate_assignment_request(assignment: Assignment) -> ScheduleAssignmentCreate:
     requested_assignment = ScheduleAssignmentCreate(
+        room_slot_id=assignment.room_slot_id,
         provider_id=assignment.provider_id,
         center_id=assignment.center_id,
         room_id=assignment.room_id,

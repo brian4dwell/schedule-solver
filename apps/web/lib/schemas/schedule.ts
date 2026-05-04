@@ -95,6 +95,7 @@ export const schedulePeriodRenameSchema = z.object({
 
 export const scheduleAssignmentApiSchema = z.object({
   id: z.string().uuid(),
+  room_slot_id: z.string().uuid(),
   schedule_version_id: z.string().uuid(),
   schedule_period_id: z.string().uuid(),
   provider_id: z.string().uuid().nullable(),

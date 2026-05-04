@@ -110,6 +110,7 @@ export type FairnessReport = FairnessReportApi;
 export type { FairnessStatus };
 
 export type ScheduleAssignmentSavePayload = {
+  room_slot_id: string;
   provider_id: string | null;
   center_id: string;
   room_id: string | null;

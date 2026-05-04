@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
+from uuid import uuid5
 
 from ortools.sat.python import cp_model
 
@@ -59,6 +60,12 @@ class CandidatePreferenceScore:
     def total_score(self) -> int:
         total_score = self.center_score + self.shift_type_score + self.manager_hidden_score
         return total_score
+
+
+@dataclass
+class ShiftAssignmentCount:
+    shift_requirement_id: UUID
+    assignment_count: int
 
 
 def time_ranges_overlap(
@@ -673,10 +680,60 @@ def add_objective(
     model.Maximize(sum(objective_terms))
 
 
-def assignment_from_decision(decision: CandidateDecision) -> SolverAssignment:
+def selected_decision_sort_key(decision: CandidateDecision) -> tuple[datetime, str, str]:
+    shift_requirement = decision.candidate.shift_requirement
+    provider = decision.candidate.provider
+    shift_id = str(shift_requirement.id)
+    provider_id = str(provider.id)
+    sort_key = (shift_requirement.start_time, shift_id, provider_id)
+    return sort_key
+
+
+def next_assignment_index_for_shift(
+    shift_requirement: SolverShiftRequirement,
+    assignment_counts: list[ShiftAssignmentCount],
+) -> int:
+    for assignment_count in assignment_counts:
+        shift_matches = assignment_count.shift_requirement_id == shift_requirement.id
+
+        if not shift_matches:
+            continue
+
+        next_index = assignment_count.assignment_count
+        assignment_count.assignment_count = assignment_count.assignment_count + 1
+        return next_index
+
+    assignment_count = ShiftAssignmentCount(
+        shift_requirement_id=shift_requirement.id,
+        assignment_count=1,
+    )
+    assignment_counts.append(assignment_count)
+    return 0
+
+
+def room_slot_id_for_assignment(
+    shift_requirement: SolverShiftRequirement,
+    assignment_index: int,
+) -> UUID:
+    has_single_required_provider = shift_requirement.required_provider_count == 1
+
+    if has_single_required_provider:
+        room_slot_id = shift_requirement.room_slot_id
+        return room_slot_id
+
+    assignment_index_name = str(assignment_index)
+    room_slot_id = uuid5(shift_requirement.room_slot_id, assignment_index_name)
+    return room_slot_id
+
+
+def assignment_from_decision(
+    decision: CandidateDecision,
+    room_slot_id: UUID,
+) -> SolverAssignment:
     shift_requirement = decision.candidate.shift_requirement
     provider = decision.candidate.provider
     assignment = SolverAssignment(
+        room_slot_id=room_slot_id,
         provider_id=provider.id,
         shift_requirement_id=shift_requirement.source_shift_requirement_id,
         center_id=shift_requirement.center_id,
@@ -746,6 +803,7 @@ def solver_result_from_solution(
     decisions: list[CandidateDecision],
 ) -> SolverResult:
     assignments: list[SolverAssignment] = []
+    selected_decisions: list[CandidateDecision] = []
 
     for decision in decisions:
         selected = solver.Value(decision.variable) == 1
@@ -753,7 +811,25 @@ def solver_result_from_solution(
         if not selected:
             continue
 
-        assignment = assignment_from_decision(decision)
+        selected_decisions.append(decision)
+
+    ordered_decisions = sorted(selected_decisions, key=selected_decision_sort_key)
+    assignment_counts: list[ShiftAssignmentCount] = []
+
+    for decision in ordered_decisions:
+        shift_requirement = decision.candidate.shift_requirement
+        assignment_index = next_assignment_index_for_shift(
+            shift_requirement,
+            assignment_counts,
+        )
+        room_slot_id = room_slot_id_for_assignment(
+            shift_requirement,
+            assignment_index,
+        )
+        assignment = assignment_from_decision(
+            decision,
+            room_slot_id,
+        )
         assignments.append(assignment)
 
     objective_value = solver.ObjectiveValue()
