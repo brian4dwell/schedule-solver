@@ -21,6 +21,38 @@ from app.services.scheduling.provider_eligibility_contracts import ProviderWeekl
 from app.services.scheduling.provider_eligibility_contracts import RequiredRoomTypeSkill
 
 
+
+
+def shift_type_pair_is_split_day(
+    first_shift_type: str,
+    second_shift_type: str,
+) -> bool:
+    first_is_first_half = first_shift_type == "first_half"
+    second_is_second_half = second_shift_type == "second_half"
+    first_pair_matches = first_is_first_half and second_is_second_half
+    first_is_second_half = first_shift_type == "second_half"
+    second_is_first_half = second_shift_type == "first_half"
+    second_pair_matches = first_is_second_half and second_is_first_half
+    is_split_day_pair = first_pair_matches or second_pair_matches
+    return is_split_day_pair
+
+
+def overlapping_assignment_is_allowed(
+    request_center_id: UUID,
+    request_shift_type: str,
+    existing_center_id: UUID,
+    existing_shift_type: str,
+) -> bool:
+    centers_match = request_center_id == existing_center_id
+
+    if not centers_match:
+        return False
+
+    split_day_pair = shift_type_pair_is_split_day(
+        request_shift_type,
+        existing_shift_type,
+    )
+    return split_day_pair
 WEEKDAY_VALUES = [
     "monday",
     "tuesday",
@@ -390,7 +422,7 @@ def has_double_booking(
     if request.schedule_version_id is None:
         return False
 
-    statement = select(Assignment.id)
+    statement = select(Assignment)
     statement = statement.where(Assignment.organization_id == request.organization_id)
     statement = statement.where(Assignment.schedule_version_id == request.schedule_version_id)
     statement = statement.where(Assignment.provider_id == request.provider_id)
@@ -400,10 +432,22 @@ def has_double_booking(
     if request.assignment_id is not None:
         statement = statement.where(Assignment.id != request.assignment_id)
 
-    statement = statement.limit(1)
-    assignment_id = session.scalar(statement)
-    is_double_booked = assignment_id is not None
-    return is_double_booked
+    overlapping_assignments = list(session.scalars(statement))
+
+    for overlapping_assignment in overlapping_assignments:
+        overlap_is_allowed = overlapping_assignment_is_allowed(
+            request.center_id,
+            request.shift_type,
+            overlapping_assignment.center_id,
+            overlapping_assignment.shift_type,
+        )
+
+        if overlap_is_allowed:
+            continue
+
+        return True
+
+    return False
 
 
 def load_provider_eligibility_context(

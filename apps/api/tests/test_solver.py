@@ -187,6 +187,62 @@ def test_solver_rejects_overlapping_shifts_for_same_provider() -> None:
     assert result.violations[0].constraint_type == "infeasible_solver_model"
 
 
+def test_solver_allows_split_day_overlap_for_same_center() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    center_id = uuid4()
+    room_type_id = uuid4()
+    room = create_room(center_id, room_type_id)
+    provider = create_provider(center_id, room_type_id)
+    credential = create_credential(provider.id, center_id)
+    first_shift = create_shift(center_id, room.id, 7, 15, shift_type="first_half")
+    second_shift = create_shift(center_id, room.id, 12, 18, shift_type="second_half")
+    provider.week_availability.days[0].options = ["first_half", "second_half"]
+    solver_input = SolverInput(
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        rooms=[room],
+        providers=[provider],
+        center_credentials=[credential],
+        shift_requirements=[first_shift, second_shift],
+    )
+
+    result = solve_schedule(solver_input)
+
+    assert result.is_feasible is True
+    assert len(result.assignments) == 2
+
+
+def test_solver_rejects_split_day_overlap_for_different_centers() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    first_center_id = uuid4()
+    second_center_id = uuid4()
+    room_type_id = uuid4()
+    first_room = create_room(first_center_id, room_type_id)
+    second_room = create_room(second_center_id, room_type_id)
+    provider = create_provider(first_center_id, room_type_id)
+    second_credential = create_credential(provider.id, second_center_id)
+    first_credential = create_credential(provider.id, first_center_id)
+    first_shift = create_shift(first_center_id, first_room.id, 7, 15, shift_type="first_half")
+    second_shift = create_shift(second_center_id, second_room.id, 12, 18, shift_type="second_half")
+    provider.week_availability.days[0].options = ["first_half", "second_half"]
+    solver_input = SolverInput(
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        rooms=[first_room, second_room],
+        providers=[provider],
+        center_credentials=[first_credential, second_credential],
+        shift_requirements=[first_shift, second_shift],
+    )
+
+    result = solve_schedule(solver_input)
+
+    assert result.is_feasible is False
+    assert result.assignments == []
+    assert result.violations[0].constraint_type == "infeasible_solver_model"
+
+
 def test_solver_rejects_empty_shift_requirements() -> None:
     organization_id = uuid4()
     schedule_period_id = uuid4()

@@ -6,6 +6,7 @@ from ortools.sat.python import cp_model
 
 from app.services.scheduling.provider_eligibility import credential_is_active_for_slot
 from app.services.scheduling.provider_eligibility import evaluate_provider_slot_eligibility
+from app.services.scheduling.provider_eligibility import overlapping_assignment_is_allowed
 from app.services.scheduling.provider_eligibility import weekday_for_start_time
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityContext
 from app.services.scheduling.provider_eligibility_contracts import ProviderRoomTypeSkillSummary
@@ -433,6 +434,16 @@ def add_provider_overlap_constraints(
                 )
 
                 if not shifts_overlap:
+                    continue
+
+                overlap_is_allowed = overlapping_assignment_is_allowed(
+                    first_shift.center_id,
+                    first_shift.shift_type,
+                    second_shift.center_id,
+                    second_shift.shift_type,
+                )
+
+                if overlap_is_allowed:
                     continue
 
                 model.Add(first_decision.variable + second_decision.variable <= 1)
