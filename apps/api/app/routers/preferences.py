@@ -254,8 +254,8 @@ def replace_provider_preferences(
             center_id=preference.center_id,
             preference_level=preference.preference_level,
             is_active=True,
-            effective_start_date=None,
-            effective_end_date=None,
+            effective_start_date=preference.effective_start_date,
+            effective_end_date=preference.effective_end_date,
         )
         session.add(row)
 
@@ -266,8 +266,8 @@ def replace_provider_preferences(
             shift_type=preference.shift_type,
             preference_level=preference.preference_level,
             is_active=True,
-            effective_start_date=None,
-            effective_end_date=None,
+            effective_start_date=preference.effective_start_date,
+            effective_end_date=preference.effective_end_date,
         )
         session.add(row)
 
@@ -311,8 +311,8 @@ def replace_manager_provider_preferences(
             center_id=preference.center_id,
             preference_level=preference.preference_level,
             is_active=True,
-            effective_start_date=None,
-            effective_end_date=None,
+            effective_start_date=preference.effective_start_date,
+            effective_end_date=preference.effective_end_date,
             manager_note=preference.manager_note,
         )
         session.add(row)

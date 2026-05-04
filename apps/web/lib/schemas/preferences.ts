@@ -4,6 +4,8 @@ export const preferenceLevelSchema = z.number().int().min(-3).max(3);
 
 export const preferenceWindowSchema = z.object({
   preference_level: preferenceLevelSchema,
+  effective_start_date: z.string().min(1).nullable(),
+  effective_end_date: z.string().min(1).nullable(),
 });
 
 export const providerCenterPreferenceApiSchema = preferenceWindowSchema.extend({
