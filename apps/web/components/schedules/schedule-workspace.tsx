@@ -70,6 +70,11 @@ type DragPayload =
       dayKey: ScheduleDayKey;
     };
 
+type DropIndicator = {
+  dayKey: ScheduleDayKey;
+  targetIndex: number;
+};
+
 type ScheduleWorkspaceProps = {
   initialVersionDetail: ScheduleVersionDetail | null;
   initialVersions: PersistedScheduleVersion[];
@@ -1397,6 +1402,7 @@ export function ScheduleWorkspace({
     Map<string, ProviderWeeklyAvailabilityRecord>
   >(() => new Map());
   const [availabilityLoadMessage, setAvailabilityLoadMessage] = useState<string | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -1690,8 +1696,21 @@ export function ScheduleWorkspace({
     event.dataTransfer.effectAllowed = "move";
   }
 
+  function handleDropIndicatorSet(dayKey: ScheduleDayKey, targetIndex: number) {
+    const nextIndicator: DropIndicator = {
+      dayKey,
+      targetIndex,
+    };
+    setDropIndicator(nextIndicator);
+  }
+
+  function handleDropIndicatorCleared() {
+    setDropIndicator(null);
+  }
+
   function handleDropOnColumn(event: React.DragEvent, dayKey: ScheduleDayKey) {
     event.preventDefault();
+    handleDropIndicatorCleared();
 
     const payloadText = event.dataTransfer.getData("application/json");
     const payload = parseDragPayload(payloadText);
@@ -1751,6 +1770,7 @@ export function ScheduleWorkspace({
   ) {
     event.preventDefault();
     event.stopPropagation();
+    handleDropIndicatorCleared();
 
     const payloadText = event.dataTransfer.getData("application/json");
     const payload = parseDragPayload(payloadText);
@@ -1826,6 +1846,21 @@ export function ScheduleWorkspace({
       assignments: reorderedAssignments,
     });
     updateWorkingVersion(nextVersion);
+  }
+
+  function dropIndicatorMatches(dayKey: ScheduleDayKey, targetIndex: number) {
+    if (dropIndicator === null) {
+      return false;
+    }
+
+    const dayKeyMatches = dropIndicator.dayKey === dayKey;
+
+    if (!dayKeyMatches) {
+      return false;
+    }
+
+    const targetIndexMatches = dropIndicator.targetIndex === targetIndex;
+    return targetIndexMatches;
   }
 
   function handleClearAssignments() {
@@ -2207,6 +2242,7 @@ export function ScheduleWorkspace({
                   key={column.key}
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={(event) => handleDropOnColumn(event, column.key)}
+                  onDragLeave={handleDropIndicatorCleared}
                   className="flex min-h-96 min-w-52 flex-col rounded-md border border-slate-200 bg-slate-50"
                 >
                   <div className="border-b border-slate-200 px-3 py-2">
@@ -2229,7 +2265,14 @@ export function ScheduleWorkspace({
                       </button>
                     </div>
                   </div>
-                  <div className="flex flex-1 flex-col gap-2 p-2">
+                  <div
+                    className="flex flex-1 flex-col gap-2 p-2"
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      const appendIndex = dayAssignments.length;
+                      handleDropIndicatorSet(column.key, appendIndex);
+                    }}
+                  >
                     {dayAssignments.map((assignment, index) => {
                       const room = roomForAssignment(assignment);
                       const roomName = room?.name ?? "Unknown room";
@@ -2292,22 +2335,28 @@ export function ScheduleWorkspace({
                         assignment.shiftType,
                       );
                       return (
-                        <div
-                          key={assignment.id}
-                          draggable
-                          onDragStart={(event) =>
-                            handleDragStart(event, {
-                              type: "scheduled-room",
-                              assignmentId: assignment.id,
-                              dayKey: column.key,
-                            })
-                          }
-                          onDragOver={(event) => event.preventDefault()}
-                          onDrop={(event) =>
-                            handleDropOnAssignment(event, column.key, index)
-                          }
-                          className={assignmentContainerClassName}
-                        >
+                        <div key={assignment.id} className="flex flex-col gap-2">
+                          {dropIndicatorMatches(column.key, index) ? (
+                            <div className="h-1 rounded bg-teal-600" aria-hidden="true" />
+                          ) : null}
+                          <div
+                            draggable
+                            onDragStart={(event) =>
+                              handleDragStart(event, {
+                                type: "scheduled-room",
+                                assignmentId: assignment.id,
+                                dayKey: column.key,
+                              })
+                            }
+                            onDragOver={(event) => {
+                              event.preventDefault();
+                              handleDropIndicatorSet(column.key, index);
+                            }}
+                            onDrop={(event) =>
+                              handleDropOnAssignment(event, column.key, index)
+                            }
+                            className={assignmentContainerClassName}
+                          >
                           <div className="flex items-start justify-between gap-2">
                             <div>
                               <p className="text-sm font-semibold text-slate-950">
@@ -2527,9 +2576,13 @@ export function ScheduleWorkspace({
                               </div>
                             ) : null}
                           </div>
+                          </div>
                         </div>
                       );
                     })}
+                    {dropIndicatorMatches(column.key, dayAssignments.length) ? (
+                      <div className="h-1 rounded bg-teal-600" aria-hidden="true" />
+                    ) : null}
                     {dayAssignments.length === 0 ? (
                       <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-slate-300 px-3 py-8 text-center text-sm text-slate-500">
                         Drop rooms here
@@ -2650,9 +2703,12 @@ export function ScheduleWorkspace({
                             {roomTypeName}
                           </span>
                         );
-                      })}
-                    </div>
+                    })}
+                    {dropIndicatorMatches(column.key, dayAssignments.length) ? (
+                      <div className="h-1 rounded bg-teal-600" aria-hidden="true" />
+                    ) : null}
                   </div>
+                </div>
                 );
               })}
             </div>
