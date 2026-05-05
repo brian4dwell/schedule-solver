@@ -28,15 +28,11 @@ type ShiftTypeValue = "full_shift" | "first_half" | "second_half" | "short_shift
 type CenterPreferenceDraft = {
   centerId: string;
   preferenceLevel: PreferenceLevel;
-  effectiveStartDate: string;
-  effectiveEndDate: string;
 };
 
 type ShiftTypePreferenceDraft = {
   shiftType: ShiftTypeValue;
   preferenceLevel: PreferenceLevel;
-  effectiveStartDate: string;
-  effectiveEndDate: string;
 };
 
 type ManagerCenterPreferenceDraft = CenterPreferenceDraft & {
@@ -93,21 +89,6 @@ function levelBadgeClassName(value: PreferenceLevel): string {
   return "bg-slate-100 text-slate-700";
 }
 
-function dateInputValue(value: string | null): string {
-  const inputValue = value ?? "";
-  return inputValue;
-}
-
-function payloadDate(value: string): string | null {
-  const trimmedValue = value.trim();
-
-  if (trimmedValue === "") {
-    return null;
-  }
-
-  return trimmedValue;
-}
-
 function createCenterPreferenceDrafts(
   centers: Center[],
   preferences: ProviderPreferences,
@@ -121,8 +102,6 @@ function createCenterPreferenceDrafts(
     const draft = {
       centerId: center.id,
       preferenceLevel,
-      effectiveStartDate: dateInputValue(preference?.effective_start_date ?? null),
-      effectiveEndDate: dateInputValue(preference?.effective_end_date ?? null),
     };
     return draft;
   });
@@ -141,8 +120,6 @@ function createShiftTypePreferenceDrafts(
     const draft = {
       shiftType,
       preferenceLevel,
-      effectiveStartDate: dateInputValue(preference?.effective_start_date ?? null),
-      effectiveEndDate: dateInputValue(preference?.effective_end_date ?? null),
     };
     return draft;
   });
@@ -162,8 +139,6 @@ function createManagerPreferenceDrafts(
     const draft = {
       centerId: center.id,
       preferenceLevel,
-      effectiveStartDate: dateInputValue(preference?.effective_start_date ?? null),
-      effectiveEndDate: dateInputValue(preference?.effective_end_date ?? null),
       managerNote: preference?.manager_note ?? "",
     };
     return draft;
@@ -184,8 +159,6 @@ function visiblePreferencePayload(
       const preference = {
         center_id: draft.centerId,
         preference_level: draft.preferenceLevel,
-        effective_start_date: payloadDate(draft.effectiveStartDate),
-        effective_end_date: payloadDate(draft.effectiveEndDate),
       };
       return preference;
     });
@@ -198,8 +171,6 @@ function visiblePreferencePayload(
       const preference = {
         shift_type: draft.shiftType,
         preference_level: draft.preferenceLevel,
-        effective_start_date: payloadDate(draft.effectiveStartDate),
-        effective_end_date: payloadDate(draft.effectiveEndDate),
       };
       return preference;
     });
@@ -226,8 +197,6 @@ function managerPreferencePayload(
       const preference = {
         center_id: draft.centerId,
         preference_level: draft.preferenceLevel,
-        effective_start_date: payloadDate(draft.effectiveStartDate),
-        effective_end_date: payloadDate(draft.effectiveEndDate),
         manager_note: managerNote,
       };
       return preference;
@@ -402,7 +371,10 @@ export function ProviderPreferencesEditor({
                 const badgeClassName = levelBadgeClassName(draft.preferenceLevel);
 
                 return (
-                  <div key={draft.centerId} className="grid gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_180px_150px_150px]">
+                  <div
+                    key={draft.centerId}
+                    className="grid gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_180px]"
+                  >
                     <div className="min-w-0">
                       <p className="font-medium text-slate-950">{centerName}</p>
                       <span className={`mt-2 inline-flex rounded-md px-2 py-1 text-xs font-semibold ${badgeClassName}`}>
@@ -427,32 +399,6 @@ export function ProviderPreferencesEditor({
                           );
                         })}
                       </select>
-                    </label>
-                    <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-                      Starts
-                      <input
-                        className="h-10 rounded-md border border-slate-300 px-3 text-slate-950"
-                        type="date"
-                        value={draft.effectiveStartDate}
-                        onChange={(event) => {
-                          updateCenterDraft(draft.centerId, {
-                            effectiveStartDate: event.target.value,
-                          });
-                        }}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-                      Ends
-                      <input
-                        className="h-10 rounded-md border border-slate-300 px-3 text-slate-950"
-                        type="date"
-                        value={draft.effectiveEndDate}
-                        onChange={(event) => {
-                          updateCenterDraft(draft.centerId, {
-                            effectiveEndDate: event.target.value,
-                          });
-                        }}
-                      />
                     </label>
                   </div>
                 );
@@ -493,34 +439,6 @@ export function ProviderPreferencesEditor({
                         })}
                       </select>
                     </label>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-                        Starts
-                        <input
-                          className="h-10 rounded-md border border-slate-300 px-3 text-slate-950"
-                          type="date"
-                          value={draft.effectiveStartDate}
-                          onChange={(event) => {
-                            updateShiftTypeDraft(draft.shiftType, {
-                              effectiveStartDate: event.target.value,
-                            });
-                          }}
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-                        Ends
-                        <input
-                          className="h-10 rounded-md border border-slate-300 px-3 text-slate-950"
-                          type="date"
-                          value={draft.effectiveEndDate}
-                          onChange={(event) => {
-                            updateShiftTypeDraft(draft.shiftType, {
-                              effectiveEndDate: event.target.value,
-                            });
-                          }}
-                        />
-                      </label>
-                    </div>
                   </div>
                 );
               })}
@@ -561,7 +479,10 @@ export function ProviderPreferencesEditor({
             const badgeClassName = levelBadgeClassName(draft.preferenceLevel);
 
             return (
-              <div key={draft.centerId} className="grid gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_180px]">
+              <div
+                key={draft.centerId}
+                className="grid gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_180px]"
+              >
                 <div className="min-w-0">
                   <p className="font-medium text-slate-950">{centerName}</p>
                   <span className={`mt-2 inline-flex rounded-md px-2 py-1 text-xs font-semibold ${badgeClassName}`}>
@@ -599,34 +520,6 @@ export function ProviderPreferencesEditor({
                     }}
                   />
                 </label>
-                <div className="grid gap-3 sm:grid-cols-2 lg:col-span-2">
-                  <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-                    Starts
-                    <input
-                      className="h-10 rounded-md border border-slate-300 px-3 text-slate-950"
-                      type="date"
-                      value={draft.effectiveStartDate}
-                      onChange={(event) => {
-                        updateManagerDraft(draft.centerId, {
-                          effectiveStartDate: event.target.value,
-                        });
-                      }}
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-                    Ends
-                    <input
-                      className="h-10 rounded-md border border-slate-300 px-3 text-slate-950"
-                      type="date"
-                      value={draft.effectiveEndDate}
-                      onChange={(event) => {
-                        updateManagerDraft(draft.centerId, {
-                          effectiveEndDate: event.target.value,
-                        });
-                      }}
-                    />
-                  </label>
-                </div>
               </div>
             );
           })}

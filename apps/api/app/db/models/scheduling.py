@@ -226,8 +226,6 @@ class ProviderCenterPreference(Base, TimestampMixin):
     center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("centers.id"), nullable=False)
     preference_level: Mapped[int] = mapped_column(Integer, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    effective_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    effective_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class ProviderShiftTypePreference(Base, TimestampMixin):
@@ -240,8 +238,6 @@ class ProviderShiftTypePreference(Base, TimestampMixin):
     shift_type: Mapped[str] = mapped_column(String(40), nullable=False)
     preference_level: Mapped[int] = mapped_column(Integer, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    effective_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    effective_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class ManagerProviderCenterPreference(Base, TimestampMixin):
@@ -254,8 +250,6 @@ class ManagerProviderCenterPreference(Base, TimestampMixin):
     center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("centers.id"), nullable=False)
     preference_level: Mapped[int] = mapped_column(Integer, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    effective_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    effective_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     manager_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

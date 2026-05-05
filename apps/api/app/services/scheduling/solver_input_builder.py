@@ -6,7 +6,6 @@ from uuid import UUID
 from uuid import uuid4
 
 from sqlalchemy import select
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
@@ -401,73 +400,34 @@ def load_provider_fairness_states(
 
 
 def load_provider_center_preferences(
-    schedule_period: SchedulePeriod,
     organization_id: UUID,
     session: Session,
 ) -> list[ProviderCenterPreference]:
     statement = select(ProviderCenterPreference)
     statement = statement.where(ProviderCenterPreference.organization_id == organization_id)
     statement = statement.where(ProviderCenterPreference.is_active.is_(True))
-    statement = statement.where(
-        or_(
-            ProviderCenterPreference.effective_start_date.is_(None),
-            ProviderCenterPreference.effective_start_date <= schedule_period.end_date,
-        )
-    )
-    statement = statement.where(
-        or_(
-            ProviderCenterPreference.effective_end_date.is_(None),
-            ProviderCenterPreference.effective_end_date >= schedule_period.start_date,
-        )
-    )
     preferences = list(session.scalars(statement))
     return preferences
 
 
 def load_provider_shift_type_preferences(
-    schedule_period: SchedulePeriod,
     organization_id: UUID,
     session: Session,
 ) -> list[ProviderShiftTypePreference]:
     statement = select(ProviderShiftTypePreference)
     statement = statement.where(ProviderShiftTypePreference.organization_id == organization_id)
     statement = statement.where(ProviderShiftTypePreference.is_active.is_(True))
-    statement = statement.where(
-        or_(
-            ProviderShiftTypePreference.effective_start_date.is_(None),
-            ProviderShiftTypePreference.effective_start_date <= schedule_period.end_date,
-        )
-    )
-    statement = statement.where(
-        or_(
-            ProviderShiftTypePreference.effective_end_date.is_(None),
-            ProviderShiftTypePreference.effective_end_date >= schedule_period.start_date,
-        )
-    )
     preferences = list(session.scalars(statement))
     return preferences
 
 
 def load_manager_provider_center_preferences(
-    schedule_period: SchedulePeriod,
     organization_id: UUID,
     session: Session,
 ) -> list[ManagerProviderCenterPreference]:
     statement = select(ManagerProviderCenterPreference)
     statement = statement.where(ManagerProviderCenterPreference.organization_id == organization_id)
     statement = statement.where(ManagerProviderCenterPreference.is_active.is_(True))
-    statement = statement.where(
-        or_(
-            ManagerProviderCenterPreference.effective_start_date.is_(None),
-            ManagerProviderCenterPreference.effective_start_date <= schedule_period.end_date,
-        )
-    )
-    statement = statement.where(
-        or_(
-            ManagerProviderCenterPreference.effective_end_date.is_(None),
-            ManagerProviderCenterPreference.effective_end_date >= schedule_period.start_date,
-        )
-    )
     preferences = list(session.scalars(statement))
     return preferences
 
@@ -488,17 +448,14 @@ def build_solver_input(
     )
     fairness_states = load_provider_fairness_states(organization_id, session)
     center_preferences = load_provider_center_preferences(
-        schedule_period,
         organization_id,
         session,
     )
     shift_type_preferences = load_provider_shift_type_preferences(
-        schedule_period,
         organization_id,
         session,
     )
     manager_preferences = load_manager_provider_center_preferences(
-        schedule_period,
         organization_id,
         session,
     )

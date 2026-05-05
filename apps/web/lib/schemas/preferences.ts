@@ -2,13 +2,11 @@ import { z } from "zod";
 
 export const preferenceLevelSchema = z.number().int().min(-3).max(3);
 
-export const preferenceWindowSchema = z.object({
+export const preferenceLevelFieldsSchema = z.object({
   preference_level: preferenceLevelSchema,
-  effective_start_date: z.string().min(1).nullable(),
-  effective_end_date: z.string().min(1).nullable(),
-});
+}).strict();
 
-export const providerCenterPreferenceApiSchema = preferenceWindowSchema.extend({
+export const providerCenterPreferenceApiSchema = preferenceLevelFieldsSchema.extend({
   id: z.string().uuid(),
   provider_id: z.string().uuid(),
   center_id: z.string().uuid(),
@@ -17,7 +15,7 @@ export const providerCenterPreferenceApiSchema = preferenceWindowSchema.extend({
   updated_at: z.string().min(1),
 });
 
-export const providerShiftTypePreferenceApiSchema = preferenceWindowSchema.extend({
+export const providerShiftTypePreferenceApiSchema = preferenceLevelFieldsSchema.extend({
   id: z.string().uuid(),
   provider_id: z.string().uuid(),
   shift_type: z.string().min(1),
@@ -26,7 +24,7 @@ export const providerShiftTypePreferenceApiSchema = preferenceWindowSchema.exten
   updated_at: z.string().min(1),
 });
 
-export const managerProviderCenterPreferenceApiSchema = preferenceWindowSchema.extend({
+export const managerProviderCenterPreferenceApiSchema = preferenceLevelFieldsSchema.extend({
   id: z.string().uuid(),
   provider_id: z.string().uuid(),
   center_id: z.string().uuid(),
@@ -40,22 +38,22 @@ export const providerPreferencesApiSchema = z.object({
   provider_id: z.string().uuid(),
   center_preferences: z.array(providerCenterPreferenceApiSchema),
   shift_type_preferences: z.array(providerShiftTypePreferenceApiSchema),
-});
+}).strict();
 
 export const managerProviderPreferencesApiSchema = z.object({
   provider_id: z.string().uuid(),
   center_preferences: z.array(managerProviderCenterPreferenceApiSchema),
-});
+}).strict();
 
-export const providerCenterPreferencePayloadSchema = preferenceWindowSchema.extend({
+export const providerCenterPreferencePayloadSchema = preferenceLevelFieldsSchema.extend({
   center_id: z.string().uuid(),
 });
 
-export const providerShiftTypePreferencePayloadSchema = preferenceWindowSchema.extend({
+export const providerShiftTypePreferencePayloadSchema = preferenceLevelFieldsSchema.extend({
   shift_type: z.string().min(1),
 });
 
-export const managerProviderCenterPreferencePayloadSchema = preferenceWindowSchema.extend({
+export const managerProviderCenterPreferencePayloadSchema = preferenceLevelFieldsSchema.extend({
   center_id: z.string().uuid(),
   manager_note: z.string().nullable(),
 });
@@ -63,11 +61,11 @@ export const managerProviderCenterPreferencePayloadSchema = preferenceWindowSche
 export const providerPreferencesPayloadSchema = z.object({
   center_preferences: z.array(providerCenterPreferencePayloadSchema),
   shift_type_preferences: z.array(providerShiftTypePreferencePayloadSchema),
-});
+}).strict();
 
 export const managerProviderPreferencesPayloadSchema = z.object({
   center_preferences: z.array(managerProviderCenterPreferencePayloadSchema),
-});
+}).strict();
 
 export type ProviderPreferencesApi = z.infer<typeof providerPreferencesApiSchema>;
 

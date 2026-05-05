@@ -2392,6 +2392,7 @@ export function ScheduleWorkspace({
                             }
                             onDragOver={(event) => {
                               event.preventDefault();
+                              event.stopPropagation();
                               handleDropIndicatorSet(column.key, index);
                             }}
                             onDrop={(event) =>
@@ -2778,9 +2779,6 @@ export function ScheduleWorkspace({
                           </span>
                         );
                     })}
-                    {dropIndicatorMatches(column.key, dayAssignments.length) ? (
-                      <div className="h-1 rounded bg-teal-600" aria-hidden="true" />
-                    ) : null}
                   </div>
                 </div>
                 );
