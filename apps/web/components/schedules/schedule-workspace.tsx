@@ -1848,6 +1848,46 @@ export function ScheduleWorkspace({
     updateWorkingVersion(nextVersion);
   }
 
+  function handleReorderAssignment(
+    assignmentId: string,
+    dayKey: ScheduleDayKey,
+    direction: "up" | "down",
+  ) {
+    const dayAssignments = assignmentsForKey(workingVersion.assignments, dayKey);
+    const currentIndex = dayAssignments.findIndex((assignment) => {
+      return assignment.id === assignmentId;
+    });
+
+    if (currentIndex < 0) {
+      return;
+    }
+
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    const targetIsBeforeStart = targetIndex < 0;
+    const targetIsAfterEnd = targetIndex >= dayAssignments.length;
+
+    if (targetIsBeforeStart || targetIsAfterEnd) {
+      return;
+    }
+
+    const draggedAssignment = {
+      assignmentId,
+      dayKey,
+    };
+    const assignments = moveAssignment(
+      workingVersion.assignments,
+      draggedAssignment,
+      schedulePeriod,
+      dayKey,
+      targetIndex,
+    );
+    const nextVersion = scheduleVersionSchema.parse({
+      ...workingVersion,
+      assignments,
+    });
+    updateWorkingVersion(nextVersion);
+  }
+
   function dropIndicatorMatches(dayKey: ScheduleDayKey, targetIndex: number) {
     if (dropIndicator === null) {
       return false;
@@ -2334,6 +2374,8 @@ export function ScheduleWorkspace({
                       const assignmentShiftTypeLabel = shiftTypeLabel(
                         assignment.shiftType,
                       );
+                      const moveUpDisabled = index === 0;
+                      const moveDownDisabled = index === dayAssignments.length - 1;
                       return (
                         <div key={assignment.id} className="flex flex-col gap-2">
                           {dropIndicatorMatches(column.key, index) ? (
@@ -2364,14 +2406,46 @@ export function ScheduleWorkspace({
                               </p>
                               <p className="text-xs text-slate-500">{roomName}</p>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteAssignment(assignment.id)}
-                              className="rounded-md px-2 text-sm font-semibold text-slate-500 hover:bg-red-50 hover:text-red-700"
-                              aria-label={`Remove ${roomName}`}
-                            >
-                              x
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleReorderAssignment(
+                                    assignment.id,
+                                    column.key,
+                                    "up",
+                                  )
+                                }
+                                disabled={moveUpDisabled}
+                                className="rounded-md px-1.5 py-0.5 text-xs font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:text-slate-300"
+                                aria-label={`Move ${roomName} up`}
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleReorderAssignment(
+                                    assignment.id,
+                                    column.key,
+                                    "down",
+                                  )
+                                }
+                                disabled={moveDownDisabled}
+                                className="rounded-md px-1.5 py-0.5 text-xs font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:text-slate-300"
+                                aria-label={`Move ${roomName} down`}
+                              >
+                                ↓
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAssignment(assignment.id)}
+                                className="rounded-md px-2 text-sm font-semibold text-slate-500 hover:bg-red-50 hover:text-red-700"
+                                aria-label={`Remove ${roomName}`}
+                              >
+                                x
+                              </button>
+                            </div>
                           </div>
                           <div className="mt-2 flex flex-wrap gap-1">
                             <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
