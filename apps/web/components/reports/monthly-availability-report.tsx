@@ -10,6 +10,9 @@ import type {
   MonthlyAvailabilityDayApi,
   MonthlyAvailabilityOption,
   MonthlyAvailabilityProviderApi,
+  MonthlyScheduleAssignmentApi,
+  MonthlyScheduleCandidateApi,
+  MonthlyScheduleCandidateGroupApi,
 } from "@/lib/schemas/reports";
 
 type MonthlyAvailabilityReportProps = {
@@ -111,6 +114,27 @@ function optionLabel(option: MonthlyAvailabilityOption): string {
   return "S";
 }
 
+function shiftTypeLabel(option: MonthlyAvailabilityOption): string {
+  if (option === "full_shift") {
+    return "Full";
+  }
+
+  if (option === "first_half") {
+    return "1st half";
+  }
+
+  if (option === "second_half") {
+    return "2nd half";
+  }
+
+  return "Short";
+}
+
+function providerIsScheduled(provider: MonthlyAvailabilityProviderApi): boolean {
+  const isScheduled = provider.scheduled_assignments.length > 0;
+  return isScheduled;
+}
+
 function optionToneClassName(option: MonthlyAvailabilityOption): string {
   if (option === "full_shift") {
     return "bg-emerald-100 text-emerald-900";
@@ -127,9 +151,70 @@ function optionToneClassName(option: MonthlyAvailabilityOption): string {
   return "bg-rose-100 text-rose-900";
 }
 
+function statusLabel(value: string): string {
+  const normalizedValue = value.replaceAll("_", " ");
+  const label = normalizedValue.charAt(0).toUpperCase() + normalizedValue.slice(1);
+  return label;
+}
+
+function formatShortDate(value: string): string {
+  const date = dateAtUtcMidnight(value);
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+  const label = formatter.format(date);
+  return label;
+}
+
+function formatTime(value: string): string {
+  const date = new Date(value);
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const label = formatter.format(date);
+  return label;
+}
+
+function formatScheduleGroupRange(group: MonthlyScheduleCandidateGroupApi): string {
+  const startDate = formatShortDate(group.start_date);
+  const endDate = formatShortDate(group.end_date);
+  const label = `${startDate} - ${endDate}`;
+  return label;
+}
+
+function candidateLabel(candidate: MonthlyScheduleCandidateApi): string {
+  const status = statusLabel(candidate.latest_schedule_version_status);
+  const label = `${candidate.schedule_period_name} - v${candidate.latest_schedule_version_number} ${status}`;
+  return label;
+}
+
 function totalProviderSelections(days: MonthlyAvailabilityDayApi[]): number {
   const total = days.reduce((currentTotal, day) => {
     const nextTotal = currentTotal + day.providers.length;
+    return nextTotal;
+  }, 0);
+  return total;
+}
+
+function totalScheduledProviders(days: MonthlyAvailabilityDayApi[]): number {
+  const total = days.reduce((currentTotal, day) => {
+    const scheduledProviders = day.providers.filter(providerIsScheduled);
+    const nextTotal = currentTotal + scheduledProviders.length;
+    return nextTotal;
+  }, 0);
+  return total;
+}
+
+function totalUnscheduledProviders(days: MonthlyAvailabilityDayApi[]): number {
+  const total = days.reduce((currentTotal, day) => {
+    const unscheduledProviders = day.providers.filter((provider) => {
+      const isScheduled = providerIsScheduled(provider);
+      return !isScheduled;
+    });
+    const nextTotal = currentTotal + unscheduledProviders.length;
     return nextTotal;
   }, 0);
   return total;
@@ -148,6 +233,33 @@ function uniqueProviderCount(days: MonthlyAvailabilityDayApi[]): number {
   return count;
 }
 
+function selectedSchedulePeriodIdsFromReport(
+  report: MonthlyAvailabilityReportData,
+): string[] {
+  const ids = report.schedule_candidate_groups.map((group) => {
+    return group.selected_schedule_period_id;
+  });
+  return ids;
+}
+
+function schedulePeriodIdsMatch(
+  firstIds: string[],
+  secondIds: string[],
+): boolean {
+  if (firstIds.length !== secondIds.length) {
+    return false;
+  }
+
+  const firstSortedIds = [...firstIds].sort();
+  const secondSortedIds = [...secondIds].sort();
+  const allIdsMatch = firstSortedIds.every((firstId, index) => {
+    const secondId = secondSortedIds[index];
+    const idMatches = firstId === secondId;
+    return idMatches;
+  });
+  return allIdsMatch;
+}
+
 function daysWithProviderSelections(days: MonthlyAvailabilityDayApi[]): number {
   const matchingDays = days.filter((day) => {
     const hasProviders = day.providers.length > 0;
@@ -155,6 +267,16 @@ function daysWithProviderSelections(days: MonthlyAvailabilityDayApi[]): number {
   });
   const count = matchingDays.length;
   return count;
+}
+
+function assignmentDetail(assignment: MonthlyScheduleAssignmentApi) {
+  const shiftType = shiftTypeLabel(assignment.shift_type);
+  const startTime = formatTime(assignment.start_time);
+  const endTime = formatTime(assignment.end_time);
+  const roomName = assignment.room_name ?? "No room";
+  const versionStatus = statusLabel(assignment.schedule_version_status);
+  const detail = `${assignment.center_name} / ${roomName} / ${shiftType} / ${startTime}-${endTime} / v${assignment.schedule_version_number} ${versionStatus}`;
+  return detail;
 }
 
 function providerOptionMarkers(provider: MonthlyAvailabilityProviderApi) {
@@ -179,6 +301,11 @@ function providerOptionMarkers(provider: MonthlyAvailabilityProviderApi) {
 function calendarDayCell(day: MonthlyAvailabilityDayApi) {
   const dayNumber = formatDayNumber(day.date);
   const hasProviders = day.providers.length > 0;
+  const scheduledProviders = day.providers.filter(providerIsScheduled);
+  const unscheduledProviders = day.providers.filter((provider) => {
+    const isScheduled = providerIsScheduled(provider);
+    return !isScheduled;
+  });
   const backgroundClassName = hasProviders ? "bg-white" : "bg-slate-50";
   const cellClassName = `min-h-36 rounded-md border border-slate-200 p-2 ${backgroundClassName}`;
 
@@ -190,16 +317,51 @@ function calendarDayCell(day: MonthlyAvailabilityDayApi) {
           {day.providers.length}
         </span>
       </div>
-      <div className="mt-2 max-h-28 space-y-2 overflow-y-auto pr-1">
-        {day.providers.map((provider) => {
+      <div className="mt-2 max-h-32 space-y-2 overflow-y-auto pr-1">
+        {scheduledProviders.map((provider) => {
           return (
             <div
               key={`${provider.provider_id}-${provider.schedule_period_id}`}
-              className="rounded-md border border-slate-100 bg-white px-2 py-1 shadow-sm"
+              className="rounded-md border border-teal-200 bg-teal-50 px-2 py-1 shadow-sm"
             >
-              <p className="truncate text-xs font-semibold text-slate-950">
-                {provider.provider_display_name}
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-xs font-semibold text-slate-950">
+                  {provider.provider_display_name}
+                </p>
+                <span className="rounded bg-teal-700 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                  Scheduled
+                </span>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-1">
+                {providerOptionMarkers(provider)}
+              </div>
+              {provider.scheduled_assignments.map((assignment) => {
+                return (
+                  <p
+                    key={assignment.assignment_id}
+                    className="mt-1 truncate text-[11px] font-medium text-teal-950"
+                  >
+                    {assignmentDetail(assignment)}
+                  </p>
+                );
+              })}
+            </div>
+          );
+        })}
+        {unscheduledProviders.map((provider) => {
+          return (
+            <div
+              key={`${provider.provider_id}-${provider.schedule_period_id}`}
+              className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 shadow-sm"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-xs font-semibold text-slate-950">
+                  {provider.provider_display_name}
+                </p>
+                <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
+                  Available
+                </span>
+              </div>
               <div className="mt-1">{providerOptionMarkers(provider)}</div>
             </div>
           );
@@ -217,9 +379,13 @@ export function MonthlyAvailabilityReport({
 }: MonthlyAvailabilityReportProps) {
   const [selectedMonth, setSelectedMonth] = useState(initialReport.month);
   const [selectedYear, setSelectedYear] = useState(initialReport.year);
+  const [selectedSchedulePeriodIds, setSelectedSchedulePeriodIds] = useState(
+    () => selectedSchedulePeriodIdsFromReport(initialReport),
+  );
   const [report, setReport] = useState(initialReport);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const selectedSchedulePeriodIdKey = selectedSchedulePeriodIds.join(",");
   const cells = useMemo(() => {
     const nextCells = calendarCells(report.days);
     return nextCells;
@@ -236,11 +402,25 @@ export function MonthlyAvailabilityReport({
     const count = daysWithProviderSelections(report.days);
     return count;
   }, [report.days]);
+  const scheduledProviderCount = useMemo(() => {
+    const count = totalScheduledProviders(report.days);
+    return count;
+  }, [report.days]);
+  const unscheduledProviderCount = useMemo(() => {
+    const count = totalUnscheduledProviders(report.days);
+    return count;
+  }, [report.days]);
 
   useEffect(() => {
     const reportMatchesSelection = report.year === selectedYear && report.month === selectedMonth;
+    const reportSchedulePeriodIds = selectedSchedulePeriodIdsFromReport(report);
+    const schedulePeriodsMatch = schedulePeriodIdsMatch(
+      reportSchedulePeriodIds,
+      selectedSchedulePeriodIds,
+    );
+    const reportMatchesRequestedState = reportMatchesSelection && schedulePeriodsMatch;
 
-    if (reportMatchesSelection) {
+    if (reportMatchesRequestedState) {
       return;
     }
 
@@ -253,10 +433,20 @@ export function MonthlyAvailabilityReport({
         const nextReport = await getMonthlyAvailabilityReport(
           selectedYear,
           selectedMonth,
+          selectedSchedulePeriodIds,
         );
 
         if (isMounted) {
           setReport(nextReport);
+          const nextSchedulePeriodIds = selectedSchedulePeriodIdsFromReport(nextReport);
+          const nextIdsMatchCurrentIds = schedulePeriodIdsMatch(
+            nextSchedulePeriodIds,
+            selectedSchedulePeriodIds,
+          );
+
+          if (!nextIdsMatchCurrentIds) {
+            setSelectedSchedulePeriodIds(nextSchedulePeriodIds);
+          }
         }
       } catch (error) {
         if (isMounted) {
@@ -275,7 +465,13 @@ export function MonthlyAvailabilityReport({
     return () => {
       isMounted = false;
     };
-  }, [report.month, report.year, selectedMonth, selectedYear]);
+  }, [
+    report,
+    selectedMonth,
+    selectedSchedulePeriodIds,
+    selectedSchedulePeriodIdKey,
+    selectedYear,
+  ]);
 
   function updateSelectedYear(value: string) {
     const parsedYear = Number.parseInt(value, 10);
@@ -297,6 +493,28 @@ export function MonthlyAvailabilityReport({
     }
 
     setSelectedMonth(parsedMonth);
+  }
+
+  function updateSelectedSchedulePeriod(groupKey: string, schedulePeriodId: string) {
+    const groupHasSelection = report.schedule_candidate_groups.some((group) => {
+      const groupMatches = group.group_key === groupKey;
+      return groupMatches;
+    });
+
+    if (!groupHasSelection) {
+      return;
+    }
+
+    const nextIds = report.schedule_candidate_groups.map((group) => {
+      const groupMatches = group.group_key === groupKey;
+
+      if (groupMatches) {
+        return schedulePeriodId;
+      }
+
+      return group.selected_schedule_period_id;
+    });
+    setSelectedSchedulePeriodIds(nextIds);
   }
 
   return (
@@ -341,7 +559,7 @@ export function MonthlyAvailabilityReport({
             </label>
           </div>
         </div>
-        <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+        <div className="mt-4 grid gap-3 text-sm sm:grid-cols-5">
           <div>
             <p className="text-xs font-semibold uppercase text-slate-500">Providers</p>
             <p className="mt-1 text-xl font-semibold text-slate-950">{providerCount}</p>
@@ -356,7 +574,60 @@ export function MonthlyAvailabilityReport({
               {providerSelectionCount}
             </p>
           </div>
+          <div>
+            <p className="text-xs font-semibold uppercase text-slate-500">Scheduled</p>
+            <p className="mt-1 text-xl font-semibold text-teal-800">
+              {scheduledProviderCount}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase text-slate-500">Available</p>
+            <p className="mt-1 text-xl font-semibold text-amber-800">
+              {unscheduledProviderCount}
+            </p>
+          </div>
         </div>
+        {report.schedule_candidate_groups.length > 0 ? (
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {report.schedule_candidate_groups.map((group) => {
+              const hasMultipleCandidates = group.candidates.length > 1;
+              const selectClassName = hasMultipleCandidates
+                ? "border-amber-300 bg-amber-50"
+                : "border-slate-300 bg-white";
+              return (
+                <label
+                  key={group.group_key}
+                  className="flex flex-col gap-2 rounded-md border border-slate-200 p-3 text-sm text-slate-700"
+                >
+                  <span className="font-semibold text-slate-950">
+                    {formatScheduleGroupRange(group)}
+                  </span>
+                  <select
+                    className={`h-10 rounded-md border px-3 text-sm font-semibold text-slate-950 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100 ${selectClassName}`}
+                    value={group.selected_schedule_period_id}
+                    onChange={(event) => {
+                      updateSelectedSchedulePeriod(
+                        group.group_key,
+                        event.target.value,
+                      );
+                    }}
+                  >
+                    {group.candidates.map((candidate) => {
+                      return (
+                        <option
+                          key={candidate.schedule_period_id}
+                          value={candidate.schedule_period_id}
+                        >
+                          {candidateLabel(candidate)}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+              );
+            })}
+          </div>
+        ) : null}
         {isLoading ? <p className="mt-4 text-sm text-slate-500">Loading report...</p> : null}
         {errorMessage !== null ? (
           <p className="mt-4 text-sm text-rose-700">{errorMessage}</p>

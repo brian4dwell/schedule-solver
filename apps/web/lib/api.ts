@@ -660,11 +660,17 @@ export async function getFairnessReport(): Promise<FairnessReport> {
 export async function getMonthlyAvailabilityReport(
   year: number,
   month: number,
+  schedulePeriodIds: string[] = [],
 ): Promise<MonthlyAvailabilityReport> {
   const selection = monthlyAvailabilitySelectionSchema.parse({ year, month });
   const params = new URLSearchParams();
   params.set("year", selection.year.toString());
   params.set("month", selection.month.toString());
+
+  schedulePeriodIds.forEach((schedulePeriodId) => {
+    params.append("schedule_period_id", schedulePeriodId);
+  });
+
   const path = `/reports/monthly-availability?${params.toString()}`;
   const responseJson = await requestJson<unknown>(path, {
     cache: "no-store",
