@@ -1403,6 +1403,7 @@ export function ScheduleWorkspace({
   const [isPublishing, setIsPublishing] = useState(false);
   const [showWeekends, setShowWeekends] = useState(false);
   const [showUnsetAvailabilityProviders, setShowUnsetAvailabilityProviders] = useState(false);
+  const [compactModeEnabled, setCompactModeEnabled] = useState(false);
   const [openProviderAssignmentId, setOpenProviderAssignmentId] = useState<
     string | null
   >(null);
@@ -2194,6 +2195,17 @@ export function ScheduleWorkspace({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            <label className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700">
+              <span>Layout</span>
+              <select
+                value={compactModeEnabled ? "compact" : "full"}
+                onChange={(event) => setCompactModeEnabled(event.target.value === "compact")}
+                className="bg-white text-sm font-semibold text-slate-900 outline-none"
+              >
+                <option value="full">Full mode</option>
+                <option value="compact">Compact mode</option>
+              </select>
+            </label>
             {versionOptions.length > 0 ? (
               <label className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700">
                 <span>Version</span>
@@ -2536,54 +2548,60 @@ export function ScheduleWorkspace({
                               </span>
                             </div>
                             <div className="mt-2 max-h-44 space-y-1 overflow-y-auto">
-                              <div className="flex items-stretch gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleProviderPickerToggled(assignment.id)
-                                  }
-                                  disabled={providerOptions.length === 0}
-                                  aria-expanded={providerPickerIsOpen}
-                                  className={
-                                    selectedOption === null
-                                      ? "min-w-0 flex-1 rounded-md border border-dashed border-slate-300 bg-white px-2 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
-                                      : "min-w-0 flex-1 rounded-md border border-teal-600 bg-teal-50 px-2 py-2 text-left"
-                                  }
-                                >
-                                  <span className="block truncate text-sm font-semibold text-slate-950">
-                                    {providerPickerLabel}
-                                  </span>
-                                  {providerPickerStatus === null ? null : (
-                                    <span
-                                      className={
-                                        selectedStatusIsValid
-                                          ? "block text-xs text-emerald-700"
-                                          : selectedStatusIsWarning
-                                            ? "block text-xs text-amber-700"
-                                            : "block text-xs text-red-700"
-                                      }
-                                    >
-                                      {providerPickerStatus}
-                                    </span>
-                                  )}
-                                  {selectedOption === null ? null : (
-                                    <span className="block text-xs text-slate-500">
-                                      {optionAvailabilityLabel(selectedOption)} -{" "}
-                                      {optionShiftCountLabel(selectedOption)}
-                                    </span>
-                                  )}
-                                </button>
-                                {selectedOption === null ? null : (
+                              {compactModeEnabled ? (
+                                <p className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-700">
+                                  {providerPickerLabel}
+                                </p>
+                              ) : (
+                                <div className="flex items-stretch gap-2">
                                   <button
                                     type="button"
-                                    onClick={() => handleProviderCleared(assignment)}
-                                    className="rounded-md border border-slate-300 px-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                                    onClick={() =>
+                                      handleProviderPickerToggled(assignment.id)
+                                    }
+                                    disabled={providerOptions.length === 0}
+                                    aria-expanded={providerPickerIsOpen}
+                                    className={
+                                      selectedOption === null
+                                        ? "min-w-0 flex-1 rounded-md border border-dashed border-slate-300 bg-white px-2 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                                        : "min-w-0 flex-1 rounded-md border border-teal-600 bg-teal-50 px-2 py-2 text-left"
+                                    }
                                   >
-                                    Clear
+                                    <span className="block truncate text-sm font-semibold text-slate-950">
+                                      {providerPickerLabel}
+                                    </span>
+                                    {providerPickerStatus === null ? null : (
+                                      <span
+                                        className={
+                                          selectedStatusIsValid
+                                            ? "block text-xs text-emerald-700"
+                                            : selectedStatusIsWarning
+                                              ? "block text-xs text-amber-700"
+                                              : "block text-xs text-red-700"
+                                        }
+                                      >
+                                        {providerPickerStatus}
+                                      </span>
+                                    )}
+                                    {selectedOption === null ? null : (
+                                      <span className="block text-xs text-slate-500">
+                                        {optionAvailabilityLabel(selectedOption)} -{" "}
+                                        {optionShiftCountLabel(selectedOption)}
+                                      </span>
+                                    )}
                                   </button>
-                                )}
-                              </div>
-                              {providerPickerIsOpen
+                                  {selectedOption === null ? null : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleProviderCleared(assignment)}
+                                      className="rounded-md border border-slate-300 px-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                                    >
+                                      Clear
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                              {providerPickerIsOpen && !compactModeEnabled
                                 ? providerOptions.map((option) => {
                                     const isSelected =
                                       option.provider.id === assignment.providerId;
