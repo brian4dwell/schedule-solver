@@ -1,5 +1,6 @@
 "use client";
 
+import { Show, UserButton, useAuth, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -50,6 +51,28 @@ const setupMenu: NavigationMenu = {
   ],
 };
 
+function roleFromPublicMetadata(publicMetadata: Record<string, unknown> | undefined) {
+  const roleValue = publicMetadata?.role;
+  const roleIsString = typeof roleValue === "string";
+
+  if (!roleIsString) {
+    return null;
+  }
+
+  return roleValue;
+}
+
+function userHasAdminRole(
+  organizationRole: string | null | undefined,
+  publicMetadataRole: string | null,
+) {
+  const hasOrganizationAdminRole = organizationRole === "org:admin";
+  const hasScheduleSolverAdminRole = publicMetadataRole === "admin";
+  const hasAdminRole = hasOrganizationAdminRole || hasScheduleSolverAdminRole;
+
+  return hasAdminRole;
+}
+
 function isNavigationLinkActive(pathname: string, href: string) {
   const nestedPathPrefix = `${href}/`;
   const isExactPath = pathname === href;
@@ -83,7 +106,12 @@ function buildMenuTriggerClass(isActive: boolean) {
 
 export function TopNav() {
   const pathname = usePathname();
-  const menuHasActiveLink = setupMenu.links.some((item) => {
+  const auth = useAuth();
+  const userResult = useUser();
+  const publicMetadataRole = roleFromPublicMetadata(userResult.user?.publicMetadata);
+  const currentUserIsAdmin = userHasAdminRole(auth.orgRole, publicMetadataRole);
+  const setupLinks = currentUserIsAdmin ? setupMenu.links : [];
+  const menuHasActiveLink = setupLinks.some((item) => {
     const isActive = isNavigationLinkActive(pathname, item.href);
 
     return isActive;
@@ -92,12 +120,22 @@ export function TopNav() {
 
   return (
     <header className="border-b border-slate-200 bg-white">
-      <div className="px-4 py-4 sm:px-6 lg:px-8">
+      <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
         <Link href="/dashboard" className="inline-flex flex-wrap items-baseline gap-x-2">
           <span className="text-sm font-medium text-slate-500">Bespoke Anesthesia</span>
           <span className="text-sm text-slate-300">/</span>
           <span className="text-xl font-semibold text-slate-950">Operations workspace</span>
         </Link>
+        <div className="flex items-center gap-3">
+          {currentUserIsAdmin ? (
+            <span className="rounded-md border border-teal-200 bg-teal-50 px-2 py-1 text-xs font-medium text-teal-800">
+              Admin
+            </span>
+          ) : null}
+          <Show when="signed-in">
+            <UserButton />
+          </Show>
+        </div>
       </div>
       <nav className="border-t border-slate-200 px-4 py-2 sm:px-6 lg:px-8">
         <div className="flex flex-wrap gap-2">
@@ -117,21 +155,23 @@ export function TopNav() {
           >
             {availabilityLink.label}
           </Link>
-          <details className="group relative shrink-0">
-            <summary className={menuTriggerClass}>{setupMenu.label}</summary>
-            <div className="absolute left-0 top-10 z-20 min-w-44 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
-              {setupMenu.links.map((item) => {
-                const isActive = isNavigationLinkActive(pathname, item.href);
-                const linkClass = buildLinkClass(isActive);
+          {currentUserIsAdmin ? (
+            <details className="group relative shrink-0">
+              <summary className={menuTriggerClass}>{setupMenu.label}</summary>
+              <div className="absolute left-0 top-10 z-20 min-w-44 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                {setupLinks.map((item) => {
+                  const isActive = isNavigationLinkActive(pathname, item.href);
+                  const linkClass = buildLinkClass(isActive);
 
-                return (
-                  <Link key={item.href} href={item.href} className={`${linkClass} w-full`}>
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </div>
-          </details>
+                  return (
+                    <Link key={item.href} href={item.href} className={`${linkClass} w-full`}>
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </details>
+          ) : null}
           <Link
             href={reportsLink.href}
             className={buildLinkClass(isNavigationLinkActive(pathname, reportsLink.href))}

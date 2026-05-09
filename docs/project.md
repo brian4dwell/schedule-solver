@@ -403,11 +403,11 @@ The app currently uses Tailwind directly. Add shadcn/ui only when shared compone
 
 ## Deliberate Divergences From The Original Plan
 
-### Local Organization Before Clerk
+### Clerk Auth With Local Organization
 
-The original plan called for Clerk from the start. The current backend uses a local organization dependency.
+The web app uses Clerk for sign-in and account controls.
 
-This keeps development moving, but it is not the final authorization model.
+FastAPI verifies Clerk session JWTs and requires an admin role before returning organization-scoped data. The current backend still resolves authorized users to the local organization record until real organization mapping is designed.
 
 ### Concrete Credential And Skill Tables
 
@@ -429,8 +429,8 @@ Rooms can be hard-deleted when they have no schedule records and soft-deleted wh
 
 High-priority gaps:
 
-- Clerk login and JWT verification.
-- Organization and user authorization beyond the local organization dependency.
+- Real Clerk organization to local Organization mapping.
+- Role and permission boundaries beyond the current admin gate.
 - Shift Requirement CRUD.
 - Preference model and preference UI.
 - Persisting all backend warning rows that should appear in the `Schedule constraints` table.
@@ -467,10 +467,8 @@ Known architecture gaps:
 
 ### Auth And Multi-User Milestone
 
-- Add Clerk login.
-- Verify JWTs in FastAPI.
 - Replace local organization dependency with real organization/user resolution.
-- Add role and permission boundaries.
+- Add finer role and permission boundaries.
 - Add audit metadata where needed.
 
 ### Later Product Areas

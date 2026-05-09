@@ -69,6 +69,13 @@ If a Redis instance is added later, set `REDIS_URL` as a secret:
 fly secrets set REDIS_URL="redis://example.internal:6379/0" --app bespoke-web
 ```
 
+Set Clerk secrets for the Next proxy and FastAPI JWT verification:
+
+```powershell
+fly secrets set CLERK_SECRET_KEY="sk_live_..." --app bespoke-web
+fly secrets set NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_live_..." --app bespoke-web
+```
+
 Do not set `NEXT_PUBLIC_API_BASE_URL` for Fly unless intentionally overriding
 the checked-in `/api` proxy behavior.
 

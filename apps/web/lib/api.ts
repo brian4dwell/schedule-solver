@@ -155,12 +155,54 @@ export type ProviderSlotEligibilityPayload = {
   end_time: string;
 };
 
+async function serverAuthorizationHeaders(): Promise<Record<string, string>> {
+  const runsInBrowser = typeof window !== "undefined";
+
+  if (runsInBrowser) {
+    return {};
+  }
+
+  const clerkServer = await import("@clerk/nextjs/server");
+  const authContext = await clerkServer.auth();
+  const token = await authContext.getToken();
+  const tokenIsMissing = token === null;
+
+  if (tokenIsMissing) {
+    return {};
+  }
+
+  const authorization = `Bearer ${token}`;
+  const headers = {
+    Authorization: authorization,
+  };
+
+  return headers;
+}
+
+async function requestInitWithAuth(init?: RequestInit): Promise<RequestInit> {
+  const authorizationHeaders = await serverAuthorizationHeaders();
+  const requestHeaders = new Headers(init?.headers);
+  const authorizationHeaderEntries = Object.entries(authorizationHeaders);
+
+  authorizationHeaderEntries.forEach(([headerName, headerValue]) => {
+    requestHeaders.set(headerName, headerValue);
+  });
+
+  const requestInit = {
+    ...init,
+    headers: requestHeaders,
+  };
+
+  return requestInit;
+}
+
 async function requestJson<TResponse>(
   path: string,
   init?: RequestInit,
 ): Promise<TResponse> {
   const url = `${nextPublicApiBaseUrl}${path}`;
-  const response = await fetch(url, init);
+  const requestInit = await requestInitWithAuth(init);
+  const response = await fetch(url, requestInit);
 
   if (!response.ok) {
     const responseText = await response.text();

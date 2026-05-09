@@ -61,7 +61,9 @@ npm run dev
 ```
 
 The app expects the API at `http://localhost:8000` unless `NEXT_PUBLIC_API_BASE_URL` is set.
+Clerk-protected routes require `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`
+in the web runtime, and the API requires `CLERK_SECRET_KEY` for JWT verification.
 
 ## First-Pass Scope
 
-This implementation includes Centers, Rooms, and Providers CRUD. Availability, shift requirements, schedule generation, Clerk auth, and worker processing are intentionally left for later milestones.
+This implementation includes Centers, Rooms, Providers, availability, schedule generation, and Clerk-protected access. Shift requirements, finer-grained authorization, and worker processing are intentionally left for later milestones.

@@ -1,11 +1,15 @@
 from pathlib import Path
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import field_validator
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 from pydantic_settings import SettingsConfigDict
 
 environment_file_path = Path(__file__).resolve().parent.parent / ".env"
+
+AuthMode = Literal["local", "clerk"]
 
 
 class Settings(BaseSettings):
@@ -13,7 +17,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     environment: str = "development"
     local_organization_name: str = "Local Scheduling Organization"
-    auth_mode: str = "local"
+    auth_mode: AuthMode = "clerk"
+    clerk_secret_key: SecretStr | None = None
+    clerk_jwks_url: str = "https://api.clerk.com/v1/jwks"
 
     model_config = SettingsConfigDict(
         env_file=environment_file_path,
@@ -43,9 +49,12 @@ class Settings(BaseSettings):
         normalized_database_url = database_url
         return normalized_database_url
 
-    @field_validator("auth_mode")
+    @field_validator("auth_mode", mode="before")
     @classmethod
-    def normalize_auth_mode(cls, auth_mode: str) -> str:
+    def normalize_auth_mode(cls, auth_mode: object) -> object:
+        if not isinstance(auth_mode, str):
+            return auth_mode
+
         normalized_auth_mode = auth_mode.strip().lower()
         return normalized_auth_mode
 
