@@ -62,7 +62,9 @@ npm run dev
 
 The app expects the API at `http://localhost:8000` unless `NEXT_PUBLIC_API_BASE_URL` is set.
 Clerk-protected routes require `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`
-in the web runtime, and the API requires `CLERK_SECRET_KEY` for JWT verification.
+in the web runtime. The API requires a public JWT verification source through
+`CLERK_FRONTEND_API_URL`, `CLERK_JWT_KEY`, `CLERK_PEM_PUBLIC_KEY`, or
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`.
 
 ## First-Pass Scope
 

@@ -76,6 +76,10 @@ fly secrets set CLERK_SECRET_KEY="sk_live_..." --app bespoke-web
 fly secrets set NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_live_..." --app bespoke-web
 ```
 
+The API can derive Clerk's Frontend API URL from `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`.
+For separate API deployments, set `CLERK_FRONTEND_API_URL`, `CLERK_JWT_KEY`, or
+`CLERK_PEM_PUBLIC_KEY` in that API environment.
+
 Do not set `NEXT_PUBLIC_API_BASE_URL` for Fly unless intentionally overriding
 the checked-in `/api` proxy behavior.
 

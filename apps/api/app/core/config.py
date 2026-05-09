@@ -2,6 +2,8 @@ from pathlib import Path
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import AliasChoices
+from pydantic import Field
 from pydantic import field_validator
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings
@@ -19,7 +21,23 @@ class Settings(BaseSettings):
     local_organization_name: str = "Local Scheduling Organization"
     auth_mode: AuthMode = "clerk"
     clerk_secret_key: SecretStr | None = None
-    clerk_jwks_url: str = "https://api.clerk.com/v1/jwks"
+    clerk_publishable_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "CLERK_PUBLISHABLE_KEY",
+            "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+        ),
+    )
+    clerk_frontend_api_url: str | None = None
+    clerk_jwks_url: str | None = None
+    clerk_jwt_key: SecretStr | None = None
+    clerk_pem_public_key: SecretStr | None = None
+    clerk_authorized_parties: str = (
+        "http://localhost:3000,"
+        "http://127.0.0.1:3000,"
+        "http://localhost:3001,"
+        "http://127.0.0.1:3001"
+    )
 
     model_config = SettingsConfigDict(
         env_file=environment_file_path,
@@ -57,6 +75,24 @@ class Settings(BaseSettings):
 
         normalized_auth_mode = auth_mode.strip().lower()
         return normalized_auth_mode
+
+    @field_validator("clerk_frontend_api_url", "clerk_jwks_url", mode="before")
+    @classmethod
+    def normalize_optional_url(cls, url: object) -> object:
+        if not isinstance(url, str):
+            return url
+
+        normalized_url = url.strip().rstrip("/")
+        return normalized_url
+
+    def clerk_authorized_party_list(self) -> list[str]:
+        party_values = self.clerk_authorized_parties.split(",")
+        normalized_parties = [
+            party.strip().rstrip("/")
+            for party in party_values
+            if party.strip() != ""
+        ]
+        return normalized_parties
 
 
 @lru_cache

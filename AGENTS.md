@@ -5,3 +5,4 @@ Prefer Zod contracts for data validation and boundary definitions, and use them 
 Follow the repo coding standards in docs/architecture/coding_standards.md.
 Python tooling is managed with uv in this repo. Run Python commands through uv run ....
 Do not invoke bare pytest; always use uv run pytest (or uv run python -m pytest) so PATH does not matter.
+Don't auto deploy to fly.io unless I specifically ask you to, we are often working on features and don't want them deployed all the time right away.

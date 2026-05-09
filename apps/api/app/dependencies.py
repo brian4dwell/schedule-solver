@@ -73,7 +73,7 @@ def require_admin_user(
 
 
 def get_current_organization_id(
-    current_user: AuthenticatedUser = Depends(require_admin_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_db),
 ) -> UUID:
     organization = get_default_organization(session)

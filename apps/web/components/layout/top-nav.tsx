@@ -110,7 +110,7 @@ export function TopNav() {
   const userResult = useUser();
   const publicMetadataRole = roleFromPublicMetadata(userResult.user?.publicMetadata);
   const currentUserIsAdmin = userHasAdminRole(auth.orgRole, publicMetadataRole);
-  const setupLinks = currentUserIsAdmin ? setupMenu.links : [];
+  const setupLinks = setupMenu.links;
   const menuHasActiveLink = setupLinks.some((item) => {
     const isActive = isNavigationLinkActive(pathname, item.href);
 
@@ -155,23 +155,21 @@ export function TopNav() {
           >
             {availabilityLink.label}
           </Link>
-          {currentUserIsAdmin ? (
-            <details className="group relative shrink-0">
-              <summary className={menuTriggerClass}>{setupMenu.label}</summary>
-              <div className="absolute left-0 top-10 z-20 min-w-44 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
-                {setupLinks.map((item) => {
-                  const isActive = isNavigationLinkActive(pathname, item.href);
-                  const linkClass = buildLinkClass(isActive);
+          <details className="group relative shrink-0">
+            <summary className={menuTriggerClass}>{setupMenu.label}</summary>
+            <div className="absolute left-0 top-10 z-20 min-w-44 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+              {setupLinks.map((item) => {
+                const isActive = isNavigationLinkActive(pathname, item.href);
+                const linkClass = buildLinkClass(isActive);
 
-                  return (
-                    <Link key={item.href} href={item.href} className={`${linkClass} w-full`}>
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            </details>
-          ) : null}
+                return (
+                  <Link key={item.href} href={item.href} className={`${linkClass} w-full`}>
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </details>
           <Link
             href={reportsLink.href}
             className={buildLinkClass(isNavigationLinkActive(pathname, reportsLink.href))}

@@ -5,8 +5,9 @@ primary_region = "ord"
   dockerfile = "Dockerfile"
 
 [env]
-  AUTH_MODE = "local"
-  ENVIRONMENT = "development"
+  AUTH_MODE = "clerk"
+  CLERK_AUTHORIZED_PARTIES = "https://bespoke-web.fly.dev"
+  ENVIRONMENT = "production"
   HOSTNAME = "0.0.0.0"
   INTERNAL_API_BASE_URL = "http://127.0.0.1:8000"
   NEXT_PUBLIC_API_BASE_URL = "/api"
