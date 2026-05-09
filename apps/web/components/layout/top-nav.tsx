@@ -24,11 +24,6 @@ const availabilityLink: NavigationLink = {
   label: "Availability",
 };
 
-const reportsLink: NavigationLink = {
-  href: "/fairness",
-  label: "Reports",
-};
-
 const setupMenu: NavigationMenu = {
   label: "Setup",
   links: [
@@ -47,6 +42,20 @@ const setupMenu: NavigationMenu = {
     {
       href: "/providers",
       label: "Providers",
+    },
+  ],
+};
+
+const reportsMenu: NavigationMenu = {
+  label: "Reports",
+  links: [
+    {
+      href: "/reports/monthly-availability",
+      label: "Monthly Availability",
+    },
+    {
+      href: "/reports/fairness",
+      label: "Fairness",
     },
   ],
 };
@@ -111,12 +120,19 @@ export function TopNav() {
   const publicMetadataRole = roleFromPublicMetadata(userResult.user?.publicMetadata);
   const currentUserIsAdmin = userHasAdminRole(auth.orgRole, publicMetadataRole);
   const setupLinks = setupMenu.links;
-  const menuHasActiveLink = setupLinks.some((item) => {
+  const setupMenuHasActiveLink = setupLinks.some((item) => {
     const isActive = isNavigationLinkActive(pathname, item.href);
 
     return isActive;
   });
-  const menuTriggerClass = buildMenuTriggerClass(menuHasActiveLink);
+  const setupMenuTriggerClass = buildMenuTriggerClass(setupMenuHasActiveLink);
+  const reportLinks = reportsMenu.links;
+  const reportsMenuHasActiveLink = reportLinks.some((item) => {
+    const isActive = isNavigationLinkActive(pathname, item.href);
+
+    return isActive;
+  });
+  const reportsMenuTriggerClass = buildMenuTriggerClass(reportsMenuHasActiveLink);
 
   return (
     <header className="border-b border-slate-200 bg-white">
@@ -156,7 +172,7 @@ export function TopNav() {
             {availabilityLink.label}
           </Link>
           <details className="group relative shrink-0">
-            <summary className={menuTriggerClass}>{setupMenu.label}</summary>
+            <summary className={setupMenuTriggerClass}>{setupMenu.label}</summary>
             <div className="absolute left-0 top-10 z-20 min-w-44 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
               {setupLinks.map((item) => {
                 const isActive = isNavigationLinkActive(pathname, item.href);
@@ -170,12 +186,21 @@ export function TopNav() {
               })}
             </div>
           </details>
-          <Link
-            href={reportsLink.href}
-            className={buildLinkClass(isNavigationLinkActive(pathname, reportsLink.href))}
-          >
-            {reportsLink.label}
-          </Link>
+          <details className="group relative shrink-0">
+            <summary className={reportsMenuTriggerClass}>{reportsMenu.label}</summary>
+            <div className="absolute left-0 top-10 z-20 min-w-56 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+              {reportLinks.map((item) => {
+                const isActive = isNavigationLinkActive(pathname, item.href);
+                const linkClass = buildLinkClass(isActive);
+
+                return (
+                  <Link key={item.href} href={item.href} className={`${linkClass} w-full`}>
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </details>
         </div>
       </nav>
     </header>

@@ -30,7 +30,12 @@ const dashboardLinks = [
     description: "Build draft schedules and review completed schedule versions.",
   },
   {
-    href: "/fairness",
+    href: "/reports/monthly-availability",
+    title: "Monthly Availability",
+    description: "Review Provider availability selections on a calendar report.",
+  },
+  {
+    href: "/reports/fairness",
     title: "Fairness",
     description: "Track fairness status, timeline activity, and transaction reasons.",
   },

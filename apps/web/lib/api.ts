@@ -29,6 +29,11 @@ import {
   type RoomTypeFormValues,
 } from "@/lib/schemas/room";
 import {
+  monthlyAvailabilityReportApiSchema,
+  monthlyAvailabilitySelectionSchema,
+  type MonthlyAvailabilityReportApi,
+} from "@/lib/schemas/reports";
+import {
   persistedScheduleVersionApiSchema,
   providerSlotEligibilityApiSchema,
   schedulePeriodCloneResponseApiSchema,
@@ -112,6 +117,7 @@ export type ProviderSlotEligibility = ProviderSlotEligibilityApi;
 export type ProviderWeeklyAvailabilityRecord = ProviderWeeklyAvailability;
 export type FairnessReport = FairnessReportApi;
 export type { FairnessStatus };
+export type MonthlyAvailabilityReport = MonthlyAvailabilityReportApi;
 
 export type ScheduleAssignmentSavePayload = {
   room_slot_id: string;
@@ -648,5 +654,21 @@ export async function getFairnessReport(): Promise<FairnessReport> {
     cache: "no-store",
   });
   const report = fairnessReportApiSchema.parse(responseJson);
+  return report;
+}
+
+export async function getMonthlyAvailabilityReport(
+  year: number,
+  month: number,
+): Promise<MonthlyAvailabilityReport> {
+  const selection = monthlyAvailabilitySelectionSchema.parse({ year, month });
+  const params = new URLSearchParams();
+  params.set("year", selection.year.toString());
+  params.set("month", selection.month.toString());
+  const path = `/reports/monthly-availability?${params.toString()}`;
+  const responseJson = await requestJson<unknown>(path, {
+    cache: "no-store",
+  });
+  const report = monthlyAvailabilityReportApiSchema.parse(responseJson);
   return report;
 }
