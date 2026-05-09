@@ -137,6 +137,17 @@ function formatTimelineDate(value: string) {
   return formattedValue;
 }
 
+function formatDayHeaderDate(value: Date) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "2-digit",
+    timeZone: "UTC",
+  });
+  const formattedValue = formatter.format(value);
+  const dateLabel = formattedValue.replace(" ", "-");
+  return dateLabel;
+}
+
 function createInitialVersion(schedulePeriod: SchedulePeriod): ScheduleVersion {
   const createdAt = new Date().toISOString();
   const version = {
@@ -2277,6 +2288,8 @@ export function ScheduleWorkspace({
           <div className="grid min-h-[32rem] gap-3 overflow-x-auto p-4 lg:grid-cols-5">
             {visibleColumns.map((column) => {
               const dayAssignments = assignmentsForDay(workingVersion, column.key);
+              const dayDate = dateForDayKey(schedulePeriod, column.key);
+              const dayDateLabel = formatDayHeaderDate(dayDate);
               return (
                 <div
                   key={column.key}
@@ -2289,7 +2302,7 @@ export function ScheduleWorkspace({
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <h4 className="text-sm font-semibold text-slate-950">
-                          {column.label}
+                          {column.label} ({dayDateLabel})
                         </h4>
                         <p className="text-xs text-slate-500">
                           {dayAssignments.length} rooms
