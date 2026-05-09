@@ -280,7 +280,7 @@ Implemented in `apps/web`:
 - Next.js App Router app.
 - Tailwind CSS styling.
 - Zod schemas for form and API boundaries.
-- App shell with dashboard, sidebar, and top navigation.
+- App shell with dashboard and two-tier top navigation.
 - Centers pages and forms.
 - Rooms pages and forms.
 - Room Types pages and forms.

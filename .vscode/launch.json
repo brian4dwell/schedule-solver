@@ -25,7 +25,8 @@
       "type": "node-terminal",
       "request": "launch",
       "command": "uv run uvicorn app.main:app --reload --port 8000",
-      "cwd": "${workspaceFolder}/apps/api"
+      "cwd": "${workspaceFolder}/apps/api",
+      "envFile": "${workspaceFolder}/apps/api/app/.env"
     }
   ],
   "compounds": [
