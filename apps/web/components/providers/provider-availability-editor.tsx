@@ -93,6 +93,34 @@ function labelForOption(option: AvailabilityOption) {
   return label;
 }
 
+function colorClassForWeekday(weekday: Weekday) {
+  if (weekday === "monday") {
+    return "border-rose-200 bg-rose-50";
+  }
+
+  if (weekday === "tuesday") {
+    return "border-amber-200 bg-amber-50";
+  }
+
+  if (weekday === "wednesday") {
+    return "border-lime-200 bg-lime-50";
+  }
+
+  if (weekday === "thursday") {
+    return "border-emerald-200 bg-emerald-50";
+  }
+
+  if (weekday === "friday") {
+    return "border-sky-200 bg-sky-50";
+  }
+
+  if (weekday === "saturday") {
+    return "border-indigo-200 bg-indigo-50";
+  }
+
+  return "border-violet-200 bg-violet-50";
+}
+
 function createDayMap(record: ProviderWeeklyAvailabilityRecord) {
   const dayMap = new Map<Weekday, AvailabilityOption[]>();
   record.days.forEach((day) => {
@@ -501,6 +529,7 @@ export function ProviderAvailabilityEditor(props: {
           </div>
           {weekdayOrder.map((weekday) => {
             const options = dayMap.get(weekday) ?? defaultOptionsForWeekday(weekday);
+            const colorClassName = colorClassForWeekday(weekday);
             const weekdayDate = selectedPeriod === null
               ? null
               : dateForWeekday(selectedPeriod, weekday);
@@ -510,7 +539,7 @@ export function ProviderAvailabilityEditor(props: {
             return (
               <label
                 key={weekday}
-                className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3"
+                className={`flex items-center justify-between gap-3 rounded-md border p-3 ${colorClassName}`}
               >
                 <span className="text-sm font-medium text-slate-700">
                   <span className="block">{labelForWeekday(weekday)}</span>
