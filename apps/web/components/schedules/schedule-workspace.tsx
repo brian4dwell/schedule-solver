@@ -2312,9 +2312,12 @@ export function ScheduleWorkspace({
                 >
                   <div className="border-b border-slate-200 px-3 py-2">
                     <div className="flex items-start justify-between gap-2">
-                      <div>
+                      <div className="min-w-0">
                         <h4 className="text-sm font-semibold text-slate-950">
-                          {column.label} ({dayDateLabel})
+                          <span className="block">{column.label}</span>
+                          <span className="text-[11px] font-medium leading-4 text-slate-500">
+                            ({dayDateLabel})
+                          </span>
                         </h4>
                         <p className="text-xs text-slate-500">
                           {dayAssignments.length} rooms
@@ -2387,6 +2390,7 @@ export function ScheduleWorkspace({
                         providerPickerButtonLabel(selectedOption);
                       const providerPickerStatus =
                         providerPickerStatusLabel(selectedOption);
+                      const providerSelectionShouldShow = !compactModeEnabled;
                       const assignmentContainerClassName = shiftTypeContainerClassName(
                         assignment.shiftType,
                       );
@@ -2536,23 +2540,19 @@ export function ScheduleWorkspace({
                               </select>
                             ) : null}
                           </div>
-                          <div className="mt-3 border-t border-slate-100 pt-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-xs font-semibold uppercase text-slate-500">
-                                Provider
-                              </p>
-                              <span
-                                className={selectedStatusClassName}
-                              >
-                                {selectedStatusLabel}
-                              </span>
-                            </div>
-                            <div className="mt-2 max-h-44 space-y-1 overflow-y-auto">
-                              {compactModeEnabled ? (
-                                <p className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-medium text-slate-700">
-                                  {providerPickerLabel}
+                          {providerSelectionShouldShow ? (
+                            <div className="mt-3 border-t border-slate-100 pt-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs font-semibold uppercase text-slate-500">
+                                  Provider
                                 </p>
-                              ) : (
+                                <span
+                                  className={selectedStatusClassName}
+                                >
+                                  {selectedStatusLabel}
+                                </span>
+                              </div>
+                              <div className="mt-2 max-h-44 space-y-1 overflow-y-auto">
                                 <div className="flex items-stretch gap-2">
                                   <button
                                     type="button"
@@ -2600,8 +2600,7 @@ export function ScheduleWorkspace({
                                     </button>
                                   )}
                                 </div>
-                              )}
-                              {providerPickerIsOpen && !compactModeEnabled
+                                {providerPickerIsOpen
                                 ? providerOptions.map((option) => {
                                     const isSelected =
                                       option.provider.id === assignment.providerId;
@@ -2666,22 +2665,23 @@ export function ScheduleWorkspace({
                                   Add providers before assigning this slot.
                                 </p>
                               ) : null}
-                            </div>
-                            {selectedMessages.length > 0 ? (
-                              <div className="mt-2 space-y-1">
-                                {selectedMessages.map((message) => {
-                                  return (
-                                    <p
-                                      key={message}
-                                      className={selectedMessageClassName}
-                                    >
-                                      {message}
-                                    </p>
-                                  );
-                                })}
                               </div>
-                            ) : null}
-                          </div>
+                              {selectedMessages.length > 0 ? (
+                                <div className="mt-2 space-y-1">
+                                  {selectedMessages.map((message) => {
+                                    return (
+                                      <p
+                                        key={message}
+                                        className={selectedMessageClassName}
+                                      >
+                                        {message}
+                                      </p>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
                           </div>
                         </div>
                       );

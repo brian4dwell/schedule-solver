@@ -41,6 +41,46 @@ function labelForWeekday(weekday: Weekday) {
   return label;
 }
 
+function weekdayIndex(weekday: Weekday) {
+  const index = weekdayOrder.indexOf(weekday);
+
+  if (index === -1) {
+    throw new Error("Weekday must resolve to a day index.");
+  }
+
+  return index;
+}
+
+function dateAtUtcMidnight(value: string) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return date;
+}
+
+function addDays(value: Date, dayCount: number) {
+  const date = new Date(value);
+  const nextDayOfMonth = date.getUTCDate() + dayCount;
+  date.setUTCDate(nextDayOfMonth);
+  return date;
+}
+
+function dateForWeekday(schedulePeriod: SchedulePeriod, weekday: Weekday) {
+  const periodStart = dateAtUtcMidnight(schedulePeriod.start_date);
+  const dayOffset = weekdayIndex(weekday);
+  const date = addDays(periodStart, dayOffset);
+  return date;
+}
+
+function formatWeekdayDate(value: Date) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "2-digit",
+    timeZone: "UTC",
+  });
+  const formattedValue = formatter.format(value);
+  const dateLabel = formattedValue.replace(" ", "-");
+  return dateLabel;
+}
+
 function defaultOptionsForWeekday(weekday: Weekday) {
   const weekdayIsWeekend = weekendWeekdays.includes(weekday);
   const defaultOptions: AvailabilityOption[] = weekdayIsWeekend ? ["none"] : ["unset"];
@@ -173,6 +213,14 @@ export function ProviderAvailabilityEditor(props: {
     const mappedDays = createDayMap(record);
     return mappedDays;
   }, [record]);
+
+  const selectedPeriod = useMemo(() => {
+    const period = periods.find((candidate) => {
+      return candidate.id === scheduleWeekId;
+    });
+    const selectedPeriod = period ?? null;
+    return selectedPeriod;
+  }, [periods, scheduleWeekId]);
 
   const isLocked = record?.isLocked ?? false;
   const statusLabel = isLocked ? "Locked (Published)" : "Editable";
@@ -453,12 +501,25 @@ export function ProviderAvailabilityEditor(props: {
           </div>
           {weekdayOrder.map((weekday) => {
             const options = dayMap.get(weekday) ?? defaultOptionsForWeekday(weekday);
+            const weekdayDate = selectedPeriod === null
+              ? null
+              : dateForWeekday(selectedPeriod, weekday);
+            const weekdayDateLabel = weekdayDate === null
+              ? null
+              : formatWeekdayDate(weekdayDate);
             return (
               <label
                 key={weekday}
                 className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3"
               >
-                <span className="text-sm font-medium text-slate-700">{labelForWeekday(weekday)}</span>
+                <span className="text-sm font-medium text-slate-700">
+                  <span className="block">{labelForWeekday(weekday)}</span>
+                  {weekdayDateLabel !== null ? (
+                    <span className="block text-[11px] font-medium leading-4 text-slate-500">
+                      ({weekdayDateLabel})
+                    </span>
+                  ) : null}
+                </span>
                 <div className="flex flex-wrap justify-end gap-3">
                   {availabilityOptions.map((item) => {
                     const isChecked = options.includes(item);
