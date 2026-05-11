@@ -32,6 +32,11 @@ type CalendarDayCell = {
 
 type CalendarCell = CalendarEmptyCell | CalendarDayCell;
 
+type CalendarColumn = {
+  label: string;
+  weekdayIndex: number;
+};
+
 const monthOptions = [
   { value: 1, label: "January" },
   { value: 2, label: "February" },
@@ -47,14 +52,74 @@ const monthOptions = [
   { value: 12, label: "December" },
 ];
 
-const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const weekdayColumns: CalendarColumn[] = [
+  { label: "Sun", weekdayIndex: 0 },
+  { label: "Mon", weekdayIndex: 1 },
+  { label: "Tue", weekdayIndex: 2 },
+  { label: "Wed", weekdayIndex: 3 },
+  { label: "Thu", weekdayIndex: 4 },
+  { label: "Fri", weekdayIndex: 5 },
+  { label: "Sat", weekdayIndex: 6 },
+];
 
 function dateAtUtcMidnight(value: string): Date {
   const date = new Date(`${value}T00:00:00.000Z`);
   return date;
 }
 
-function calendarCells(days: MonthlyAvailabilityDayApi[]): CalendarCell[] {
+function visibleWeekdayColumns(showWeekends: boolean): CalendarColumn[] {
+  if (showWeekends) {
+    return weekdayColumns;
+  }
+
+  const columns = weekdayColumns.filter((column) => {
+    const isWeekend = column.weekdayIndex === 0 || column.weekdayIndex === 6;
+    return !isWeekend;
+  });
+  return columns;
+}
+
+function dateIsVisible(value: string, showWeekends: boolean): boolean {
+  if (showWeekends) {
+    return true;
+  }
+
+  const date = dateAtUtcMidnight(value);
+  const weekdayIndex = date.getUTCDay();
+  const isWeekend = weekdayIndex === 0 || weekdayIndex === 6;
+  const isVisible = !isWeekend;
+  return isVisible;
+}
+
+function leadingEmptyCellCountForDays(
+  days: MonthlyAvailabilityDayApi[],
+  showWeekends: boolean,
+): number {
+  const firstDay = days[0];
+
+  if (firstDay === undefined) {
+    return 0;
+  }
+
+  const firstDate = dateAtUtcMidnight(firstDay.date);
+  const weekdayIndex = firstDate.getUTCDay();
+
+  if (showWeekends) {
+    return weekdayIndex;
+  }
+
+  if (weekdayIndex === 0 || weekdayIndex === 6) {
+    return 0;
+  }
+
+  const weekdayOffset = weekdayIndex - 1;
+  return weekdayOffset;
+}
+
+function calendarCells(
+  days: MonthlyAvailabilityDayApi[],
+  showWeekends: boolean,
+): CalendarCell[] {
   const firstDay = days[0];
   const cells: CalendarCell[] = [];
 
@@ -62,8 +127,7 @@ function calendarCells(days: MonthlyAvailabilityDayApi[]): CalendarCell[] {
     return cells;
   }
 
-  const firstDate = dateAtUtcMidnight(firstDay.date);
-  const leadingEmptyCellCount = firstDate.getUTCDay();
+  const leadingEmptyCellCount = leadingEmptyCellCountForDays(days, showWeekends);
 
   for (let index = 0; index < leadingEmptyCellCount; index += 1) {
     const key = `empty-leading-${index}`;
@@ -72,6 +136,12 @@ function calendarCells(days: MonthlyAvailabilityDayApi[]): CalendarCell[] {
   }
 
   days.forEach((day) => {
+    const isVisible = dateIsVisible(day.date, showWeekends);
+
+    if (!isVisible) {
+      return;
+    }
+
     const key = day.date;
     const cell: CalendarDayCell = { kind: "day", key, day };
     cells.push(cell);
@@ -307,7 +377,7 @@ function calendarDayCell(day: MonthlyAvailabilityDayApi) {
     return !isScheduled;
   });
   const backgroundClassName = hasProviders ? "bg-white" : "bg-slate-50";
-  const cellClassName = `min-h-36 rounded-md border border-slate-200 p-2 ${backgroundClassName}`;
+  const cellClassName = `min-h-72 rounded-md border border-slate-200 p-2 ${backgroundClassName}`;
 
   return (
     <div className={cellClassName}>
@@ -317,7 +387,7 @@ function calendarDayCell(day: MonthlyAvailabilityDayApi) {
           {day.providers.length}
         </span>
       </div>
-      <div className="mt-2 max-h-32 space-y-2 overflow-y-auto pr-1">
+      <div className="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">
         {scheduledProviders.map((provider) => {
           return (
             <div
@@ -379,6 +449,7 @@ export function MonthlyAvailabilityReport({
 }: MonthlyAvailabilityReportProps) {
   const [selectedMonth, setSelectedMonth] = useState(initialReport.month);
   const [selectedYear, setSelectedYear] = useState(initialReport.year);
+  const [showWeekends, setShowWeekends] = useState(false);
   const [selectedSchedulePeriodIds, setSelectedSchedulePeriodIds] = useState(
     () => selectedSchedulePeriodIdsFromReport(initialReport),
   );
@@ -387,9 +458,14 @@ export function MonthlyAvailabilityReport({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const selectedSchedulePeriodIdKey = selectedSchedulePeriodIds.join(",");
   const cells = useMemo(() => {
-    const nextCells = calendarCells(report.days);
+    const nextCells = calendarCells(report.days, showWeekends);
     return nextCells;
-  }, [report.days]);
+  }, [report.days, showWeekends]);
+  const visibleColumns = useMemo(() => {
+    const columns = visibleWeekdayColumns(showWeekends);
+    return columns;
+  }, [showWeekends]);
+  const calendarGridClassName = showWeekends ? "grid-cols-7" : "grid-cols-5";
   const providerSelectionCount = useMemo(() => {
     const count = totalProviderSelections(report.days);
     return count;
@@ -559,6 +635,17 @@ export function MonthlyAvailabilityReport({
             </label>
           </div>
         </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-300"
+              checked={showWeekends}
+              onChange={(event) => setShowWeekends(event.target.checked)}
+            />
+            <span>Show weekends</span>
+          </label>
+        </div>
         <div className="mt-4 grid gap-3 text-sm sm:grid-cols-5">
           <div>
             <p className="text-xs font-semibold uppercase text-slate-500">Providers</p>
@@ -636,14 +723,14 @@ export function MonthlyAvailabilityReport({
 
       <section className="overflow-x-auto">
         <div className="min-w-[960px]">
-          <div className="grid grid-cols-7 gap-2">
-            {weekdayLabels.map((weekday) => {
+          <div className={`grid gap-2 ${calendarGridClassName}`}>
+            {visibleColumns.map((column) => {
               return (
                 <div
-                  key={weekday}
+                  key={column.label}
                   className="px-2 py-1 text-xs font-semibold uppercase text-slate-500"
                 >
-                  {weekday}
+                  {column.label}
                 </div>
               );
             })}
@@ -652,7 +739,7 @@ export function MonthlyAvailabilityReport({
                 return (
                   <div
                     key={cell.key}
-                    className="min-h-36 rounded-md border border-dashed border-slate-200 bg-slate-100/60"
+                    className="min-h-72 rounded-md border border-dashed border-slate-200 bg-slate-100/60"
                   />
                 );
               }
