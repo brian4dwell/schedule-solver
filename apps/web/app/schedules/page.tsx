@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { SchedulesTable } from "@/components/schedules/schedules-table";
@@ -86,6 +88,29 @@ async function loadSchedulePeriodSummaries() {
   return periodSummaries;
 }
 
+function SchedulingRulesCallout() {
+  return (
+    <section className="mb-6 rounded-md border border-teal-200 bg-white px-4 py-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-950">Scheduling rules</h3>
+          <p className="mt-1 max-w-3xl text-sm text-slate-600">
+            Review the hard blockers, warnings, and solver scoring rules that apply to schedule drafts.
+          </p>
+        </div>
+        <Link
+          href="/scheduling-rules.html"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-10 items-center justify-center rounded-md border border-teal-700 px-4 text-sm font-semibold text-teal-800 hover:bg-teal-50"
+        >
+          Read scheduling rules
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 export default async function SchedulesPage() {
   const periods = await loadSchedulePeriodSummaries();
 
@@ -97,6 +122,7 @@ export default async function SchedulesPage() {
         actionHref="/schedules/new"
         actionLabel="New schedule"
       />
+      <SchedulingRulesCallout />
       <SchedulesTable periods={periods} />
     </AppShell>
   );

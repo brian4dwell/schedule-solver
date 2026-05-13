@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Schedule Solver Rules</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f8fafc;
+      --panel: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #cbd5e1;
+      --teal: #0f766e;
+      --red: #b91c1c;
+      --amber: #b45309;
+      --slate: #334155;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 56px;
+    }
+
+    header {
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 20px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 2rem;
+      line-height: 1.15;
+    }
+
+    h2 {
+      margin: 32px 0 12px;
+      font-size: 1.35rem;
+      color: var(--slate);
+    }
+
+    h3 {
+      margin: 24px 0 8px;
+      font-size: 1.05rem;
+      color: var(--slate);
+    }
+
+    p {
+      margin: 8px 0;
+    }
+
+    ul,
+    ol {
+      margin: 8px 0 16px 24px;
+      padding: 0;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+
+    code {
+      border-radius: 4px;
+      background: #e2e8f0;
+      padding: 1px 5px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 0.95em;
+    }
+
+    table {
+      width: 100%;
+      margin: 12px 0 20px;
+      border-collapse: collapse;
+      background: var(--panel);
+      font-size: 0.95rem;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #e2e8f0;
+      color: #1e293b;
+    }
+
+    section {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 18px;
+      margin: 18px 0;
+    }
+
+    .lede {
+      max-width: 860px;
+      color: var(--muted);
+      font-size: 1.05rem;
+    }
+
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    .hard {
+      background: #fee2e2;
+      color: var(--red);
+    }
+
+    .warning {
+      background: #fef3c7;
+      color: var(--amber);
+    }
+
+    .soft {
+      background: #ccfbf1;
+      color: var(--teal);
+    }
+
+    .note {
+      border-left: 4px solid var(--teal);
+      background: #f0fdfa;
+      padding: 10px 12px;
+      color: #134e4a;
+    }
+
+    .caution {
+      border-left: 4px solid var(--amber);
+      background: #fffbeb;
+      padding: 10px 12px;
+      color: #78350f;
+    }
+
+    .source-list {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Schedule Solver Rules</h1>
+      <p class="lede">
+        This document explains the scheduling rules currently applied by the Schedule Solver product.
+        It separates what schedulers see in the UI and API from what the solver enforces when it generates a draft.
+      </p>
+      <p class="source-list">
+        Current as of 2026-05-13. Source areas: schedule workspace, API schemas and routes,
+        provider eligibility service, solver contracts, solver implementation, fairness service, and project docs.
+      </p>
+    </header>
+
+    <section>
+      <h2>Rule Severity</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Meaning</th>
+            <th>Publish behavior</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tag hard">Hard</span></td>
+            <td>The assignment is not allowed for a published schedule.</td>
+            <td>The API rejects publish with HTTP 409.</td>
+          </tr>
+          <tr>
+            <td><span class="tag warning">Warning</span></td>
+            <td>The assignment or schedule should be reviewed, but the backend treats it as publishable.</td>
+            <td>The API does not reject publish for warning-only issues.</td>
+          </tr>
+          <tr>
+            <td><span class="tag soft">Soft</span></td>
+            <td>The solver uses the rule as a scoring preference when choosing among valid schedules.</td>
+            <td>Soft rules do not block publish.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="caution">
+        Current UI nuance: the Schedule constraints table counts only hard rows as publish blockers,
+        but the client-side publish handler currently treats any selected Provider status other than
+        <code>valid</code> as not publishable. That means a UI warning can prevent the button flow
+        even though the API publish endpoint only blocks hard violations.
+      </p>
+    </section>
+
+    <section>
+      <h2>UI And API Rules</h2>
+
+      <h3>Schedule Periods</h3>
+      <ul>
+        <li>A Schedule Period has a name, start date, end date, and status.</li>
+        <li>The API rejects a period whose end date is before the start date.</li>
+        <li>The current availability workflow treats a Schedule Period as a schedule week.</li>
+        <li>Deleting a Schedule Period removes its versions, assignments, violations, schedule jobs, fairness records, and weekly availability rows.</li>
+      </ul>
+
+      <h3>Rooms, Room Types, And MD-Only Slots</h3>
+      <ul>
+        <li>Only active Centers can receive new Rooms.</li>
+        <li>Only active Rooms are listed for scheduling.</li>
+        <li>Rooms can require one or more Room Types.</li>
+        <li>Each Room Type requirement currently uses proficiency level <code>1</code> when added through the room UI/API path.</li>
+        <li>An <code>md_only</code> Room requires the assigned Provider to have provider type <code>doctor</code>.</li>
+        <li>If a Room has existing schedule records, deleting it deactivates it instead of removing the row.</li>
+      </ul>
+
+      <h3>Providers, Credentials, And Skills</h3>
+      <ul>
+        <li>Only active Providers are returned by the Providers API and shown in the scheduling UI.</li>
+        <li>Provider type must be one of <code>crna</code>, <code>doctor</code>, <code>staff</code>, <code>contractor</code>, or <code>other</code>.</li>
+        <li>Employment type must be one of <code>employee</code>, <code>contractor</code>, <code>locum</code>, or <code>other</code>.</li>
+        <li>Credentialed Center IDs must point to active Centers in the same organization.</li>
+        <li>Room Type skill IDs must point to active Room Types in the same organization.</li>
+        <li>Duplicate credentialed Center IDs and Room Type skill IDs are collapsed before saving.</li>
+        <li>Provider Center Credentials can also carry active, start, and expiration fields in the database. The eligibility service uses those fields when present.</li>
+      </ul>
+
+      <h3>Weekly Availability</h3>
+      <ul>
+        <li>Availability is stored per Provider, Schedule Period, and weekday.</li>
+        <li>Every replace request must contain exactly seven day rows.</li>
+        <li>Each weekday must appear exactly once.</li>
+        <li>Allowed options are <code>full_shift</code>, <code>first_half</code>, <code>second_half</code>, <code>short_shift</code>, <code>none</code>, and <code>unset</code>.</li>
+        <li>Each day must have at least one option.</li>
+        <li><code>unset</code> cannot be combined with any other option.</li>
+        <li><code>none</code> cannot be combined with any other option.</li>
+        <li>Work options can be combined with each other.</li>
+        <li>Min and max requested shifts must be between <code>0</code> and <code>14</code>.</li>
+        <li>Min requested shifts must be less than or equal to max requested shifts.</li>
+        <li>The backend rounds min and max requests to the nearest half shift before validation.</li>
+        <li>The backend validates min and max against available half-shift units: full-shift days count as two units, half/short days count as one unit.</li>
+        <li>The frontend validates min and max against the count of work-available days, so it can be stricter than the backend for half-shift values.</li>
+        <li>Reading missing availability returns weekday defaults: weekdays default to <code>unset</code>, weekends default to <code>none</code>.</li>
+        <li>Saving a day with only <code>unset</code> stores that day as <code>none</code>.</li>
+        <li>Published schedule weeks lock availability edits. The API rejects replace and delete with HTTP 409.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Provider Eligibility</h2>
+      <p>
+        The backend Provider eligibility service is the main rule engine for manual assignment,
+        saved draft validation, publish validation, and solver candidate generation.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Rule</th>
+            <th>Severity</th>
+            <th>Constraint type</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Provider is inactive.</td>
+            <td><span class="tag hard">Hard</span></td>
+            <td><code>inactive_provider</code></td>
+          </tr>
+          <tr>
+            <td>Slot requires a provider type and the Provider type does not match.</td>
+            <td><span class="tag hard">Hard</span></td>
+            <td><code>provider_type_mismatch</code></td>
+          </tr>
+          <tr>
+            <td>Provider has no credential for the Center.</td>
+            <td><span class="tag hard">Hard</span></td>
+            <td><code>missing_center_credential</code></td>
+          </tr>
+          <tr>
+            <td>Provider credential is inactive, starts after the slot starts, or expires before the slot ends.</td>
+            <td><span class="tag hard">Hard</span></td>
+            <td><code>inactive_center_credential</code></td>
+          </tr>
+          <tr>
+            <td>Provider lacks a required Room Type skill.</td>
+            <td><span class="tag hard">Hard</span></td>
+            <td><code>missing_required_skill</code></td>
+          </tr>
+          <tr>
+            <td>Provider has the required Room Type skill but below the required proficiency level.</td>
+            <td><span class="tag hard">Hard</span></td>
+            <td><code>insufficient_required_skill_level</code></td>
+          </tr>
+          <tr>
+            <td>Room is MD-only and Provider type is not <code>doctor</code>.</td>
+            <td><span class="tag hard">Hard</span></td>
+            <td><code>md_requirement_not_met</code></td>
+          </tr>
+          <tr>
+            <td>No availability row exists for the slot day, or the day contains <code>unset</code>.</td>
+            <td><span class="tag hard">Hard</span></td>
+            <td><code>provider_availability_unset</code></td>
+          </tr>
+          <tr>
+            <td>The day contains <code>none</code>.</td>
+            <td><span class="tag hard">Hard</span></td>
+            <td><code>provider_unavailable</code></td>
+          </tr>
+          <tr>
+            <td>The day does not include the slot shift type and cannot be accommodated by full-shift availability.</td>
+            <td><span class="tag hard">Hard</span></td>
+            <td><code>provider_shift_type_unavailable</code></td>
+          </tr>
+          <tr>
+            <td>Provider is already assigned to an overlapping slot in the same schedule version.</td>
+            <td><span class="tag hard">Hard</span></td>
+            <td><code>provider_double_booked</code></td>
+          </tr>
+          <tr>
+            <td>Slot has no Provider assigned at publish time.</td>
+            <td><span class="tag hard">Hard</span></td>
+            <td><code>provider_assignment_required</code></td>
+          </tr>
+          <tr>
+            <td>Provider offered <code>full_shift</code> availability and is assigned to <code>first_half</code>, <code>second_half</code>, or <code>short_shift</code>.</td>
+            <td><span class="tag warning">Warning</span></td>
+            <td><code>full_shift_availability_accommodation</code></td>
+          </tr>
+          <tr>
+            <td>Provider is over max requested shifts for the schedule week.</td>
+            <td><span class="tag warning">Warning</span></td>
+            <td><code>provider_max_shifts_exceeded</code></td>
+          </tr>
+          <tr>
+            <td>Provider is below min requested shifts for the schedule week.</td>
+            <td><span class="tag warning">Warning</span></td>
+            <td><code>provider_min_shifts_not_met</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Overlap Exception</h3>
+      <p>
+        A Provider may overlap a <code>first_half</code> assignment with a <code>second_half</code> assignment
+        only when both assignments are in the same Center. Other overlaps are hard violations.
+      </p>
+
+      <h3>Full-Shift Accommodation</h3>
+      <p>
+        <code>full_shift</code> availability can cover a shorter slot type.
+        This is treated as eligible with a warning, not as a hard violation.
+      </p>
+    </section>
+
+    <section>
+      <h2>Manual Scheduling Flow</h2>
+
+      <h3>Provider Picker</h3>
+      <ul>
+        <li>The UI computes local eligibility so the picker can show eligible Providers first.</li>
+        <li>The UI shows ineligible Providers with reason text instead of hiding them.</li>
+        <li>The UI calls <code>POST /schedule-provider-eligibility</code> when a Provider is selected.</li>
+        <li>Backend reasons are merged with local reasons after selection.</li>
+        <li>Double-booked Provider options are disabled in the picker.</li>
+        <li>Other hard-ineligible Provider options remain visible and can be selected, but the slot becomes invalid.</li>
+        <li>If backend eligibility verification fails, the UI adds <code>provider_eligibility_check_failed</code> as a hard reason.</li>
+      </ul>
+
+      <h3>Draft Save</h3>
+      <ul>
+        <li>Saving a draft creates a new immutable Schedule Version.</li>
+        <li>Saving does not mutate older Schedule Versions.</li>
+        <li>Assignments may have a null Provider so incomplete drafts can be preserved.</li>
+        <li>Unassigned slots do not create draft constraint violations.</li>
+        <li>Assigned Providers are validated through backend eligibility during draft save.</li>
+        <li>All eligibility violations and warnings from assigned Providers are persisted as Constraint Violations.</li>
+        <li>Shift-request warnings are also created for active Providers with availability rows.</li>
+        <li>If the draft has a parent version, slot dates are preserved from the parent unless <code>allow_slot_date_change</code> is true.</li>
+        <li>Fairness snapshots and events are recorded for saved versions.</li>
+      </ul>
+
+      <h3>Publish</h3>
+      <ul>
+        <li>Publishing always re-runs Provider eligibility against current backend data.</li>
+        <li>Publishing treats unassigned slots as hard violations.</li>
+        <li>The API rejects publish when any hard violation exists.</li>
+        <li>The API allows publish when only warning-level issues exist.</li>
+        <li>Publishing marks the chosen Schedule Version as <code>published</code>.</li>
+        <li>Other published versions for the same period are marked <code>superseded</code>.</li>
+        <li>The Schedule Period is marked <code>published</code>.</li>
+        <li>Published schedules rebuild the published fairness ledger.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Solver Rules</h2>
+      <p>
+        The solver generates draft Schedule Versions. It never publishes a schedule directly.
+        It uses Google OR-Tools CP-SAT for assignment decisions.
+      </p>
+
+      <h3>Solver Inputs</h3>
+      <ul>
+        <li>Organization ID and Schedule Period ID.</li>
+        <li>Rooms and their active status, MD-only flag, Center, and required Room Type skills.</li>
+        <li>Providers and their active status, provider type, Room Type skills, weekly availability, preferences, and fairness state.</li>
+        <li>Provider Center Credentials.</li>
+        <li>Shift Requirements inside the Schedule Period.</li>
+        <li>When the UI sends current board assignments to generation, those assignments become solver shift requirements with a locked Provider when one is already selected.</li>
+      </ul>
+
+      <h3>Candidate Generation</h3>
+      <ul>
+        <li>The solver first builds valid Provider/shift candidates.</li>
+        <li>If a shift has a locked Provider, only that Provider can be a candidate.</li>
+        <li>If a shift references a missing Room, no candidates are produced for that shift.</li>
+        <li>If a shift references an inactive Room, no Provider is eligible for that shift.</li>
+        <li>Provider candidates must pass the same backend eligibility evaluator used by manual scheduling.</li>
+        <li>The solver does not create decision variables for hard-ineligible Provider/shift combinations.</li>
+        <li>If a shift has fewer candidates than its required Provider count, generation is infeasible.</li>
+        <li>If no shift requirements exist, generation is infeasible with <code>missing_shift_requirements</code>.</li>
+      </ul>
+
+      <h3>Hard Solver Constraints</h3>
+      <ul>
+        <li>Every shift requirement must receive exactly <code>required_provider_count</code> assignments.</li>
+        <li>A Provider cannot be assigned to overlapping shifts unless the split-day same-Center exception applies.</li>
+        <li>Missing or inactive Rooms cannot be assigned.</li>
+        <li>Inactive Providers cannot be assigned.</li>
+        <li>Provider type requirements must match.</li>
+        <li>Center credentials must exist and be active for the shift time.</li>
+        <li>Required Room Type skills and proficiency levels must be satisfied.</li>
+        <li>MD-only Rooms require a Provider type of <code>doctor</code>.</li>
+        <li>Availability must exist and must not be <code>unset</code> or <code>none</code>.</li>
+        <li>The shift type must be available, except full-shift availability can cover shorter shifts with a warning.</li>
+      </ul>
+
+      <h3>Solver Objective</h3>
+      <p>
+        After hard constraints are satisfied, the solver chooses the highest-scoring schedule using weighted objective terms.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Objective term</th>
+            <th>Current behavior</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Minimum shift requests</td>
+            <td>Penalizes falling below <code>min_shifts_requested</code>.</td>
+          </tr>
+          <tr>
+            <td>Maximum shift requests</td>
+            <td>Penalizes going above <code>max_shifts_requested</code>.</td>
+          </tr>
+          <tr>
+            <td>Assignment balance</td>
+            <td>Penalizes differences in assignment totals between Providers.</td>
+          </tr>
+          <tr>
+            <td>Fairness pressure</td>
+            <td>Applies stronger penalty to assigning Providers with higher fairness pressure.</td>
+          </tr>
+          <tr>
+            <td>Provider Center preference</td>
+            <td>Adds score for matching active Provider Center preferences.</td>
+          </tr>
+          <tr>
+            <td>Provider shift-type preference</td>
+            <td>Adds score for matching active Provider shift-type preferences.</td>
+          </tr>
+          <tr>
+            <td>Manager hidden Center preference</td>
+            <td>Adds score for matching active manager Center preferences.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Solver Output</h3>
+      <ul>
+        <li>A feasible run creates a draft Schedule Version with source <code>solver</code>.</li>
+        <li>Solver assignments are persisted as draft Assignments.</li>
+        <li>Single-provider shifts reuse the shift requirement room slot ID.</li>
+        <li>Multi-provider shifts receive distinct deterministic room slot IDs for each assignment.</li>
+        <li>Warnings are persisted as Constraint Violations.</li>
+        <li>Infeasible runs persist a draft version with violations and no assignments, then the API responds with HTTP 409.</li>
+        <li>Unfillable shifts use <code>unfillable_shift_requirement</code>.</li>
+        <li>An unsatisfied CP-SAT model uses <code>infeasible_solver_model</code>.</li>
+        <li>Solver metrics include solve duration, payload size, the too-long threshold, and whether that threshold was exceeded.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Fairness Rules</h2>
+      <p>
+        Fairness is recorded for saved and generated drafts, and the published fairness state is rebuilt after publish.
+        It is also part of the solver objective.
+      </p>
+      <ul>
+        <li>Below minimum shift request creates a debt event.</li>
+        <li>Above maximum shift request creates a debt event.</li>
+        <li>Full-shift availability used for a shorter shift creates a debt event.</li>
+        <li>Under-average workload creates favor credit.</li>
+        <li>Existing debt and favor credit decay before current schedule events are applied.</li>
+        <li>Provider priority tier changes the pressure multiplier.</li>
+        <li>Higher fairness pressure makes the solver less likely to assign that Provider when alternatives satisfy hard constraints.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Known Rule Mismatches To Watch</h2>
+      <ul>
+        <li>The API allows warning-only publish, but the UI publish handler can block warning statuses.</li>
+        <li>The frontend availability form validates min and max requested shifts by work-day count, while the backend validates using half-shift units.</li>
+        <li>The availability API stores a day submitted as only <code>unset</code> as <code>none</code>.</li>
+        <li>Manual UI assignments currently send <code>required_provider_type</code> as null, so provider-type matching applies mainly to saved assignments or solver shift requirements that carry that field.</li>
+        <li>Solver shift requirements loaded from stored <code>shift_requirements</code> currently use <code>full_shift</code> as their shift type.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
