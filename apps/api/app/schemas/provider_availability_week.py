@@ -1,4 +1,6 @@
 from uuid import UUID
+from decimal import Decimal
+from decimal import ROUND_HALF_UP
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -47,6 +49,42 @@ def count_work_available_days(days: list["ProviderAvailabilityDayInput"]) -> int
     return work_available_day_count
 
 
+def rounded_half_shift_value(value: float) -> float:
+    decimal_value = Decimal(str(value))
+    scaled_value = decimal_value * Decimal("2")
+    rounded_scaled_value = scaled_value.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    rounded_value = rounded_scaled_value / Decimal("2")
+    rounded_float_value = float(rounded_value)
+    return rounded_float_value
+
+
+def half_shift_units(value: float) -> int:
+    rounded_value = rounded_half_shift_value(value)
+    rounded_decimal_value = Decimal(str(rounded_value))
+    unit_decimal_value = rounded_decimal_value * Decimal("2")
+    unit_value = int(unit_decimal_value)
+    return unit_value
+
+
+def day_availability_units(day: "ProviderAvailabilityDayInput") -> int:
+    has_full_shift = "full_shift" in day.options
+    has_half_option = "first_half" in day.options or "second_half" in day.options or "short_shift" in day.options
+
+    if has_full_shift:
+        return 2
+
+    if has_half_option:
+        return 1
+
+    return 0
+
+
+def max_available_units(days: list["ProviderAvailabilityDayInput"]) -> int:
+    day_units = [day_availability_units(day) for day in days]
+    total_units = sum(day_units)
+    return total_units
+
+
 class ProviderAvailabilityDayInput(BaseModel):
     weekday: str
     options: list[str] = Field(default_factory=list)
@@ -81,18 +119,24 @@ class ProviderAvailabilityDayInput(BaseModel):
 
 
 class ProviderWeeklyAvailabilityReplaceRequest(BaseModel):
-    min_shifts_requested: int = Field(ge=0, le=14)
-    max_shifts_requested: int = Field(ge=0, le=14)
+    min_shifts_requested: float = Field(ge=0, le=14)
+    max_shifts_requested: float = Field(ge=0, le=14)
     days: list[ProviderAvailabilityDayInput] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_days(self) -> "ProviderWeeklyAvailabilityReplaceRequest":
+        normalized_minimum = rounded_half_shift_value(self.min_shifts_requested)
+        normalized_maximum = rounded_half_shift_value(self.max_shifts_requested)
+        self.min_shifts_requested = normalized_minimum
+        self.max_shifts_requested = normalized_maximum
         minimum = self.min_shifts_requested
         maximum = self.max_shifts_requested
         range_is_valid = minimum <= maximum
-        work_available_day_count = count_work_available_days(self.days)
-        minimum_fits_available_days = minimum <= work_available_day_count
-        maximum_fits_available_days = maximum <= work_available_day_count
+        available_units = max_available_units(self.days)
+        minimum_units = half_shift_units(minimum)
+        maximum_units = half_shift_units(maximum)
+        minimum_fits_available_days = minimum_units <= available_units
+        maximum_fits_available_days = maximum_units <= available_units
         day_count = len(self.days)
 
         if not range_is_valid:
@@ -125,6 +169,6 @@ class ProviderWeeklyAvailabilityRead(BaseModel):
     schedule_week_id: UUID
     provider_id: UUID
     is_locked: bool
-    min_shifts_requested: int
-    max_shifts_requested: int
+    min_shifts_requested: float
+    max_shifts_requested: float
     days: list[ProviderAvailabilityDayRead]

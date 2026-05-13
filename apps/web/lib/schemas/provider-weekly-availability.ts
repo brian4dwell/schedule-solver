@@ -50,6 +50,13 @@ function countWorkAvailableDays(value: { days: { options: AvailabilityOption[] }
   return workAvailableDayCount;
 }
 
+function roundToNearestHalf(value: number) {
+  const scaledValue = value * 2;
+  const roundedScaledValue = Math.round(scaledValue);
+  const roundedValue = roundedScaledValue / 2;
+  return roundedValue;
+}
+
 function shiftRequestsFitAvailability(value: {
   minShiftsRequested: number;
   maxShiftsRequested: number;
@@ -81,8 +88,8 @@ export const providerWeeklyAvailabilitySchema = z
     scheduleWeekId: z.string().uuid(),
     providerId: z.string().uuid(),
     isLocked: z.boolean(),
-    minShiftsRequested: z.number().int().min(0).max(14),
-    maxShiftsRequested: z.number().int().min(0).max(14),
+    minShiftsRequested: z.number().min(0).max(14),
+    maxShiftsRequested: z.number().min(0).max(14),
     days: z.array(providerWeeklyAvailabilityDaySchema).length(7),
   })
   .refine(
@@ -101,15 +108,25 @@ export const providerWeeklyAvailabilitySchema = z
   .refine(
     hasOneRowPerWeekday,
     { message: "Each weekday must appear exactly once." },
-  );
+  )
+  .transform((value) => {
+    const minShiftsRequested = roundToNearestHalf(value.minShiftsRequested);
+    const maxShiftsRequested = roundToNearestHalf(value.maxShiftsRequested);
+    const roundedValue = {
+      ...value,
+      minShiftsRequested,
+      maxShiftsRequested,
+    };
+    return roundedValue;
+  });
 
 export const providerWeeklyAvailabilityReadApiSchema = z
   .object({
     schedule_week_id: z.string().uuid(),
     provider_id: z.string().uuid(),
     is_locked: z.boolean(),
-    min_shifts_requested: z.number().int().min(0).max(14),
-    max_shifts_requested: z.number().int().min(0).max(14),
+    min_shifts_requested: z.number().min(0).max(14),
+    max_shifts_requested: z.number().min(0).max(14),
     days: z.array(providerWeeklyAvailabilityDaySchema).length(7),
   })
   .transform((value) => {
@@ -127,8 +144,8 @@ export const providerWeeklyAvailabilityReadApiSchema = z
 
 export const providerWeeklyAvailabilityReplaceApiSchema = z
   .object({
-    min_shifts_requested: z.number().int().min(0).max(14),
-    max_shifts_requested: z.number().int().min(0).max(14),
+    min_shifts_requested: z.number().min(0).max(14),
+    max_shifts_requested: z.number().min(0).max(14),
     days: z.array(providerWeeklyAvailabilityDaySchema).length(7),
   })
   .refine(

@@ -509,6 +509,7 @@ export function ProviderAvailabilityEditor(props: {
                 type="number"
                 min={0}
                 max={minShiftInputMaximum}
+                step={0.5}
                 value={record.minShiftsRequested}
                 disabled={isLocked}
                 onChange={(event) => updateMinShiftsRequested(event.target.value)}
@@ -521,6 +522,7 @@ export function ProviderAvailabilityEditor(props: {
                 type="number"
                 min={maxShiftInputMinimum}
                 max={workAvailableDayCount}
+                step={0.5}
                 value={record.maxShiftsRequested}
                 disabled={isLocked}
                 onChange={(event) => updateMaxShiftsRequested(event.target.value)}

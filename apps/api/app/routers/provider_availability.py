@@ -15,6 +15,7 @@ from app.schemas.provider_availability_week import ProviderAvailabilityDayRead
 from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityRead
 from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityReplaceRequest
 from app.schemas.provider_availability_week import WEEKDAY_VALUES
+from app.schemas.provider_availability_week import half_shift_units
 from app.schemas.provider_availability_week import options_include_work_availability
 
 router = APIRouter(tags=["provider-availability"])
@@ -81,13 +82,15 @@ def rows_for_provider_week(schedule_week_id: UUID, provider_id: UUID, organizati
 def build_read_response(schedule_week: SchedulePeriod, provider_id: UUID, rows: list[ProviderScheduleWeekAvailability]) -> ProviderWeeklyAvailabilityRead:
     row_by_weekday = {row.weekday: row for row in rows}
     first_row = rows[0] if len(rows) > 0 else None
-    min_shifts_requested = DEFAULT_MIN_SHIFTS_REQUESTED
-    max_shifts_requested = DEFAULT_MAX_SHIFTS_REQUESTED
+    min_shifts_requested = float(DEFAULT_MIN_SHIFTS_REQUESTED)
+    max_shifts_requested = float(DEFAULT_MAX_SHIFTS_REQUESTED)
     day_values: list[ProviderAvailabilityDayRead] = []
 
     if first_row is not None:
-        min_shifts_requested = first_row.min_shifts_requested
-        max_shifts_requested = first_row.max_shifts_requested
+        min_units = first_row.min_shifts_requested_units
+        max_units = first_row.max_shifts_requested_units
+        min_shifts_requested = min_units / 2
+        max_shifts_requested = max_units / 2
 
     for weekday in WEEKDAY_VALUES:
         row = row_by_weekday.get(weekday)
@@ -100,7 +103,7 @@ def build_read_response(schedule_week: SchedulePeriod, provider_id: UUID, rows: 
 
     work_available_days = [day for day in day_values if options_include_work_availability(day.options)]
     work_available_day_count = len(work_available_days)
-    max_shifts_requested = min(max_shifts_requested, work_available_day_count)
+    max_shifts_requested = min(max_shifts_requested, float(work_available_day_count))
     min_shifts_requested = min(min_shifts_requested, max_shifts_requested)
     is_locked = schedule_week_is_locked(schedule_week)
     response = ProviderWeeklyAvailabilityRead(
@@ -140,14 +143,18 @@ def replace_provider_weekly_availability(schedule_week_id: UUID, provider_id: UU
 
     for day in request.days:
         availability_options = saved_options_for_day(day.options)
+        minimum_units = half_shift_units(request.min_shifts_requested)
+        maximum_units = half_shift_units(request.max_shifts_requested)
         created_row = ProviderScheduleWeekAvailability(
             organization_id=organization_id,
             schedule_week_id=schedule_week_id,
             provider_id=provider_id,
             weekday=day.weekday,
             availability_options=availability_options,
-            min_shifts_requested=request.min_shifts_requested,
-            max_shifts_requested=request.max_shifts_requested,
+            min_shifts_requested=minimum_units // 2,
+            max_shifts_requested=maximum_units // 2,
+            min_shifts_requested_units=minimum_units,
+            max_shifts_requested_units=maximum_units,
         )
         session.add(created_row)
 
