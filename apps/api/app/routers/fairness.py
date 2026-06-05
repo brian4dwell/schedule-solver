@@ -6,10 +6,11 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
+from app.dependencies import require_admin_user
 from app.schemas.fairness import FairnessReportRead
 from app.services.scheduling.fairness import fairness_report
 
-router = APIRouter(tags=["fairness"])
+router = APIRouter(tags=["fairness"], dependencies=[Depends(require_admin_user)])
 
 
 @router.get("/fairness/report", response_model=FairnessReportRead)

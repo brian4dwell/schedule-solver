@@ -23,6 +23,7 @@ from app.db.models import SchedulePeriod
 from app.db.models import ScheduleVersion
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
+from app.dependencies import require_admin_user
 from app.schemas.schedule import ProviderEligibilityRequest
 from app.schemas.schedule import AssignmentRead
 from app.schemas.schedule import ConstraintViolationRead
@@ -47,7 +48,7 @@ from app.services.scheduling.fairness import rebuild_published_fairness_state
 from app.services.scheduling.fairness import record_fairness_for_schedule_version
 from app.services.scheduling.solver_service import generate_schedule_draft
 
-router = APIRouter(tags=["schedules"])
+router = APIRouter(tags=["schedules"], dependencies=[Depends(require_admin_user)])
 
 
 def require_schedule_period(

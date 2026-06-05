@@ -11,6 +11,7 @@ from app.db.models import ProviderScheduleWeekAvailability
 from app.db.models import SchedulePeriod
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
+from app.dependencies import require_admin_user
 from app.schemas.provider_availability_week import ProviderAvailabilityDayRead
 from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityRead
 from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityReplaceRequest
@@ -18,7 +19,7 @@ from app.schemas.provider_availability_week import WEEKDAY_VALUES
 from app.schemas.provider_availability_week import half_shift_units
 from app.schemas.provider_availability_week import options_include_work_availability
 
-router = APIRouter(tags=["provider-availability"])
+router = APIRouter(tags=["provider-availability"], dependencies=[Depends(require_admin_user)])
 DEFAULT_MIN_SHIFTS_REQUESTED = 0
 DEFAULT_MAX_SHIFTS_REQUESTED = 0
 WEEKEND_VALUES = ["saturday", "sunday"]

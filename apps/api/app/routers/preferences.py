@@ -14,6 +14,7 @@ from app.db.models import ProviderCenterPreference
 from app.db.models import ProviderShiftTypePreference
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
+from app.dependencies import require_admin_user
 from app.schemas.preferences import ManagerProviderCenterPreferenceRead
 from app.schemas.preferences import ManagerProviderPreferencesRead
 from app.schemas.preferences import ManagerProviderPreferencesReplace
@@ -22,7 +23,7 @@ from app.schemas.preferences import ProviderPreferencesRead
 from app.schemas.preferences import ProviderPreferencesReplace
 from app.schemas.preferences import ProviderShiftTypePreferenceRead
 
-router = APIRouter(tags=["preferences"])
+router = APIRouter(tags=["preferences"], dependencies=[Depends(require_admin_user)])
 
 
 def find_active_provider(

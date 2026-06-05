@@ -30,7 +30,7 @@ def create_schedule_week(status: str) -> SchedulePeriod:
 def test_provider_weekly_availability_requires_seven_unique_days() -> None:
     request_data = {
         "min_shifts_requested": 2,
-        "max_shifts_requested": 5,
+        "max_shifts_requested": 3.5,
         "days": [
             {"weekday": "monday", "options": ["full_shift"]},
             {"weekday": "tuesday", "options": ["first_half"]},
@@ -158,6 +158,8 @@ def test_provider_weekly_availability_read_normalizes_invalid_existing_requests(
             availability_options=["unset"],
             min_shifts_requested=3,
             max_shifts_requested=14,
+            min_shifts_requested_units=6,
+            max_shifts_requested_units=28,
         )
     ]
 

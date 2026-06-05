@@ -14,6 +14,7 @@ from app.db.models import RoomType
 from app.db.models import ShiftRequirement
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
+from app.dependencies import require_admin_user
 from app.schemas.room import RoomCreate
 from app.schemas.room import RoomRead
 from app.schemas.room import RoomTypeCreate
@@ -21,7 +22,7 @@ from app.schemas.room import RoomTypeRead
 from app.schemas.room import RoomTypeUpdate
 from app.schemas.room import RoomUpdate
 
-router = APIRouter(tags=["rooms"])
+router = APIRouter(tags=["rooms"], dependencies=[Depends(require_admin_user)])
 
 
 def find_room(

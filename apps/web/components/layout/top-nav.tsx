@@ -4,6 +4,8 @@ import { Show, UserButton, useAuth, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { userHasAdminRole } from "@/lib/auth";
+
 type NavigationLink = {
   href: string;
   label: string;
@@ -22,6 +24,11 @@ const scheduleBoardLink: NavigationLink = {
 const availabilityLink: NavigationLink = {
   href: "/availability",
   label: "Availability",
+};
+
+const providerPortalLink: NavigationLink = {
+  href: "/provider-portal",
+  label: "Provider Portal",
 };
 
 const setupMenu: NavigationMenu = {
@@ -43,6 +50,10 @@ const setupMenu: NavigationMenu = {
       href: "/providers",
       label: "Providers",
     },
+    {
+      href: "/admin/provider-status",
+      label: "Provider Status",
+    },
   ],
 };
 
@@ -59,28 +70,6 @@ const reportsMenu: NavigationMenu = {
     },
   ],
 };
-
-function roleFromPublicMetadata(publicMetadata: Record<string, unknown> | undefined) {
-  const roleValue = publicMetadata?.role;
-  const roleIsString = typeof roleValue === "string";
-
-  if (!roleIsString) {
-    return null;
-  }
-
-  return roleValue;
-}
-
-function userHasAdminRole(
-  organizationRole: string | null | undefined,
-  publicMetadataRole: string | null,
-) {
-  const hasOrganizationAdminRole = organizationRole === "org:admin";
-  const hasScheduleSolverAdminRole = publicMetadataRole === "admin";
-  const hasAdminRole = hasOrganizationAdminRole || hasScheduleSolverAdminRole;
-
-  return hasAdminRole;
-}
 
 function isNavigationLinkActive(pathname: string, href: string) {
   const nestedPathPrefix = `${href}/`;
@@ -117,16 +106,19 @@ export function TopNav() {
   const pathname = usePathname();
   const auth = useAuth();
   const userResult = useUser();
-  const publicMetadataRole = roleFromPublicMetadata(userResult.user?.publicMetadata);
-  const currentUserIsAdmin = userHasAdminRole(auth.orgRole, publicMetadataRole);
-  const setupLinks = setupMenu.links;
+  const currentUserIsAdmin = userHasAdminRole(
+    auth.orgRole,
+    userResult.user?.publicMetadata,
+    auth.sessionClaims,
+  );
+  const setupLinks = currentUserIsAdmin ? setupMenu.links : [];
   const setupMenuHasActiveLink = setupLinks.some((item) => {
     const isActive = isNavigationLinkActive(pathname, item.href);
 
     return isActive;
   });
   const setupMenuTriggerClass = buildMenuTriggerClass(setupMenuHasActiveLink);
-  const reportLinks = reportsMenu.links;
+  const reportLinks = currentUserIsAdmin ? reportsMenu.links : [];
   const reportsMenuHasActiveLink = reportLinks.some((item) => {
     const isActive = isNavigationLinkActive(pathname, item.href);
 
@@ -155,52 +147,68 @@ export function TopNav() {
       </div>
       <nav className="border-t border-slate-200 px-4 py-2 sm:px-6 lg:px-8">
         <div className="flex flex-wrap gap-2">
+          {currentUserIsAdmin ? (
+            <Link
+              href={scheduleBoardLink.href}
+              className={buildLinkClass(
+                isNavigationLinkActive(pathname, scheduleBoardLink.href),
+              )}
+            >
+              {scheduleBoardLink.label}
+            </Link>
+          ) : null}
+          {currentUserIsAdmin ? (
+            <Link
+              href={availabilityLink.href}
+              className={buildLinkClass(
+                isNavigationLinkActive(pathname, availabilityLink.href),
+              )}
+            >
+              {availabilityLink.label}
+            </Link>
+          ) : null}
           <Link
-            href={scheduleBoardLink.href}
+            href={providerPortalLink.href}
             className={buildLinkClass(
-              isNavigationLinkActive(pathname, scheduleBoardLink.href),
+              isNavigationLinkActive(pathname, providerPortalLink.href),
             )}
           >
-            {scheduleBoardLink.label}
+            {providerPortalLink.label}
           </Link>
-          <Link
-            href={availabilityLink.href}
-            className={buildLinkClass(
-              isNavigationLinkActive(pathname, availabilityLink.href),
-            )}
-          >
-            {availabilityLink.label}
-          </Link>
-          <details className="group relative shrink-0">
-            <summary className={setupMenuTriggerClass}>{setupMenu.label}</summary>
-            <div className="absolute left-0 top-10 z-20 min-w-44 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
-              {setupLinks.map((item) => {
-                const isActive = isNavigationLinkActive(pathname, item.href);
-                const linkClass = buildLinkClass(isActive);
+          {currentUserIsAdmin ? (
+            <details className="group relative shrink-0">
+              <summary className={setupMenuTriggerClass}>{setupMenu.label}</summary>
+              <div className="absolute left-0 top-10 z-20 min-w-44 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                {setupLinks.map((item) => {
+                  const isActive = isNavigationLinkActive(pathname, item.href);
+                  const linkClass = buildLinkClass(isActive);
 
-                return (
-                  <Link key={item.href} href={item.href} className={`${linkClass} w-full`}>
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </div>
-          </details>
-          <details className="group relative shrink-0">
-            <summary className={reportsMenuTriggerClass}>{reportsMenu.label}</summary>
-            <div className="absolute left-0 top-10 z-20 min-w-56 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
-              {reportLinks.map((item) => {
-                const isActive = isNavigationLinkActive(pathname, item.href);
-                const linkClass = buildLinkClass(isActive);
+                  return (
+                    <Link key={item.href} href={item.href} className={`${linkClass} w-full`}>
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </details>
+          ) : null}
+          {currentUserIsAdmin ? (
+            <details className="group relative shrink-0">
+              <summary className={reportsMenuTriggerClass}>{reportsMenu.label}</summary>
+              <div className="absolute left-0 top-10 z-20 min-w-56 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                {reportLinks.map((item) => {
+                  const isActive = isNavigationLinkActive(pathname, item.href);
+                  const linkClass = buildLinkClass(isActive);
 
-                return (
-                  <Link key={item.href} href={item.href} className={`${linkClass} w-full`}>
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </div>
-          </details>
+                  return (
+                    <Link key={item.href} href={item.href} className={`${linkClass} w-full`}>
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </details>
+          ) : null}
         </div>
       </nav>
     </header>

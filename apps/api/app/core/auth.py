@@ -9,6 +9,8 @@ from jwt import PyJWKClient
 from jwt import PyJWKClientError
 from pydantic import BaseModel
 from pydantic import ConfigDict
+from pydantic import Field
+from pydantic import field_validator
 
 from app.core.config import Settings
 
@@ -19,6 +21,28 @@ CLERK_PENDING_SESSION_STATUS = "pending"
 CLERK_PUBLISHABLE_KEY_PART_COUNT = 3
 
 
+def normalize_clerk_roles_claim(value: object) -> object:
+    roles_claim_is_missing = value is None
+
+    if roles_claim_is_missing:
+        return []
+
+    return value
+
+
+class ClerkPublicMetadata(BaseModel):
+    role: str | None = None
+    roles: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("roles", mode="before")
+    @classmethod
+    def normalize_roles(cls, value: object) -> object:
+        roles = normalize_clerk_roles_claim(value)
+        return roles
+
+
 class ClerkSessionClaims(BaseModel):
     sub: str
     sid: str | None = None
@@ -27,9 +51,17 @@ class ClerkSessionClaims(BaseModel):
     org_id: str | None = None
     org_role: str | None = None
     role: str | None = None
+    roles: list[str] = Field(default_factory=list)
+    public_metadata: ClerkPublicMetadata | None = None
     sts: str | None = None
 
     model_config = ConfigDict(extra="ignore")
+
+    @field_validator("roles", mode="before")
+    @classmethod
+    def normalize_roles(cls, value: object) -> object:
+        roles = normalize_clerk_roles_claim(value)
+        return roles
 
 
 class AuthenticatedUser(BaseModel):
@@ -38,6 +70,7 @@ class AuthenticatedUser(BaseModel):
     organization_external_id: str | None = None
     organization_role: str | None = None
     role: str | None = None
+    roles: list[str] = Field(default_factory=list)
 
 
 def authorization_header_token(authorization: str | None) -> str | None:
@@ -78,12 +111,19 @@ def session_token_from_request(
 
 
 def authenticated_user_from_claims(claims: ClerkSessionClaims) -> AuthenticatedUser:
+    metadata_roles = []
+
+    if claims.public_metadata is not None:
+        metadata_roles = claims.public_metadata.roles
+
+    roles = [*claims.roles, *metadata_roles]
     user = AuthenticatedUser(
         user_id=claims.sub,
         session_id=claims.sid,
         organization_external_id=claims.org_id,
         organization_role=claims.org_role,
         role=claims.role,
+        roles=roles,
     )
     return user
 
@@ -91,7 +131,12 @@ def authenticated_user_from_claims(claims: ClerkSessionClaims) -> AuthenticatedU
 def user_has_admin_role(user: AuthenticatedUser) -> bool:
     has_organization_admin_role = user.organization_role == CLERK_ORGANIZATION_ADMIN_ROLE
     has_schedule_solver_admin_role = user.role == SCHEDULE_SOLVER_ADMIN_ROLE
-    has_admin_role = has_organization_admin_role or has_schedule_solver_admin_role
+    has_schedule_solver_admin_roles = SCHEDULE_SOLVER_ADMIN_ROLE in user.roles
+    has_admin_role = (
+        has_organization_admin_role
+        or has_schedule_solver_admin_role
+        or has_schedule_solver_admin_roles
+    )
     return has_admin_role
 
 

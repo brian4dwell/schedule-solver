@@ -14,11 +14,12 @@ from app.db.models import ProviderRoomTypeSkill
 from app.db.models import RoomType
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
+from app.dependencies import require_admin_user
 from app.schemas.provider import ProviderCreate
 from app.schemas.provider import ProviderRead
 from app.schemas.provider import ProviderUpdate
 
-router = APIRouter(prefix="/providers", tags=["providers"])
+router = APIRouter(prefix="/providers", tags=["providers"], dependencies=[Depends(require_admin_user)])
 
 
 def find_provider(

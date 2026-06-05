@@ -60,6 +60,20 @@ import {
   providerWeeklyAvailabilitySchema,
   type ProviderWeeklyAvailability,
 } from "@/lib/schemas/provider-weekly-availability";
+import {
+  adminProviderStatusApiSchema,
+  providerInviteAcceptanceApiSchema,
+  providerInviteApiSchema,
+  providerPortalAvailabilityPayloadApiSchema,
+  providerPortalPreferenceOptionsApiSchema,
+  providerPortalProfileApiSchema,
+  providerPortalWeekAvailabilityApiSchema,
+  type AdminProviderStatus,
+  type ProviderInviteApi,
+  type ProviderPortalPreferenceOptions,
+  type ProviderPortalProfileApi,
+  type ProviderPortalWeekAvailability,
+} from "@/lib/schemas/provider-portal";
 
 export type Center = {
   id: string;
@@ -118,6 +132,11 @@ export type ProviderWeeklyAvailabilityRecord = ProviderWeeklyAvailability;
 export type FairnessReport = FairnessReportApi;
 export type { FairnessStatus };
 export type MonthlyAvailabilityReport = MonthlyAvailabilityReportApi;
+export type AdminProviderStatusRecord = AdminProviderStatus;
+export type ProviderInvite = ProviderInviteApi;
+export type ProviderPortalProfile = ProviderPortalProfileApi;
+export type ProviderPortalAvailabilityRecord = ProviderPortalWeekAvailability;
+export type ProviderPortalPreferenceOptionRecord = ProviderPortalPreferenceOptions;
 
 export type ScheduleAssignmentSavePayload = {
   room_slot_id: string;
@@ -423,6 +442,79 @@ export async function deactivateProvider(providerId: string): Promise<Provider> 
   return provider;
 }
 
+export async function listAdminProviderStatuses(): Promise<AdminProviderStatusRecord[]> {
+  const responseJson = await requestJson<unknown[]>("/admin/provider-status", {
+    cache: "no-store",
+  });
+  const statuses = responseJson.map((statusJson) => {
+    const status = adminProviderStatusApiSchema.parse(statusJson);
+    return status;
+  });
+  return statuses;
+}
+
+export async function createProviderInvite(providerId: string): Promise<ProviderInvite> {
+  const init = jsonRequestInit("POST", {});
+  const responseJson = await requestJson<unknown>(`/admin/providers/${providerId}/invite`, init);
+  const invite = providerInviteApiSchema.parse(responseJson);
+  return invite;
+}
+
+export async function acceptProviderInvite(inviteToken: string): Promise<ProviderPortalProfile> {
+  const payload = {
+    invite_token: inviteToken,
+  };
+  const init = jsonRequestInit("POST", payload);
+  const responseJson = await requestJson<unknown>("/provider-portal/invite-acceptance", init);
+  const response = providerInviteAcceptanceApiSchema.parse(responseJson);
+  return response.provider;
+}
+
+export async function getCurrentProviderProfile(): Promise<ProviderPortalProfile> {
+  const responseJson = await requestJson<unknown>("/provider-portal/me", {
+    cache: "no-store",
+  });
+  const profile = providerPortalProfileApiSchema.parse(responseJson);
+  return profile;
+}
+
+export async function getCurrentProviderAvailability(): Promise<ProviderPortalAvailabilityRecord[]> {
+  const responseJson = await requestJson<unknown[]>("/provider-portal/me/availability", {
+    cache: "no-store",
+  });
+  const availabilityRecords = responseJson.map((recordJson) => {
+    const record = providerPortalWeekAvailabilityApiSchema.parse(recordJson);
+    return record;
+  });
+  return availabilityRecords;
+}
+
+export async function getCurrentProviderPreferences(): Promise<ProviderPreferences> {
+  const responseJson = await requestJson<unknown>("/provider-portal/me/preferences", {
+    cache: "no-store",
+  });
+  const preferences = providerPreferencesApiSchema.parse(responseJson);
+  return preferences;
+}
+
+export async function getCurrentProviderPreferenceOptions(): Promise<ProviderPortalPreferenceOptionRecord> {
+  const responseJson = await requestJson<unknown>("/provider-portal/me/preference-options", {
+    cache: "no-store",
+  });
+  const options = providerPortalPreferenceOptionsApiSchema.parse(responseJson);
+  return options;
+}
+
+export async function saveCurrentProviderPreferences(
+  payload: ProviderPreferencesSavePayload,
+): Promise<ProviderPreferences> {
+  const parsedPayload = providerPreferencesPayloadSchema.parse(payload);
+  const init = jsonRequestInit("PUT", parsedPayload);
+  const responseJson = await requestJson<unknown>("/provider-portal/me/preferences", init);
+  const preferences = providerPreferencesApiSchema.parse(responseJson);
+  return preferences;
+}
+
 export async function getProviderPreferences(
   providerId: string,
 ): Promise<ProviderPreferences> {
@@ -638,6 +730,18 @@ export async function saveProviderWeeklyAvailability(
   const init = jsonRequestInit("PUT", payload);
   const responseJson = await requestJson<unknown>(path, init);
   const savedAvailability = providerWeeklyAvailabilityReadApiSchema.parse(responseJson);
+  return savedAvailability;
+}
+
+export async function saveCurrentProviderWeeklyAvailability(
+  scheduleWeekId: string,
+  availability: ProviderWeeklyAvailabilityRecord,
+): Promise<ProviderPortalAvailabilityRecord> {
+  const payload = providerPortalAvailabilityPayloadApiSchema.parse(availability);
+  const path = `/provider-portal/me/schedule-weeks/${scheduleWeekId}/availability`;
+  const init = jsonRequestInit("PUT", payload);
+  const responseJson = await requestJson<unknown>(path, init);
+  const savedAvailability = providerPortalWeekAvailabilityApiSchema.parse(responseJson);
   return savedAvailability;
 }
 

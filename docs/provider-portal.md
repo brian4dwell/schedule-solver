@@ -4,7 +4,7 @@
 
 Give Providers a focused self-service experience where they can accept an invite, authenticate with Clerk, submit weekly availability, and manage provider-visible preferences.
 
-Give Schedulers visibility into whether a Provider is ready for scheduling operations.
+Give Admins visibility into Provider onboarding and open-week availability completeness.
 
 ## Scope
 
@@ -14,7 +14,7 @@ Include:
 - Secure Provider access to Provider-only data.
 - Weekly availability entry and editing for draft schedule weeks.
 - Provider-visible preference entry and editing.
-- Scheduler visibility into Provider onboarding and readiness state.
+- Admin visibility into Provider onboarding and open-week availability completeness.
 
 Exclude:
 
@@ -25,28 +25,27 @@ Exclude:
 ## Primary Users
 
 - Provider.
-- Scheduler.
 - Administrator.
 
-## Readiness State Model
+## Account State Model
 
-Track onboarding and readiness with explicit states:
+Track long-lived Provider account lifecycle with explicit states:
 
 - `invited`.
 - `accepted`.
-- `availability_pending`.
-- `active`.
+- `linked`.
 
 State semantics:
 
 - `invited` means an invitation exists and has not been accepted.
 - `accepted` means the invite was accepted and Clerk authentication is established.
-- `availability_pending` means the Provider account is linked but required week availability is incomplete for the active planning week.
-- `active` means the Provider account is linked and required week availability is complete for the active planning week.
+- `linked` means the Clerk identity is connected to one internal Provider record within an Organization.
 
 Do not include `profile_pending`.
 
-Use week-aware readiness checks instead of profile-level completion checks.
+Do not include weekly availability completion in the account state machine.
+
+Use week-aware availability checks instead of profile-level completion checks.
 
 ## Weekly Availability Experience
 
@@ -64,17 +63,21 @@ Use existing availability options:
 Rules:
 
 - Providers must intentionally set each weekday.
-- `unset` means incomplete availability for readiness checks.
+- `unset` means incomplete availability for completion checks.
 - `none` means explicitly unavailable and counts as complete input.
 - `none` and `unset` are exclusive.
+- Provider Portal saves must not convert `unset` to `none`.
+- Any `unset` to `none` save normalization is admin-interface-only behavior.
 - Published schedule weeks are read-only.
 - Draft schedule weeks are editable.
 
-Readiness logic:
+Completion logic:
 
 - A required week is complete when no weekday is `unset`.
-- If any required weekday is `unset`, readiness is `availability_pending`.
-- If all required weekdays are set, readiness is `active`.
+- If any required weekday is `unset`, that required week is incomplete.
+- If all required weekdays are set, that required week is complete.
+- A Provider's open-week availability is complete when every open required week is complete.
+- A Provider's open-week availability is incomplete when any open required week is incomplete.
 
 ## Preferences Experience
 
@@ -92,23 +95,29 @@ Require tenant-scoped authorization checks for every Provider portal request.
 
 Enforce that a Provider can only view and update their own availability and provider-visible preferences.
 
+Add Provider Portal `me` routes backed by a `require_current_provider` dependency.
+
+Require admin authentication for every admin-facing Provider invite, link, status, and reporting route.
+
 Do not auto-link by loose matching rules.
 
-## Scheduler Operations View
+## Admin Operations View
 
-Provide a scheduler-facing readiness view with:
+Provide an admin-facing Provider status view with:
 
 - Provider name.
-- Readiness state.
+- Account state.
 - Last availability update timestamp.
-- Active planning week completeness indicator.
+- Open-week availability completeness indicator.
+- Incomplete open required week count.
 
 Allow filtering by:
 
 - `invited`.
 - `accepted`.
-- `availability_pending`.
-- `active`.
+- `linked`.
+- Open-week availability complete.
+- Open-week availability incomplete.
 
 ## API And Contract Plan
 
@@ -121,23 +130,26 @@ Frontend:
 Backend:
 
 - Use Pydantic schemas for request and response contracts.
-- Use explicit service-layer typed models for readiness evaluation inputs and outputs.
+- Use explicit service-layer typed models for account state and availability completion inputs and outputs.
+- Use Provider Portal `me` routes for Provider self-service APIs.
+- Use admin-only route dependencies for admin APIs.
+- Keep Provider Portal availability persistence truthful by preserving or rejecting `unset`, not normalizing it to `none`.
 
 Suggested contract shapes:
 
-- `ProviderReadinessState` enum.
+- `ProviderAccountState` enum.
 - `ProviderWeeklyAvailabilityCompletion` structure.
 - `ProviderPortalAvailabilityUpsertRequest`.
 - `ProviderPortalPreferencesUpsertRequest`.
-- `SchedulerProviderReadinessRow`.
+- `AdminProviderStatusRow`.
 
 ## Data Model Additions
 
-Add a Provider readiness projection that is derived from:
+Add an admin Provider status projection that is derived from:
 
 - Invite status.
 - Identity link status.
-- Required week availability completeness.
+- Open required week availability completeness.
 
 Use explicit columns or a materialized projection only if needed for query performance.
 
@@ -171,12 +183,12 @@ Include actor id, organization id, provider id, timestamp, and change summary.
 - Provider-to-identity link.
 - Provider weekly availability CRUD for draft weeks.
 - Provider-visible preferences CRUD.
-- Readiness states and scheduler readiness list.
+- Account states and admin Provider status list.
 
 ### Phase 2
 
 - Reminder notifications.
-- Stronger scheduler filtering and reporting.
+- Stronger admin filtering and reporting.
 - Additional audit detail views.
 
 ### Phase 3
@@ -190,7 +202,8 @@ Include actor id, organization id, provider id, timestamp, and change summary.
 - Provider can only access their own Provider portal resources.
 - Provider can edit weekly availability for draft weeks.
 - Provider cannot edit weekly availability for published weeks.
-- Provider readiness is `availability_pending` when required week availability has any `unset` weekday.
-- Provider readiness is `active` when required week availability has no `unset` weekdays.
-- Scheduler can view and filter Providers by readiness state.
+- Required week availability is incomplete when any required weekday is `unset`.
+- Required week availability is complete when no required weekday is `unset`.
+- Admin can view and filter Providers by account state.
+- Admin can view and filter Providers by open-week availability completeness.
 - Provider UI and APIs never expose manager-only preference fields.

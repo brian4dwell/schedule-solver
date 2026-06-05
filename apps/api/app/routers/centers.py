@@ -9,11 +9,12 @@ from sqlalchemy.orm import Session
 from app.db.models import Center
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
+from app.dependencies import require_admin_user
 from app.schemas.center import CenterCreate
 from app.schemas.center import CenterRead
 from app.schemas.center import CenterUpdate
 
-router = APIRouter(prefix="/centers", tags=["centers"])
+router = APIRouter(prefix="/centers", tags=["centers"], dependencies=[Depends(require_admin_user)])
 
 
 def find_center(

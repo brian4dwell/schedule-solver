@@ -1,4 +1,5 @@
 from typing import Annotated
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import select
@@ -15,10 +16,18 @@ from app.core.auth import user_has_admin_role
 from app.core.auth import verify_clerk_session_token
 from app.core.config import get_settings
 from app.db.models import Organization
+from app.db.models import Provider
+from app.db.models import ProviderIdentityLink
 from app.db.session import get_db
 
 
 LOCAL_ORGANIZATION_ID = UUID("00000000-0000-4000-8000-000000000001")
+
+
+@dataclass(frozen=True)
+class CurrentProvider:
+    user: AuthenticatedUser
+    provider: Provider
 
 
 def get_default_organization(session: Session) -> Organization:
@@ -79,3 +88,29 @@ def get_current_organization_id(
     organization = get_default_organization(session)
     organization_id = organization.id
     return organization_id
+
+
+def require_current_provider(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    organization_id: UUID = Depends(get_current_organization_id),
+    session: Session = Depends(get_db),
+) -> CurrentProvider:
+    statement = select(ProviderIdentityLink)
+    statement = statement.where(ProviderIdentityLink.organization_id == organization_id)
+    statement = statement.where(ProviderIdentityLink.clerk_user_id == current_user.user_id)
+    identity_link = session.scalar(statement)
+
+    if identity_link is None:
+        raise HTTPException(status_code=403, detail="Provider account link required")
+
+    provider_statement = select(Provider)
+    provider_statement = provider_statement.where(Provider.organization_id == organization_id)
+    provider_statement = provider_statement.where(Provider.id == identity_link.provider_id)
+    provider_statement = provider_statement.where(Provider.is_active.is_(True))
+    provider = session.scalar(provider_statement)
+
+    if provider is None:
+        raise HTTPException(status_code=403, detail="Provider account link is inactive")
+
+    current_provider = CurrentProvider(user=current_user, provider=provider)
+    return current_provider

@@ -1,7 +1,10 @@
+import { auth, currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
+import { userHasAdminRole } from "@/lib/auth";
 
 const dashboardLinks = [
   {
@@ -25,6 +28,11 @@ const dashboardLinks = [
     description: "Maintain the people available for anesthesia coverage.",
   },
   {
+    href: "/admin/provider-status",
+    title: "Provider Status",
+    description: "Create Provider invites and review open-week availability completion.",
+  },
+  {
     href: "/schedules",
     title: "Schedules",
     description: "Build draft schedules and review completed schedule versions.",
@@ -41,7 +49,19 @@ const dashboardLinks = [
   },
 ];
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const authContext = await auth();
+  const user = await currentUser();
+  const currentUserIsAdmin = userHasAdminRole(
+    authContext.orgRole,
+    user?.publicMetadata,
+    authContext.sessionClaims,
+  );
+
+  if (!currentUserIsAdmin) {
+    redirect("/provider-portal");
+  }
+
   return (
     <AppShell>
       <PageHeader

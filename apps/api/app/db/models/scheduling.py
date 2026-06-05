@@ -157,6 +157,36 @@ class Provider(Base, TimestampMixin):
         return skill_room_type_ids
 
 
+class ProviderInvite(Base, TimestampMixin):
+    __tablename__ = "provider_invites"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "invite_token"),
+        UniqueConstraint("organization_id", "provider_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    invite_token: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    accepted_by_clerk_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProviderIdentityLink(Base, TimestampMixin):
+    __tablename__ = "provider_identity_links"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "provider_id"),
+        UniqueConstraint("organization_id", "clerk_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
+    clerk_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
 class ProviderCenterCredential(Base, TimestampMixin):
     __tablename__ = "provider_center_credentials"
     __table_args__ = (UniqueConstraint("organization_id", "provider_id", "center_id"),)

@@ -21,6 +21,7 @@ from app.db.models import SchedulePeriod
 from app.db.models import ScheduleVersion
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
+from app.dependencies import require_admin_user
 from app.schemas.provider_availability_week import WORK_AVAILABILITY_OPTION_VALUES
 from app.schemas.provider_availability_week import WEEKDAY_VALUES
 from app.schemas.reports import MonthlyAvailabilityDayRead
@@ -30,7 +31,7 @@ from app.schemas.reports import MonthlyScheduleAssignmentRead
 from app.schemas.reports import MonthlyScheduleCandidateGroupRead
 from app.schemas.reports import MonthlyScheduleCandidateRead
 
-router = APIRouter(prefix="/reports", tags=["reports"])
+router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(require_admin_user)])
 MINIMUM_YEAR = 2000
 MAXIMUM_YEAR = 2100
 MINIMUM_MONTH = 1

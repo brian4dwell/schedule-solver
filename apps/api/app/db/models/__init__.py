@@ -10,6 +10,8 @@ from app.db.models.scheduling import ProviderCenterPreference
 from app.db.models.scheduling import ProviderFairnessEvent
 from app.db.models.scheduling import ProviderFairnessSnapshot
 from app.db.models.scheduling import ProviderFairnessState
+from app.db.models.scheduling import ProviderIdentityLink
+from app.db.models.scheduling import ProviderInvite
 from app.db.models.scheduling import ProviderRoomTypeSkill
 from app.db.models.scheduling import ProviderScheduleWeekAvailability
 from app.db.models.scheduling import ProviderShiftTypePreference
@@ -36,6 +38,8 @@ __all__ = [
     "ProviderFairnessEvent",
     "ProviderFairnessSnapshot",
     "ProviderFairnessState",
+    "ProviderIdentityLink",
+    "ProviderInvite",
     "ProviderRoomTypeSkill",
     "ProviderScheduleWeekAvailability",
     "ProviderShiftTypePreference",

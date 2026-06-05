@@ -95,6 +95,35 @@ def test_custom_admin_role_is_authorized() -> None:
     assert has_admin_role
 
 
+def test_custom_admin_roles_array_is_authorized() -> None:
+    claims = ClerkSessionClaims(
+        sub="user_123",
+        public_metadata={
+            "roles": ["admin"],
+        },
+    )
+
+    user = authenticated_user_from_claims(claims)
+    has_admin_role = user_has_admin_role(user)
+
+    assert has_admin_role
+
+
+def test_null_custom_roles_claim_is_treated_as_missing() -> None:
+    claims = ClerkSessionClaims.model_validate(
+        {
+            "sub": "user_123",
+            "roles": None,
+        },
+    )
+
+    user = authenticated_user_from_claims(claims)
+    has_admin_role = user_has_admin_role(user)
+
+    assert user.roles == []
+    assert not has_admin_role
+
+
 def test_require_admin_user_rejects_non_admin() -> None:
     user = AuthenticatedUser(
         user_id="user_123",
