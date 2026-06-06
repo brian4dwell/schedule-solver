@@ -187,4 +187,10 @@ def test_provider_invite_email_message_builds_accept_link() -> None:
     assert str(message.recipient_email) == "provider@example.com"
     assert str(message.sender_email) == "scheduling@example.com"
     assert "token-123" in str(message.invite_url)
+    assert "Schedule Solver's Provider Portal" in message.plain_text_body
+    assert "submit availability for open schedule weeks" in message.plain_text_body
+    assert "For your security, this link is intended only for you." in message.plain_text_body
+    assert "Schedule Solver Team" in message.plain_text_body
     assert "Accept Provider Portal invite" in message.html_body
+    assert "submit availability for open schedule weeks" in message.html_body
+    assert "Schedule Solver Team" in message.html_body

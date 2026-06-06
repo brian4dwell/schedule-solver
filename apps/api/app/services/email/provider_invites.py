@@ -38,26 +38,61 @@ def provider_invite_subject(provider: Provider) -> str:
 
 
 def provider_invite_plain_text_body(provider: Provider, invite_url: str) -> str:
-    body = (
-        f"Hello {provider.display_name},\n\n"
-        "You have been invited to the Provider Portal. "
-        "Use the secure link below to connect your account and manage your availability.\n\n"
-        f"{invite_url}\n\n"
-        "If you were not expecting this invite, you can ignore this email."
+    greeting = f"Hello {provider.display_name},"
+    intro = "You've been invited to Schedule Solver's Provider Portal."
+    purpose = (
+        "Use the secure link below to set up access. "
+        "After you sign in, you can submit availability for open schedule weeks, "
+        "review your scheduling preferences, and keep your information current."
     )
+    invitation_label = "Accept your invite:"
+    security_note = "For your security, this link is intended only for you."
+    unexpected_note = "If you were not expecting this invitation, you can ignore this email."
+    closing = "Thank you,"
+    signature = "Schedule Solver Team"
+    body_lines = [
+        greeting,
+        "",
+        intro,
+        purpose,
+        "",
+        invitation_label,
+        invite_url,
+        "",
+        security_note,
+        unexpected_note,
+        "",
+        closing,
+        signature,
+    ]
+    body = "\n".join(body_lines)
     return body
 
 
 def provider_invite_html_body(provider: Provider, invite_url: str) -> str:
     escaped_display_name = escape(provider.display_name)
     escaped_invite_url = escape(invite_url, quote=True)
-    body = (
-        f"<p>Hello {escaped_display_name},</p>"
-        "<p>You have been invited to the Provider Portal. "
-        "Use the secure link below to connect your account and manage your availability.</p>"
-        f'<p><a href="{escaped_invite_url}">Accept Provider Portal invite</a></p>'
-        "<p>If you were not expecting this invite, you can ignore this email.</p>"
+    greeting = f"<p>Hello {escaped_display_name},</p>"
+    intro = "<p>You've been invited to Schedule Solver's Provider Portal.</p>"
+    purpose = (
+        "<p>Use the secure link below to set up access. "
+        "After you sign in, you can submit availability for open schedule weeks, "
+        "review your scheduling preferences, and keep your information current.</p>"
     )
+    action = f'<p><a href="{escaped_invite_url}">Accept Provider Portal invite</a></p>'
+    security_note = "<p>For your security, this link is intended only for you.</p>"
+    unexpected_note = "<p>If you were not expecting this invitation, you can ignore this email.</p>"
+    closing = "<p>Thank you,<br>Schedule Solver Team</p>"
+    body_parts = [
+        greeting,
+        intro,
+        purpose,
+        action,
+        security_note,
+        unexpected_note,
+        closing,
+    ]
+    body = "".join(body_parts)
     return body
 
 
