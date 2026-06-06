@@ -36,6 +36,8 @@ export const providerInviteAcceptanceApiSchema = z.object({
 export const providerWeeklyAvailabilityCompletionApiSchema = z.object({
   schedule_week_id: z.string().uuid(),
   schedule_week_name: z.string().min(1),
+  schedule_week_start_date: z.string().min(1),
+  schedule_week_end_date: z.string().min(1),
   is_complete: z.boolean(),
   unset_weekdays: z.array(z.string().min(1)),
 }).strict();
@@ -44,6 +46,8 @@ export const providerPortalWeekAvailabilityApiSchema = z
   .object({
     schedule_week_id: z.string().uuid(),
     schedule_week_name: z.string().min(1),
+    schedule_week_start_date: z.string().min(1),
+    schedule_week_end_date: z.string().min(1),
     availability: z.unknown(),
     completion: providerWeeklyAvailabilityCompletionApiSchema,
   })
@@ -53,10 +57,14 @@ export const providerPortalWeekAvailabilityApiSchema = z
     const weekAvailability = {
       scheduleWeekId: value.schedule_week_id,
       scheduleWeekName: value.schedule_week_name,
+      scheduleWeekStartDate: value.schedule_week_start_date,
+      scheduleWeekEndDate: value.schedule_week_end_date,
       availability,
       completion: {
         scheduleWeekId: value.completion.schedule_week_id,
         scheduleWeekName: value.completion.schedule_week_name,
+        scheduleWeekStartDate: value.completion.schedule_week_start_date,
+        scheduleWeekEndDate: value.completion.schedule_week_end_date,
         isComplete: value.completion.is_complete,
         unsetWeekdays: value.completion.unset_weekdays,
       },

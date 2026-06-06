@@ -1,4 +1,5 @@
 from datetime import datetime
+from datetime import date
 from typing import Literal
 from uuid import UUID
 
@@ -55,6 +56,8 @@ class ProviderPortalPreferenceOptionsRead(BaseModel):
 class ProviderWeeklyAvailabilityCompletion(BaseModel):
     schedule_week_id: UUID
     schedule_week_name: str
+    schedule_week_start_date: date
+    schedule_week_end_date: date
     is_complete: bool
     unset_weekdays: list[str] = Field(default_factory=list)
 
@@ -73,5 +76,7 @@ class AdminProviderStatusRow(BaseModel):
 class ProviderPortalWeekAvailabilityRead(BaseModel):
     schedule_week_id: UUID
     schedule_week_name: str
+    schedule_week_start_date: date
+    schedule_week_end_date: date
     availability: ProviderWeeklyAvailabilityRead
     completion: ProviderWeeklyAvailabilityCompletion

@@ -63,6 +63,7 @@ INVITE_TOKEN_BYTE_COUNT = 32
 INVITE_STATUS_INVITED = "invited"
 INVITE_STATUS_ACCEPTED = "accepted"
 SCHEDULE_PERIOD_STATUS_DRAFT = "draft"
+SCHEDULE_PERIOD_STATUS_PUBLISHED = "published"
 
 
 def provider_profile(provider: Provider) -> ProviderPortalProfileRead:
@@ -96,6 +97,19 @@ def open_schedule_weeks(organization_id: UUID, session: Session) -> list[Schedul
     return schedule_weeks
 
 
+def provider_portal_schedule_weeks(organization_id: UUID, session: Session) -> list[SchedulePeriod]:
+    available_statuses = [
+        SCHEDULE_PERIOD_STATUS_DRAFT,
+        SCHEDULE_PERIOD_STATUS_PUBLISHED,
+    ]
+    statement = select(SchedulePeriod)
+    statement = statement.where(SchedulePeriod.organization_id == organization_id)
+    statement = statement.where(SchedulePeriod.status.in_(available_statuses))
+    statement = statement.order_by(SchedulePeriod.start_date, SchedulePeriod.id)
+    schedule_weeks = list(session.scalars(statement))
+    return schedule_weeks
+
+
 def availability_completion(
     schedule_week: SchedulePeriod,
     availability: ProviderWeeklyAvailabilityRead,
@@ -109,6 +123,8 @@ def availability_completion(
     completion = ProviderWeeklyAvailabilityCompletion(
         schedule_week_id=schedule_week.id,
         schedule_week_name=schedule_week.name,
+        schedule_week_start_date=schedule_week.start_date,
+        schedule_week_end_date=schedule_week.end_date,
         is_complete=is_complete,
         unset_weekdays=unset_weekdays,
     )
@@ -127,6 +143,8 @@ def provider_week_availability_response(
     response = ProviderPortalWeekAvailabilityRead(
         schedule_week_id=schedule_week.id,
         schedule_week_name=schedule_week.name,
+        schedule_week_start_date=schedule_week.start_date,
+        schedule_week_end_date=schedule_week.end_date,
         availability=availability,
         completion=completion,
     )
@@ -138,7 +156,7 @@ def current_provider_week_availabilities(
     organization_id: UUID,
     session: Session,
 ) -> list[ProviderPortalWeekAvailabilityRead]:
-    schedule_weeks = open_schedule_weeks(organization_id, session)
+    schedule_weeks = provider_portal_schedule_weeks(organization_id, session)
     responses = [
         provider_week_availability_response(
             schedule_week,
