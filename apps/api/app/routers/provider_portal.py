@@ -72,6 +72,13 @@ INVITE_STATUS_INVITED = "invited"
 INVITE_STATUS_ACCEPTED = "accepted"
 SCHEDULE_PERIOD_STATUS_DRAFT = "draft"
 SCHEDULE_PERIOD_STATUS_PUBLISHED = "published"
+PROVIDER_PORTAL_REQUIRED_WEEKDAYS = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+]
 
 
 def provider_profile(provider: Provider) -> ProviderPortalProfileRead:
@@ -122,9 +129,11 @@ def availability_completion(
     schedule_week: SchedulePeriod,
     availability: ProviderWeeklyAvailabilityRead,
 ) -> ProviderWeeklyAvailabilityCompletion:
+    required_weekdays = set(PROVIDER_PORTAL_REQUIRED_WEEKDAYS)
     unset_weekdays = [
         day.weekday
         for day in availability.days
+        if day.weekday in required_weekdays
         if "unset" in day.options
     ]
     is_complete = len(unset_weekdays) == 0
