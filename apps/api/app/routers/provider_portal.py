@@ -10,6 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.auth import AuthenticatedUser
+from app.core.config import Settings
+from app.core.config import get_settings
 from app.db.models import Provider
 from app.db.models import ProviderCenterPreference
 from app.db.models import ProviderIdentityLink
@@ -43,6 +45,7 @@ from app.schemas.provider_portal import AdminProviderStatusRow
 from app.schemas.provider_portal import ProviderAccountState
 from app.schemas.provider_portal import ProviderInviteAcceptanceRequest
 from app.schemas.provider_portal import ProviderInviteCreate
+from app.schemas.provider_portal import ProviderInviteEmailSendRead
 from app.schemas.provider_portal import ProviderInviteRead
 from app.schemas.provider_portal import ProviderPortalCenterOption
 from app.schemas.provider_portal import ProviderPortalPreferenceOptionsRead
@@ -50,6 +53,11 @@ from app.schemas.provider_portal import ProviderPortalInviteAcceptanceRead
 from app.schemas.provider_portal import ProviderPortalProfileRead
 from app.schemas.provider_portal import ProviderPortalWeekAvailabilityRead
 from app.schemas.provider_portal import ProviderWeeklyAvailabilityCompletion
+from app.services.email.gmail import GmailProviderInviteEmailSender
+from app.services.email.gmail import GmailSendError
+from app.services.email.provider_invites import ProviderInviteEmailSendResult
+from app.services.email.provider_invites import ProviderInviteEmailMessage
+from app.services.email.provider_invites import provider_invite_email_message
 
 
 provider_router = APIRouter(prefix="/provider-portal", tags=["provider-portal"])
@@ -242,31 +250,31 @@ def user_identity_link(
     return identity_link
 
 
-@admin_router.post(
-    "/providers/{provider_id}/invite",
-    response_model=ProviderInviteRead,
-    status_code=201,
-)
-def create_provider_invite(
+def require_provider_is_unlinked(
     provider_id: UUID,
-    request: ProviderInviteCreate,
-    organization_id: UUID = Depends(get_current_organization_id),
-    session: Session = Depends(get_db),
-) -> ProviderInvite:
-    provider = require_active_provider(provider_id, organization_id, session)
+    organization_id: UUID,
+    session: Session,
+) -> None:
     existing_link = provider_identity_link(provider_id, organization_id, session)
 
     if existing_link is not None:
         raise HTTPException(status_code=409, detail="Provider is already linked")
 
+
+def create_or_reset_provider_invite(
+    provider: Provider,
+    request: ProviderInviteCreate,
+    organization_id: UUID,
+    session: Session,
+) -> ProviderInvite:
     invite_email = provider_invite_email(provider, request)
-    invite = existing_provider_invite(provider_id, organization_id, session)
+    invite = existing_provider_invite(provider.id, organization_id, session)
 
     if invite is None:
         invite_token = token_urlsafe(INVITE_TOKEN_BYTE_COUNT)
         invite = ProviderInvite(
             organization_id=organization_id,
-            provider_id=provider_id,
+            provider_id=provider.id,
             email=invite_email,
             invite_token=invite_token,
             status=INVITE_STATUS_INVITED,
@@ -280,9 +288,103 @@ def create_provider_invite(
         invite.accepted_by_clerk_user_id = None
         invite.accepted_at = None
 
+    return invite
+
+
+def require_provider_portal_base_url(settings: Settings) -> str:
+    provider_portal_base_url = settings.provider_portal_base_url
+
+    if provider_portal_base_url is None:
+        raise HTTPException(status_code=500, detail="Provider Portal base URL is not configured")
+
+    return provider_portal_base_url
+
+
+def require_gmail_sender_email(settings: Settings) -> str:
+    gmail_sender_email = settings.gmail_sender_email
+
+    if gmail_sender_email is None:
+        raise HTTPException(status_code=500, detail="Gmail sender email is not configured")
+
+    sender_email = str(gmail_sender_email)
+    return sender_email
+
+
+def require_gmail_service_account_json(settings: Settings) -> str:
+    service_account_json = settings.gmail_service_account_json
+
+    if service_account_json is None:
+        raise HTTPException(status_code=500, detail="Gmail service account JSON is not configured")
+
+    service_account_json_value = service_account_json.get_secret_value()
+    return service_account_json_value
+
+
+def send_provider_invite_email_message(
+    message: ProviderInviteEmailMessage,
+    settings: Settings,
+) -> ProviderInviteEmailSendResult:
+    service_account_json = require_gmail_service_account_json(settings)
+    sender_email = require_gmail_sender_email(settings)
+    sender = GmailProviderInviteEmailSender(service_account_json, sender_email)
+    result = sender.send_provider_invite(message)
+    return result
+
+
+@admin_router.post(
+    "/providers/{provider_id}/invite",
+    response_model=ProviderInviteRead,
+    status_code=201,
+)
+def create_provider_invite(
+    provider_id: UUID,
+    request: ProviderInviteCreate,
+    organization_id: UUID = Depends(get_current_organization_id),
+    session: Session = Depends(get_db),
+) -> ProviderInvite:
+    provider = require_active_provider(provider_id, organization_id, session)
+    require_provider_is_unlinked(provider_id, organization_id, session)
+    invite = create_or_reset_provider_invite(provider, request, organization_id, session)
+
     session.commit()
     session.refresh(invite)
     return invite
+
+
+@admin_router.post(
+    "/providers/{provider_id}/invite-email",
+    response_model=ProviderInviteEmailSendRead,
+    status_code=201,
+)
+def email_provider_invite(
+    provider_id: UUID,
+    request: ProviderInviteCreate,
+    organization_id: UUID = Depends(get_current_organization_id),
+    session: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> ProviderInviteEmailSendRead:
+    provider = require_active_provider(provider_id, organization_id, session)
+    require_provider_is_unlinked(provider_id, organization_id, session)
+    invite = create_or_reset_provider_invite(provider, request, organization_id, session)
+    provider_portal_base_url = require_provider_portal_base_url(settings)
+    sender_email = require_gmail_sender_email(settings)
+
+    session.commit()
+    session.refresh(invite)
+
+    message = provider_invite_email_message(provider, invite, provider_portal_base_url, sender_email)
+
+    try:
+        send_result = send_provider_invite_email_message(message, settings)
+    except GmailSendError as error:
+        raise HTTPException(status_code=502, detail="Provider invite email failed") from error
+    response = ProviderInviteEmailSendRead(
+        invite=ProviderInviteRead.model_validate(invite),
+        recipient_email=invite.email,
+        gmail_message_id=send_result.gmail_message_id,
+        sent_at=send_result.sent_at,
+    )
+    return response
 
 
 @provider_router.post(
