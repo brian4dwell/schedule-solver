@@ -30,6 +30,13 @@ class ProviderInviteRead(TimestampedSchema):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ProviderInviteEmailSendRead(BaseModel):
+    invite: ProviderInviteRead
+    recipient_email: EmailStr
+    gmail_message_id: str
+    sent_at: datetime
+
+
 class ProviderInviteAcceptanceRequest(BaseModel):
     invite_token: str = Field(min_length=1)
 

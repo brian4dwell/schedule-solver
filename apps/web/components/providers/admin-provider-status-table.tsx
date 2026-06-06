@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import {
   createProviderInvite,
+  sendProviderInviteEmail,
   type AdminProviderStatusRecord,
 } from "@/lib/api";
 
@@ -49,10 +50,12 @@ export function AdminProviderStatusTable({ statuses }: AdminProviderStatusTableP
   const [inviteLinksByProviderId, setInviteLinksByProviderId] = useState<Record<string, string>>({});
   const [pendingProviderId, setPendingProviderId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   async function inviteProvider(providerId: string) {
     setPendingProviderId(providerId);
     setErrorMessage(null);
+    setSuccessMessage(null);
     try {
       const invite = await createProviderInvite(providerId);
       const inviteUrl = new URL("/provider-portal/accept", window.location.origin);
@@ -72,8 +75,29 @@ export function AdminProviderStatusTable({ statuses }: AdminProviderStatusTableP
     }
   }
 
+  async function emailProvider(providerId: string) {
+    setPendingProviderId(providerId);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      const emailSend = await sendProviderInviteEmail(providerId);
+      const message = `Invite sent to ${emailSend.recipient_email}.`;
+      setSuccessMessage(message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Provider invite email failed.";
+      setErrorMessage(message);
+    } finally {
+      setPendingProviderId(null);
+    }
+  }
+
   return (
     <section className="rounded-md border border-slate-200 bg-white">
+      {successMessage ? (
+        <div className="border-b border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          {successMessage}
+        </div>
+      ) : null}
       {errorMessage ? (
         <div className="border-b border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           {errorMessage}
@@ -120,6 +144,14 @@ export function AdminProviderStatusTable({ statuses }: AdminProviderStatusTableP
                         onClick={() => inviteProvider(status.providerId)}
                       >
                         {providerIsPending ? "Creating..." : "Create invite"}
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-flex h-9 items-center justify-center rounded-md bg-indigo-700 px-3 text-sm font-semibold text-white disabled:opacity-50"
+                        disabled={providerIsPending || status.accountState === "linked"}
+                        onClick={() => emailProvider(status.providerId)}
+                      >
+                        {providerIsPending ? "Sending..." : "Send email"}
                       </button>
                       {inviteLink !== undefined ? (
                         <input

@@ -64,12 +64,14 @@ import {
   adminProviderStatusApiSchema,
   providerInviteAcceptanceApiSchema,
   providerInviteApiSchema,
+  providerInviteEmailSendApiSchema,
   providerPortalAvailabilityPayloadApiSchema,
   providerPortalPreferenceOptionsApiSchema,
   providerPortalProfileApiSchema,
   providerPortalWeekAvailabilityApiSchema,
   type AdminProviderStatus,
   type ProviderInviteApi,
+  type ProviderInviteEmailSendApi,
   type ProviderPortalPreferenceOptions,
   type ProviderPortalProfileApi,
   type ProviderPortalWeekAvailability,
@@ -134,6 +136,7 @@ export type { FairnessStatus };
 export type MonthlyAvailabilityReport = MonthlyAvailabilityReportApi;
 export type AdminProviderStatusRecord = AdminProviderStatus;
 export type ProviderInvite = ProviderInviteApi;
+export type ProviderInviteEmailSend = ProviderInviteEmailSendApi;
 export type ProviderPortalProfile = ProviderPortalProfileApi;
 export type ProviderPortalAvailabilityRecord = ProviderPortalWeekAvailability;
 export type ProviderPortalPreferenceOptionRecord = ProviderPortalPreferenceOptions;
@@ -458,6 +461,13 @@ export async function createProviderInvite(providerId: string): Promise<Provider
   const responseJson = await requestJson<unknown>(`/admin/providers/${providerId}/invite`, init);
   const invite = providerInviteApiSchema.parse(responseJson);
   return invite;
+}
+
+export async function sendProviderInviteEmail(providerId: string): Promise<ProviderInviteEmailSend> {
+  const init = jsonRequestInit("POST", {});
+  const responseJson = await requestJson<unknown>(`/admin/providers/${providerId}/invite-email`, init);
+  const emailSend = providerInviteEmailSendApiSchema.parse(responseJson);
+  return emailSend;
 }
 
 export async function acceptProviderInvite(inviteToken: string): Promise<ProviderPortalProfile> {

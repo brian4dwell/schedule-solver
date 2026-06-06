@@ -29,6 +29,13 @@ export const providerInviteApiSchema = z.object({
   updated_at: z.string().min(1),
 }).strict();
 
+export const providerInviteEmailSendApiSchema = z.object({
+  invite: providerInviteApiSchema,
+  recipient_email: z.string().email(),
+  gmail_message_id: z.string().min(1),
+  sent_at: z.string().min(1),
+}).strict();
+
 export const providerInviteAcceptanceApiSchema = z.object({
   provider: providerPortalProfileApiSchema,
 }).strict();
@@ -133,6 +140,10 @@ export const providerPortalAvailabilityPayloadApiSchema = providerWeeklyAvailabi
 export type ProviderPortalProfileApi = z.infer<typeof providerPortalProfileApiSchema>;
 
 export type ProviderInviteApi = z.infer<typeof providerInviteApiSchema>;
+
+export type ProviderInviteEmailSendApi = z.infer<
+  typeof providerInviteEmailSendApiSchema
+>;
 
 export type ProviderPortalWeekAvailability = z.infer<
   typeof providerPortalWeekAvailabilityApiSchema

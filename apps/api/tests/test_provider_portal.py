@@ -144,3 +144,47 @@ def test_provider_invite_email_requires_email_source() -> None:
         provider_invite_email(provider, request)
 
     assert error.value.status_code == 400
+
+
+def test_admin_provider_invite_email_route_exists() -> None:
+    matching_routes = [
+        route
+        for route in admin_router.routes
+        if route.path == "/admin/providers/{provider_id}/invite-email"
+    ]
+
+    assert len(matching_routes) == 1
+
+
+def test_provider_invite_url_uses_configured_base_url() -> None:
+    from app.services.email.provider_invites import provider_invite_url
+
+    invite_url = provider_invite_url("https://scheduler.example/", "token-123")
+
+    assert invite_url == "https://scheduler.example/provider-portal/accept?token=token-123"
+
+
+def test_provider_invite_email_message_builds_accept_link() -> None:
+    from app.services.email.provider_invites import provider_invite_email_message
+
+    provider = create_provider()
+    invite = ProviderInvite(
+        id=uuid4(),
+        organization_id=provider.organization_id,
+        provider_id=provider.id,
+        email="provider@example.com",
+        invite_token="token-123",
+        status="invited",
+    )
+
+    message = provider_invite_email_message(
+        provider,
+        invite,
+        "https://scheduler.example",
+        "scheduling@example.com",
+    )
+
+    assert str(message.recipient_email) == "provider@example.com"
+    assert str(message.sender_email) == "scheduling@example.com"
+    assert "token-123" in str(message.invite_url)
+    assert "Accept Provider Portal invite" in message.html_body
