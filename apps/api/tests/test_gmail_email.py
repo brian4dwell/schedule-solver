@@ -3,6 +3,7 @@ from types import TracebackType
 
 from pytest import MonkeyPatch
 
+from app.services.email.calendar_availability import CalendarAvailabilityEmailMessage
 from app.services.email.gmail import GMAIL_SMTP_HOST
 from app.services.email.gmail import GMAIL_SMTP_PORT
 from app.services.email.gmail import GMAIL_SMTP_TIMEOUT_SECONDS
@@ -64,6 +65,43 @@ def test_gmail_sender_delivers_provider_invite_through_smtp_app_password(monkeyp
     sender = GmailProviderInviteEmailSender("sixteen-digit-code", "scheduling@gmail.com")
 
     result = sender.send_provider_invite(message)
+
+    smtp_client = FakeSmtpClient.last_instance
+    assert smtp_client is not None
+    assert smtp_client.host == GMAIL_SMTP_HOST
+    assert smtp_client.port == GMAIL_SMTP_PORT
+    assert smtp_client.timeout == GMAIL_SMTP_TIMEOUT_SECONDS
+    assert smtp_client.started_tls is True
+    assert smtp_client.login_email == "scheduling@gmail.com"
+    assert smtp_client.login_password == "sixteen-digit-code"
+    assert smtp_client.sent_message is not None
+    assert smtp_client.sent_message["Message-ID"] == result.gmail_message_id
+    assert smtp_client.sent_message["From"] == "scheduling@gmail.com"
+    assert smtp_client.sent_message["To"] == "provider@example.com"
+
+
+def calendar_availability_email_message() -> CalendarAvailabilityEmailMessage:
+    message = CalendarAvailabilityEmailMessage(
+        recipient_email="provider@example.com",
+        sender_email="scheduling@gmail.com",
+        provider_display_name="Pat Provider",
+        schedule_week_name="Week of May 4, 2026",
+        schedule_week_start_date="2026-05-04",
+        schedule_week_end_date="2026-05-10",
+        provider_portal_url="https://scheduler.example/provider-portal",
+        subject="New availability request: Week of May 4, 2026",
+        plain_text_body="Submit your availability.",
+        html_body="<p>Submit your availability.</p>",
+    )
+    return message
+
+
+def test_gmail_sender_delivers_calendar_availability_through_smtp_app_password(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr("app.services.email.gmail.smtplib.SMTP", FakeSmtpClient)
+    message = calendar_availability_email_message()
+    sender = GmailProviderInviteEmailSender("sixteen-digit-code", "scheduling@gmail.com")
+
+    result = sender.send_calendar_availability(message)
 
     smtp_client = FakeSmtpClient.last_instance
     assert smtp_client is not None

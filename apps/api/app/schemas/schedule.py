@@ -132,6 +132,19 @@ class ScheduleDraftSaveResponse(BaseModel):
     violations: list[ConstraintViolationRead]
 
 
+class CalendarAvailabilityEmailRecipientRead(BaseModel):
+    provider_id: UUID
+    recipient_email: str
+    gmail_message_id: str
+    sent_at: datetime
+
+
+class CalendarAvailabilityEmailSendRead(BaseModel):
+    schedule_period: SchedulePeriodRead
+    sent_count: int
+    recipients: list[CalendarAvailabilityEmailRecipientRead] = Field(default_factory=list)
+
+
 class SchedulePeriodCloneResponse(BaseModel):
     schedule_period: SchedulePeriodRead
     schedule_version: ScheduleDraftSaveResponse
