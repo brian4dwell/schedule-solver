@@ -164,17 +164,17 @@ Support notification triggers for:
 - Weekly availability reminder for required planning weeks.
 - Availability completion confirmation.
 
-### Gmail API Provider Invites
+### Gmail SMTP Provider Invites
 
-Admins can send a Provider Portal invite email directly through the Gmail API while keeping the generated-link invite flow available.
+Admins can send a Provider Portal invite email through Gmail SMTP with an app password while keeping the generated-link invite flow available.
 
-Required API configuration:
+Required SMTP configuration:
 
 - `PROVIDER_PORTAL_BASE_URL` is the public web origin used to build `/provider-portal/accept?token=...` links.
-- `GMAIL_SENDER_EMAIL` is the Workspace mailbox that sends invite email.
-- `GMAIL_SERVICE_ACCOUNT_JSON` is the Google service account credential JSON authorized for domain-wide delegation.
+- `GMAIL_SENDER_EMAIL` is the Gmail mailbox that sends invite email.
+- `GMAIL_APP_PASSWORD` is the Google app password for the sender mailbox.
 
-The service account must be authorized with the Gmail send scope only: `https://www.googleapis.com/auth/gmail.send`.
+This is a quick internal prototype path. Google Account Help describes app passwords as 16-digit passcodes that require 2-Step Verification and are not generally recommended when Sign in with Google is available: https://support.google.com/accounts/answer/185833.
 
 The admin email-send endpoint creates or resets the Provider invite before sending email so the emailed token is persisted before Gmail delivery is attempted.
 

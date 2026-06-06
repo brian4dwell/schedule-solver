@@ -40,8 +40,8 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3001"
     )
     provider_portal_base_url: str | None = None
-    gmail_service_account_json: SecretStr | None = None
     gmail_sender_email: EmailStr | None = None
+    gmail_app_password: SecretStr | None = None
 
     model_config = SettingsConfigDict(
         env_file=environment_file_path,
