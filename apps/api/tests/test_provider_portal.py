@@ -82,7 +82,7 @@ def test_admin_provider_status_route_exists() -> None:
     assert len(matching_routes) == 1
 
 
-def test_availability_completion_marks_unset_week_incomplete() -> None:
+def test_availability_completion_marks_unset_weekday_incomplete() -> None:
     schedule_week = create_schedule_week()
     provider_id = uuid4()
     days = [
@@ -107,6 +107,33 @@ def test_availability_completion_marks_unset_week_incomplete() -> None:
 
     assert completion.is_complete is False
     assert completion.unset_weekdays == ["tuesday"]
+
+
+def test_availability_completion_ignores_unset_weekends() -> None:
+    schedule_week = create_schedule_week()
+    provider_id = uuid4()
+    days = [
+        ProviderAvailabilityDayRead(weekday="monday", options=["full_shift"]),
+        ProviderAvailabilityDayRead(weekday="tuesday", options=["none"]),
+        ProviderAvailabilityDayRead(weekday="wednesday", options=["none"]),
+        ProviderAvailabilityDayRead(weekday="thursday", options=["none"]),
+        ProviderAvailabilityDayRead(weekday="friday", options=["none"]),
+        ProviderAvailabilityDayRead(weekday="saturday", options=["unset"]),
+        ProviderAvailabilityDayRead(weekday="sunday", options=["unset"]),
+    ]
+    availability = ProviderWeeklyAvailabilityRead(
+        schedule_week_id=schedule_week.id,
+        provider_id=provider_id,
+        is_locked=False,
+        min_shifts_requested=0,
+        max_shifts_requested=1,
+        days=days,
+    )
+
+    completion = availability_completion(schedule_week, availability)
+
+    assert completion.is_complete is True
+    assert completion.unset_weekdays == []
 
 
 def test_account_state_prefers_linked_over_invited() -> None:
