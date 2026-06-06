@@ -11,6 +11,8 @@ from sqlalchemy import select
 from sqlalchemy import update as sqlalchemy_update
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings
+from app.core.config import get_settings
 from app.db.models import Assignment
 from app.db.models import ConstraintViolation
 from app.db.models import Provider
@@ -24,6 +26,8 @@ from app.db.models import ScheduleVersion
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
 from app.dependencies import require_admin_user
+from app.schemas.schedule import CalendarAvailabilityEmailRecipientRead
+from app.schemas.schedule import CalendarAvailabilityEmailSendRead
 from app.schemas.schedule import ProviderEligibilityRequest
 from app.schemas.schedule import AssignmentRead
 from app.schemas.schedule import ConstraintViolationRead
@@ -40,6 +44,11 @@ from app.schemas.schedule import SchedulePublishResponse
 from app.schemas.schedule import ScheduleVersionDetailRead
 from app.schemas.schedule import ScheduleVersionRead
 from app.db.models.scheduling import current_utc_time
+from app.services.email.calendar_availability import CalendarAvailabilityEmailMessage
+from app.services.email.calendar_availability import CalendarAvailabilityEmailSendResult
+from app.services.email.calendar_availability import calendar_availability_email_message
+from app.services.email.gmail import GmailProviderInviteEmailSender
+from app.services.email.gmail import GmailSendError
 from app.services.scheduling.provider_eligibility import check_provider_slot_eligibility
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityViolation
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityInput
@@ -64,6 +73,88 @@ def require_schedule_period(
         raise HTTPException(status_code=404, detail="Schedule period not found")
 
     return schedule_period
+
+
+def require_open_schedule_period(schedule_period: SchedulePeriod) -> None:
+    schedule_period_status = schedule_period.status
+    schedule_period_is_open = schedule_period_status == "draft"
+
+    if not schedule_period_is_open:
+        detail = "Availability email can only be sent for open schedule weeks"
+        raise HTTPException(status_code=409, detail=detail)
+
+
+def active_providers_with_email(organization_id: UUID, session: Session) -> list[Provider]:
+    statement = select(Provider)
+    statement = statement.where(Provider.organization_id == organization_id)
+    statement = statement.where(Provider.is_active.is_(True))
+    statement = statement.where(Provider.email.is_not(None))
+    statement = statement.order_by(Provider.display_name, Provider.id)
+    providers = list(session.scalars(statement))
+    return providers
+
+
+def require_provider_portal_base_url(settings: Settings) -> str:
+    provider_portal_base_url = settings.provider_portal_base_url
+
+    if provider_portal_base_url is None:
+        raise HTTPException(status_code=500, detail="Provider Portal base URL is not configured")
+
+    return provider_portal_base_url
+
+
+def require_gmail_sender_email(settings: Settings) -> str:
+    gmail_sender_email = settings.gmail_sender_email
+
+    if gmail_sender_email is None:
+        raise HTTPException(status_code=500, detail="Gmail sender email is not configured")
+
+    sender_email = str(gmail_sender_email)
+    return sender_email
+
+
+def require_gmail_app_password(settings: Settings) -> str:
+    gmail_app_password = settings.gmail_app_password
+
+    if gmail_app_password is None:
+        raise HTTPException(status_code=500, detail="Gmail app password is not configured")
+
+    app_password = gmail_app_password.get_secret_value()
+    return app_password
+
+
+def send_calendar_availability_email_message(
+    message: CalendarAvailabilityEmailMessage,
+    settings: Settings,
+) -> CalendarAvailabilityEmailSendResult:
+    app_password = require_gmail_app_password(settings)
+    sender_email = require_gmail_sender_email(settings)
+    sender = GmailProviderInviteEmailSender(app_password, sender_email)
+    result = sender.send_calendar_availability(message)
+    return result
+
+
+def send_calendar_availability_email_to_provider(
+    provider: Provider,
+    schedule_period: SchedulePeriod,
+    provider_portal_base_url: str,
+    sender_email: str,
+    settings: Settings,
+) -> CalendarAvailabilityEmailRecipientRead:
+    message = calendar_availability_email_message(
+        provider,
+        schedule_period,
+        provider_portal_base_url,
+        sender_email,
+    )
+    send_result = send_calendar_availability_email_message(message, settings)
+    recipient = CalendarAvailabilityEmailRecipientRead(
+        provider_id=provider.id,
+        recipient_email=str(message.recipient_email),
+        gmail_message_id=send_result.gmail_message_id,
+        sent_at=send_result.sent_at,
+    )
+    return recipient
 
 
 def require_schedule_version(
@@ -910,6 +1001,46 @@ def create_schedule_period(
     session.commit()
     session.refresh(schedule_period)
     return schedule_period
+
+
+@router.post(
+    "/schedule-periods/{period_id}/availability-email",
+    response_model=CalendarAvailabilityEmailSendRead,
+    status_code=201,
+)
+def email_calendar_availability_request(
+    period_id: UUID,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+    settings: Settings = Depends(get_settings),
+) -> CalendarAvailabilityEmailSendRead:
+    schedule_period = require_schedule_period(period_id, organization_id, session)
+    require_open_schedule_period(schedule_period)
+    provider_portal_base_url = require_provider_portal_base_url(settings)
+    sender_email = require_gmail_sender_email(settings)
+    providers = active_providers_with_email(organization_id, session)
+    recipients: list[CalendarAvailabilityEmailRecipientRead] = []
+
+    try:
+        for provider in providers:
+            recipient = send_calendar_availability_email_to_provider(
+                provider,
+                schedule_period,
+                provider_portal_base_url,
+                sender_email,
+                settings,
+            )
+            recipients.append(recipient)
+    except GmailSendError as error:
+        raise HTTPException(status_code=502, detail="Calendar availability email failed") from error
+
+    sent_count = len(recipients)
+    response = CalendarAvailabilityEmailSendRead(
+        schedule_period=SchedulePeriodRead.model_validate(schedule_period),
+        sent_count=sent_count,
+        recipients=recipients,
+    )
+    return response
 
 
 @router.get("/schedule-periods/{period_id}", response_model=SchedulePeriodRead)

@@ -2,6 +2,10 @@ import smtplib
 from email.message import EmailMessage
 from email.utils import make_msgid
 
+from app.services.email.calendar_availability import CalendarAvailabilityEmailMessage
+from app.services.email.calendar_availability import CalendarAvailabilityEmailSendResult
+from app.services.email.calendar_availability import calendar_availability_mime_message
+from app.services.email.calendar_availability import sent_calendar_availability_result
 from app.services.email.provider_invites import ProviderInviteEmailMessage
 from app.services.email.provider_invites import ProviderInviteEmailSendResult
 from app.services.email.provider_invites import provider_invite_mime_message
@@ -35,6 +39,16 @@ class GmailProviderInviteEmailSender:
         result = sent_provider_invite_result(gmail_message_id)
         return result
 
+    def send_calendar_availability(
+        self,
+        message: CalendarAvailabilityEmailMessage,
+    ) -> CalendarAvailabilityEmailSendResult:
+        gmail_message_id = self.message_id()
+        mime_message = self.calendar_availability_mime_message(message, gmail_message_id)
+        self.deliver_mime_message(mime_message)
+        result = sent_calendar_availability_result(gmail_message_id)
+        return result
+
     def message_id(self) -> str:
         sender_domain = self.sender_email_domain()
         gmail_message_id = make_msgid(domain=sender_domain)
@@ -51,6 +65,15 @@ class GmailProviderInviteEmailSender:
         gmail_message_id: str,
     ) -> EmailMessage:
         mime_message = provider_invite_mime_message(message)
+        mime_message["Message-ID"] = gmail_message_id
+        return mime_message
+
+    def calendar_availability_mime_message(
+        self,
+        message: CalendarAvailabilityEmailMessage,
+        gmail_message_id: str,
+    ) -> EmailMessage:
+        mime_message = calendar_availability_mime_message(message)
         mime_message["Message-ID"] = gmail_message_id
         return mime_message
 

@@ -16,6 +16,7 @@ from app.routers.schedules import create_cloned_weekly_availability_row
 from app.routers.schedules import create_assignment_from_request
 from app.routers.schedules import duplicate_assignment_request
 from app.routers.schedules import duplicate_assignment_requests
+from app.routers.schedules import require_open_schedule_period
 from app.routers.schedules import router
 from app.routers.schedules import shift_request_constraint_violations_for_provider
 from app.routers.schedules import stable_assignment_request
@@ -583,3 +584,34 @@ def test_shift_request_warning_lists_provider_above_maximum() -> None:
     assert violations[0].assignment_id is None
     assert violations[0].constraint_type == "provider_max_shifts_exceeded"
     assert violations[0].message == "Blair is scheduled for 2/1 requested maximum shifts."
+
+
+def test_schedule_period_route_accepts_availability_email() -> None:
+    period_routes = [
+        route
+        for route in router.routes
+        if route.path == "/schedule-periods/{period_id}/availability-email"
+    ]
+    email_routes = [
+        route
+        for route in period_routes
+        if "POST" in route.methods
+    ]
+
+    assert len(email_routes) == 1
+
+
+def test_open_schedule_period_rejects_published_week() -> None:
+    schedule_period = SchedulePeriod(
+        id=uuid4(),
+        organization_id=uuid4(),
+        name="Week of May 4, 2026",
+        start_date=date(2026, 5, 4),
+        end_date=date(2026, 5, 10),
+        status="published",
+    )
+
+    with pytest.raises(HTTPException) as error:
+        require_open_schedule_period(schedule_period)
+
+    assert error.value.status_code == 409
