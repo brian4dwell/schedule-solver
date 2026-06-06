@@ -62,14 +62,12 @@ export type CalendarAvailabilityViewProps = {
     isChecked: boolean,
   ) => void;
   onMonthChange: (monthStartIso: string) => void;
-  onRecordSave: (record: ProviderPortalAvailabilityRecord) => void;
-  onRecordSelect: (weekId: string) => void;
+  onRecordSave: (record: ProviderPortalAvailabilityRecord) => Promise<boolean>;
   onRecordShiftRequestChange: (
     record: ProviderPortalAvailabilityRecord,
     field: ShiftRequestField,
     value: string,
   ) => void;
-  onSave: () => Promise<boolean>;
   records: ProviderPortalAvailabilityRecord[];
 };
 
@@ -83,12 +81,6 @@ export type PreferencesViewProps = {
   shiftTypeDrafts: ShiftTypePreferenceDraft[];
 };
 
-export type ProviderPortalSidebarProps = {
-  activeSection: ProviderPortalSection;
-  completionText: string;
-  onSectionChange: (section: ProviderPortalSection) => void;
-  onWeekSelect: (weekId: string) => void;
-  profile: ProviderPortalProfile;
+export type ProviderPortalTopBarNavigationProps = {
   records: ProviderPortalAvailabilityRecord[];
-  selectedWeekId: string;
 };

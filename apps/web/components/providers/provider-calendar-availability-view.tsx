@@ -30,8 +30,7 @@ type CalendarWeekRowProps = {
   isSavingAvailability: boolean;
   monthStartIso: string;
   onEditDate: (dateIso: string) => void;
-  onRecordSave: (record: ProviderPortalAvailabilityRecord) => void;
-  onRecordSelect: (weekId: string) => void;
+  onRecordSave: (record: ProviderPortalAvailabilityRecord) => Promise<boolean>;
   onRecordShiftRequestChange: (
     record: ProviderPortalAvailabilityRecord,
     field: ShiftRequestField,
@@ -88,9 +87,7 @@ export function CalendarAvailabilityView({
   onCalendarDayChange,
   onMonthChange,
   onRecordSave,
-  onRecordSelect,
   onRecordShiftRequestChange,
-  onSave,
   records,
 }: CalendarAvailabilityViewProps) {
   const [editingDateIso, setEditingDateIso] = useState<string | null>(null);
@@ -134,7 +131,11 @@ export function CalendarAvailabilityView({
   }
 
   async function saveAndCloseEditingDate() {
-    const saveSucceeded = await onSave();
+    if (editingRecord === null) {
+      return;
+    }
+
+    const saveSucceeded = await onRecordSave(editingRecord);
 
     if (!saveSucceeded) {
       return;
@@ -223,7 +224,6 @@ export function CalendarAvailabilityView({
                   monthStartIso={monthStartIso}
                   onEditDate={setEditingDateIso}
                   onRecordSave={onRecordSave}
-                  onRecordSelect={onRecordSelect}
                   onRecordShiftRequestChange={onRecordShiftRequestChange}
                   records={records}
                 />
@@ -310,7 +310,6 @@ function CalendarWeekRow({
   monthStartIso,
   onEditDate,
   onRecordSave,
-  onRecordSelect,
   onRecordShiftRequestChange,
   records,
 }: CalendarWeekRowProps) {
@@ -348,10 +347,6 @@ function CalendarWeekRow({
             className={cellClass}
             disabled={!dateIsEditable}
             onClick={() => {
-              if (record !== null) {
-                onRecordSelect(record.scheduleWeekId);
-              }
-
               onEditDate(dateIso);
             }}
           >
@@ -369,7 +364,6 @@ function CalendarWeekRow({
       <CalendarWeekRequestCell
         isSavingAvailability={isSavingAvailability}
         onRecordSave={onRecordSave}
-        onRecordSelect={onRecordSelect}
         onRecordShiftRequestChange={onRecordShiftRequestChange}
         record={weekRecord}
       />
@@ -380,13 +374,11 @@ function CalendarWeekRow({
 function CalendarWeekRequestCell({
   isSavingAvailability,
   onRecordSave,
-  onRecordSelect,
   onRecordShiftRequestChange,
   record,
 }: {
   isSavingAvailability: boolean;
-  onRecordSave: (record: ProviderPortalAvailabilityRecord) => void;
-  onRecordSelect: (weekId: string) => void;
+  onRecordSave: (record: ProviderPortalAvailabilityRecord) => Promise<boolean>;
   onRecordShiftRequestChange: (
     record: ProviderPortalAvailabilityRecord,
     field: ShiftRequestField,
@@ -421,7 +413,6 @@ function CalendarWeekRequestCell({
             disabled={isLocked}
             value={record.availability.minShiftsRequested}
             onChange={(event) => {
-              onRecordSelect(record.scheduleWeekId);
               onRecordShiftRequestChange(record, "min", event.target.value);
             }}
           />
@@ -436,7 +427,6 @@ function CalendarWeekRequestCell({
             disabled={isLocked}
             value={record.availability.maxShiftsRequested}
             onChange={(event) => {
-              onRecordSelect(record.scheduleWeekId);
               onRecordShiftRequestChange(record, "max", event.target.value);
             }}
           />
@@ -446,7 +436,9 @@ function CalendarWeekRequestCell({
         type="button"
         className="mt-2 w-full rounded-md bg-teal-700 px-2 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
         disabled={isLocked || isSavingAvailability}
-        onClick={() => onRecordSave(record)}
+        onClick={() => {
+          void onRecordSave(record);
+        }}
       >
         {isSavingAvailability ? "Saving..." : "Save"}
       </button>

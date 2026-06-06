@@ -2,6 +2,9 @@ import type { WeekAvailabilityViewProps } from "./provider-portal-types";
 import { ShiftRequestControls } from "./provider-shift-request-controls";
 import {
   availabilityOptions,
+  colorClassForWeekday,
+  dateForWeekday,
+  formatWeekdayDate,
   labelFromSnake,
   weekdayOrder,
 } from "./provider-portal-utils";
@@ -49,13 +52,21 @@ export function WeekAvailabilityView({
               return matchesWeekday;
             });
             const options = day?.options ?? ["unset"];
+            const weekdayDate = dateForWeekday(record.scheduleWeekStartDate, weekday);
+            const weekdayDateLabel = formatWeekdayDate(weekdayDate);
+            const colorClassName = colorClassForWeekday(weekday);
+            const rowClassName = `grid gap-3 rounded-md border p-3 md:grid-cols-[120px_1fr] ${colorClassName}`;
+
             return (
               <div
                 key={weekday}
-                className="grid gap-3 rounded-md border border-slate-200 p-3 md:grid-cols-[120px_1fr]"
+                className={rowClassName}
               >
                 <div className="text-sm font-semibold text-slate-800">
-                  {labelFromSnake(weekday)}
+                  <span className="block">{labelFromSnake(weekday)}</span>
+                  <span className="mt-1 block text-xs font-medium text-slate-600">
+                    {weekdayDateLabel}
+                  </span>
                 </div>
                 <div className="flex flex-wrap gap-3">
                   {availabilityOptions.map((option) => {

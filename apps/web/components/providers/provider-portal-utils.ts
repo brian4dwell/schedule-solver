@@ -12,6 +12,7 @@ import type {
 import type {
   CenterPreferenceDraft,
   ProviderPortalNavigationItem,
+  ProviderPortalSection,
   ShiftTypePreferenceDraft,
 } from "./provider-portal-types";
 
@@ -29,6 +30,42 @@ export const providerPortalNavigationItems: ProviderPortalNavigationItem[] = [
     label: "Preferences",
   },
 ];
+
+export function providerPortalSectionFromViewValue(value: string | null): ProviderPortalSection {
+  if (value === null) {
+    return "weekAvailability";
+  }
+
+  if (value === "week") {
+    return "weekAvailability";
+  }
+
+  if (value === "calendar") {
+    return "calendarAvailability";
+  }
+
+  if (value === "preferences") {
+    return "preferences";
+  }
+
+  throw new Error("Provider portal view value is invalid.");
+}
+
+export function providerPortalViewValueForSection(section: ProviderPortalSection) {
+  if (section === "weekAvailability") {
+    return "week";
+  }
+
+  if (section === "calendarAvailability") {
+    return "calendar";
+  }
+
+  if (section === "preferences") {
+    return "preferences";
+  }
+
+  throw new Error("Provider portal section is invalid.");
+}
 
 export const weekdayOrder: Weekday[] = [
   "monday",
@@ -76,6 +113,16 @@ export function labelFromSnake(value: string) {
   const withSpaces = value.replaceAll("_", " ");
   const label = withSpaces.charAt(0).toUpperCase() + withSpaces.slice(1);
   return label;
+}
+
+export function weekdayIndex(weekday: Weekday) {
+  const index = weekdayOrder.indexOf(weekday);
+
+  if (index === -1) {
+    throw new Error("Weekday must resolve to a day index.");
+  }
+
+  return index;
 }
 
 export function dateAtUtcMidnight(value: string) {
@@ -133,6 +180,52 @@ export function fullDateLabelForDate(value: Date) {
   });
   const label = formatter.format(value);
   return label;
+}
+
+export function formatWeekdayDate(value: Date) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "UTC",
+  });
+  const formattedValue = formatter.format(value);
+  const dateLabel = formattedValue.replace(" ", "-");
+  return dateLabel;
+}
+
+export function dateForWeekday(weekStartDate: string, weekday: Weekday) {
+  const weekStart = dateAtUtcMidnight(weekStartDate);
+  const dayOffset = weekdayIndex(weekday);
+  const date = addDays(weekStart, dayOffset);
+  return date;
+}
+
+export function colorClassForWeekday(weekday: Weekday) {
+  if (weekday === "monday") {
+    return "border-rose-200 bg-rose-50";
+  }
+
+  if (weekday === "tuesday") {
+    return "border-amber-200 bg-amber-50";
+  }
+
+  if (weekday === "wednesday") {
+    return "border-lime-200 bg-lime-50";
+  }
+
+  if (weekday === "thursday") {
+    return "border-emerald-200 bg-emerald-50";
+  }
+
+  if (weekday === "friday") {
+    return "border-sky-200 bg-sky-50";
+  }
+
+  if (weekday === "saturday") {
+    return "border-indigo-200 bg-indigo-50";
+  }
+
+  return "border-violet-200 bg-violet-50";
 }
 
 export function weekdayForDate(value: Date): Weekday {

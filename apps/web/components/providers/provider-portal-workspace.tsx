@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import {
   saveCurrentProviderPreferences,
@@ -15,9 +16,7 @@ import type {
 
 import { CalendarAvailabilityView } from "./provider-calendar-availability-view";
 import { PreferencesView } from "./provider-preferences-view";
-import { ProviderPortalSidebar } from "./provider-portal-sidebar";
 import type {
-  ProviderPortalSection,
   ProviderPortalWorkspaceProps,
   ShiftRequestField,
 } from "./provider-portal-types";
@@ -30,6 +29,7 @@ import {
   monthStartIsoForDate,
   optionIsExclusive,
   preferencePayload,
+  providerPortalSectionFromViewValue,
   shiftTypePreferenceDrafts,
 } from "./provider-portal-utils";
 import { WeekAvailabilityView } from "./provider-week-availability-view";
@@ -45,10 +45,12 @@ export function ProviderPortalWorkspace({
   const firstWeekStartDate = availabilityRecords.at(0)?.scheduleWeekStartDate ?? todayIso;
   const firstWeekStart = dateAtUtcMidnight(firstWeekStartDate);
   const firstMonthStartIso = monthStartIsoForDate(firstWeekStart);
+  const searchParams = useSearchParams();
+  const requestedSection = searchParams.get("view");
+  const requestedWeekId = searchParams.get("weekId");
+  const activeSection = providerPortalSectionFromViewValue(requestedSection);
   const [records, setRecords] = useState(availabilityRecords);
-  const [selectedWeekId, setSelectedWeekId] = useState(firstWeekId);
   const [selectedMonthStartIso, setSelectedMonthStartIso] = useState(firstMonthStartIso);
-  const [activeSection, setActiveSection] = useState<ProviderPortalSection>("weekAvailability");
   const [centerDrafts, setCenterDrafts] = useState(() => {
     const drafts = centerPreferenceDrafts(preferenceOptions, preferences);
     return drafts;
@@ -61,6 +63,11 @@ export function ProviderPortalWorkspace({
   const [preferenceMessage, setPreferenceMessage] = useState<string | null>(null);
   const [isSavingAvailability, setIsSavingAvailability] = useState(false);
   const [isSavingPreferences, setIsSavingPreferences] = useState(false);
+  const requestedWeekExists = records.some((record) => {
+    const matchesWeek = record.scheduleWeekId === requestedWeekId;
+    return matchesWeek;
+  });
+  const selectedWeekId = requestedWeekExists ? requestedWeekId ?? firstWeekId : firstWeekId;
 
   const selectedRecord = useMemo(() => {
     const record = records.find((candidate) => {
@@ -200,7 +207,6 @@ export function ProviderPortalWorkspace({
       days: nextDays,
     };
     updateRecordAvailability(record.scheduleWeekId, nextAvailability);
-    setSelectedWeekId(record.scheduleWeekId);
   }
 
   function updateShiftRequest(field: ShiftRequestField, value: string) {
@@ -255,7 +261,6 @@ export function ProviderPortalWorkspace({
       maxShiftsRequested: nextMaximum,
     };
     updateRecordAvailability(record.scheduleWeekId, nextAvailability);
-    setSelectedWeekId(record.scheduleWeekId);
   }
 
   async function saveAvailability() {
@@ -309,11 +314,12 @@ export function ProviderPortalWorkspace({
         });
         return nextRecords;
       });
-      setSelectedWeekId(savedRecord.scheduleWeekId);
       setAvailabilityMessage("Availability saved.");
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Availability save failed.";
       setAvailabilityMessage(message);
+      return false;
     } finally {
       setIsSavingAvailability(false);
     }
@@ -335,16 +341,26 @@ export function ProviderPortalWorkspace({
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-      <ProviderPortalSidebar
-        activeSection={activeSection}
-        completionText={completionText}
-        onSectionChange={setActiveSection}
-        onWeekSelect={setSelectedWeekId}
-        profile={profile}
-        records={records}
-        selectedWeekId={selectedWeekId}
-      />
+    <div className="grid gap-4">
+      <section className="rounded-md border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-sm text-slate-500">Signed in as</div>
+            <div className="truncate text-lg font-semibold text-slate-950">
+              {profile.display_name}
+            </div>
+            <div className="truncate text-sm text-slate-600">
+              {profile.email ?? "No email on file"}
+            </div>
+          </div>
+          <div className="rounded-md border border-slate-200 px-3 py-2">
+            <div className="text-sm font-semibold text-slate-950">{completionText}</div>
+            <div className="mt-1 text-xs text-slate-500">
+              {records.length} availability weeks
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div className="min-w-0">
         {activeSection === "weekAvailability" ? (
@@ -365,9 +381,7 @@ export function ProviderPortalWorkspace({
             onCalendarDayChange={updateCalendarDay}
             onMonthChange={setSelectedMonthStartIso}
             onRecordSave={saveAvailabilityRecord}
-            onRecordSelect={setSelectedWeekId}
             onRecordShiftRequestChange={updateRecordShiftRequest}
-            onSave={saveAvailability}
             records={records}
           />
         ) : null}

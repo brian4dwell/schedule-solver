@@ -1,5 +1,5 @@
 import { AppShell } from "@/components/layout/app-shell";
-import { PageHeader } from "@/components/layout/page-header";
+import { ProviderPortalTopBarNavigation } from "@/components/providers/provider-portal-top-bar-navigation";
 import { ProviderPortalWorkspace } from "@/components/providers/provider-portal-workspace";
 import {
   getCurrentProviderAvailability,
@@ -124,22 +124,21 @@ export default async function ProviderPortalPage() {
     }
 
     return (
-      <AppShell>
-        <PageHeader
-          title="Provider Portal"
-          description="Manage open-week availability and provider-visible preferences."
-        />
+      <AppShell
+        primaryNavigationIsVisible={false}
+        workspaceTitle="Provider Portal"
+      >
         <ProviderPortalAccessIssuePanel issue={accessIssue} />
       </AppShell>
     );
   }
 
   return (
-    <AppShell>
-      <PageHeader
-        title="Provider Portal"
-        description="Manage open-week availability and provider-visible preferences."
-      />
+    <AppShell
+      primaryNavigationIsVisible={false}
+      topBarContent={<ProviderPortalTopBarNavigation records={availabilityRecords} />}
+      workspaceTitle="Provider Portal"
+    >
       <ProviderPortalWorkspace
         availabilityRecords={availabilityRecords}
         preferenceOptions={preferenceOptions}

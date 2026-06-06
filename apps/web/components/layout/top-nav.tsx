@@ -102,7 +102,17 @@ function buildMenuTriggerClass(isActive: boolean) {
   return triggerClass;
 }
 
-export function TopNav() {
+type TopNavProps = {
+  primaryNavigationIsVisible: boolean;
+  secondaryNavigation?: React.ReactNode;
+  workspaceTitle: string;
+};
+
+export function TopNav({
+  primaryNavigationIsVisible,
+  secondaryNavigation,
+  workspaceTitle,
+}: TopNavProps) {
   const pathname = usePathname();
   const auth = useAuth();
   const userResult = useUser();
@@ -125,6 +135,7 @@ export function TopNav() {
     return isActive;
   });
   const reportsMenuTriggerClass = buildMenuTriggerClass(reportsMenuHasActiveLink);
+  const secondaryNavigationIsVisible = secondaryNavigation !== undefined;
 
   return (
     <header className="border-b border-slate-200 bg-white">
@@ -132,7 +143,7 @@ export function TopNav() {
         <Link href="/dashboard" className="inline-flex flex-wrap items-baseline gap-x-2">
           <span className="text-sm font-medium text-slate-500">Bespoke Anesthesia</span>
           <span className="text-sm text-slate-300">/</span>
-          <span className="text-xl font-semibold text-slate-950">Operations workspace</span>
+          <span className="text-xl font-semibold text-slate-950">{workspaceTitle}</span>
         </Link>
         <div className="flex items-center gap-3">
           {currentUserIsAdmin ? (
@@ -145,72 +156,79 @@ export function TopNav() {
           </Show>
         </div>
       </div>
-      <nav className="border-t border-slate-200 px-4 py-2 sm:px-6 lg:px-8">
-        <div className="flex flex-wrap gap-2">
-          {currentUserIsAdmin ? (
+      {primaryNavigationIsVisible ? (
+        <nav className="border-t border-slate-200 px-4 py-2 sm:px-6 lg:px-8">
+          <div className="flex flex-wrap gap-2">
+            {currentUserIsAdmin ? (
+              <Link
+                href={scheduleBoardLink.href}
+                className={buildLinkClass(
+                  isNavigationLinkActive(pathname, scheduleBoardLink.href),
+                )}
+              >
+                {scheduleBoardLink.label}
+              </Link>
+            ) : null}
+            {currentUserIsAdmin ? (
+              <Link
+                href={availabilityLink.href}
+                className={buildLinkClass(
+                  isNavigationLinkActive(pathname, availabilityLink.href),
+                )}
+              >
+                {availabilityLink.label}
+              </Link>
+            ) : null}
             <Link
-              href={scheduleBoardLink.href}
+              href={providerPortalLink.href}
               className={buildLinkClass(
-                isNavigationLinkActive(pathname, scheduleBoardLink.href),
+                isNavigationLinkActive(pathname, providerPortalLink.href),
               )}
             >
-              {scheduleBoardLink.label}
+              {providerPortalLink.label}
             </Link>
-          ) : null}
-          {currentUserIsAdmin ? (
-            <Link
-              href={availabilityLink.href}
-              className={buildLinkClass(
-                isNavigationLinkActive(pathname, availabilityLink.href),
-              )}
-            >
-              {availabilityLink.label}
-            </Link>
-          ) : null}
-          <Link
-            href={providerPortalLink.href}
-            className={buildLinkClass(
-              isNavigationLinkActive(pathname, providerPortalLink.href),
-            )}
-          >
-            {providerPortalLink.label}
-          </Link>
-          {currentUserIsAdmin ? (
-            <details className="group relative shrink-0">
-              <summary className={setupMenuTriggerClass}>{setupMenu.label}</summary>
-              <div className="absolute left-0 top-10 z-20 min-w-44 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
-                {setupLinks.map((item) => {
-                  const isActive = isNavigationLinkActive(pathname, item.href);
-                  const linkClass = buildLinkClass(isActive);
+            {currentUserIsAdmin ? (
+              <details className="group relative shrink-0">
+                <summary className={setupMenuTriggerClass}>{setupMenu.label}</summary>
+                <div className="absolute left-0 top-10 z-20 min-w-44 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                  {setupLinks.map((item) => {
+                    const isActive = isNavigationLinkActive(pathname, item.href);
+                    const linkClass = buildLinkClass(isActive);
 
-                  return (
-                    <Link key={item.href} href={item.href} className={`${linkClass} w-full`}>
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            </details>
-          ) : null}
-          {currentUserIsAdmin ? (
-            <details className="group relative shrink-0">
-              <summary className={reportsMenuTriggerClass}>{reportsMenu.label}</summary>
-              <div className="absolute left-0 top-10 z-20 min-w-56 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
-                {reportLinks.map((item) => {
-                  const isActive = isNavigationLinkActive(pathname, item.href);
-                  const linkClass = buildLinkClass(isActive);
+                    return (
+                      <Link key={item.href} href={item.href} className={`${linkClass} w-full`}>
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </details>
+            ) : null}
+            {currentUserIsAdmin ? (
+              <details className="group relative shrink-0">
+                <summary className={reportsMenuTriggerClass}>{reportsMenu.label}</summary>
+                <div className="absolute left-0 top-10 z-20 min-w-56 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                  {reportLinks.map((item) => {
+                    const isActive = isNavigationLinkActive(pathname, item.href);
+                    const linkClass = buildLinkClass(isActive);
 
-                  return (
-                    <Link key={item.href} href={item.href} className={`${linkClass} w-full`}>
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            </details>
-          ) : null}
+                    return (
+                      <Link key={item.href} href={item.href} className={`${linkClass} w-full`}>
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </details>
+            ) : null}
+          </div>
+        </nav>
+      ) : null}
+      {secondaryNavigationIsVisible ? (
+        <div className="border-t border-slate-200 px-4 py-2 sm:px-6 lg:px-8">
+          {secondaryNavigation}
         </div>
-      </nav>
+      ) : null}
     </header>
   );
 }
