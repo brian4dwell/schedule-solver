@@ -3,6 +3,7 @@ from functools import lru_cache
 from typing import Literal
 
 from pydantic import AliasChoices
+from pydantic import EmailStr
 from pydantic import Field
 from pydantic import field_validator
 from pydantic import SecretStr
@@ -38,6 +39,9 @@ class Settings(BaseSettings):
         "http://localhost:3001,"
         "http://127.0.0.1:3001"
     )
+    provider_portal_base_url: str | None = None
+    gmail_service_account_json: SecretStr | None = None
+    gmail_sender_email: EmailStr | None = None
 
     model_config = SettingsConfigDict(
         env_file=environment_file_path,
@@ -76,7 +80,7 @@ class Settings(BaseSettings):
         normalized_auth_mode = auth_mode.strip().lower()
         return normalized_auth_mode
 
-    @field_validator("clerk_frontend_api_url", "clerk_jwks_url", mode="before")
+    @field_validator("clerk_frontend_api_url", "clerk_jwks_url", "provider_portal_base_url", mode="before")
     @classmethod
     def normalize_optional_url(cls, url: object) -> object:
         if not isinstance(url, str):
