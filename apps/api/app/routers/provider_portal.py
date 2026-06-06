@@ -310,23 +310,23 @@ def require_gmail_sender_email(settings: Settings) -> str:
     return sender_email
 
 
-def require_gmail_service_account_json(settings: Settings) -> str:
-    service_account_json = settings.gmail_service_account_json
+def require_gmail_app_password(settings: Settings) -> str:
+    gmail_app_password = settings.gmail_app_password
 
-    if service_account_json is None:
-        raise HTTPException(status_code=500, detail="Gmail service account JSON is not configured")
+    if gmail_app_password is None:
+        raise HTTPException(status_code=500, detail="Gmail app password is not configured")
 
-    service_account_json_value = service_account_json.get_secret_value()
-    return service_account_json_value
+    app_password = gmail_app_password.get_secret_value()
+    return app_password
 
 
 def send_provider_invite_email_message(
     message: ProviderInviteEmailMessage,
     settings: Settings,
 ) -> ProviderInviteEmailSendResult:
-    service_account_json = require_gmail_service_account_json(settings)
+    app_password = require_gmail_app_password(settings)
     sender_email = require_gmail_sender_email(settings)
-    sender = GmailProviderInviteEmailSender(service_account_json, sender_email)
+    sender = GmailProviderInviteEmailSender(app_password, sender_email)
     result = sender.send_provider_invite(message)
     return result
 
