@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 
+import type { ProviderPortalAvailabilityRecord } from "@/lib/api";
 import type { AvailabilityOption } from "@/lib/schemas/provider-weekly-availability";
 
-import type { CalendarAvailabilityViewProps } from "./provider-portal-types";
-import { ShiftRequestControls } from "./provider-shift-request-controls";
+import type {
+  CalendarAvailabilityViewProps,
+  ShiftRequestField,
+} from "./provider-portal-types";
 import {
   calendarDatesForMonth,
   calendarEditableOptions,
@@ -21,21 +24,80 @@ import {
   weekdayForDate,
 } from "./provider-portal-utils";
 
+type CalendarWeekRowProps = {
+  dates: Date[];
+  editingDateIso: string | null;
+  isSavingAvailability: boolean;
+  monthStartIso: string;
+  onEditDate: (dateIso: string) => void;
+  onRecordSave: (record: ProviderPortalAvailabilityRecord) => void;
+  onRecordSelect: (weekId: string) => void;
+  onRecordShiftRequestChange: (
+    record: ProviderPortalAvailabilityRecord,
+    field: ShiftRequestField,
+    value: string,
+  ) => void;
+  records: ProviderPortalAvailabilityRecord[];
+};
+
+function calendarWeekRows(dates: Date[]) {
+  const rows: Date[][] = [];
+
+  for (let index = 0; index < dates.length; index += 5) {
+    const row = dates.slice(index, index + 5);
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+function recordForWeekRow(
+  dates: Date[],
+  records: ProviderPortalAvailabilityRecord[],
+  monthStartIso: string,
+) {
+  const inMonthDateWithRecord = dates.find((date) => {
+    const dateMonthIso = monthStartIsoForDate(date);
+    const dateIsInMonth = dateMonthIso === monthStartIso;
+    const dateIso = isoDateForDate(date);
+    const record = recordForDate(dateIso, records);
+    const hasRecord = record !== null;
+    const shouldUseDate = dateIsInMonth && hasRecord;
+    return shouldUseDate;
+  });
+  const inMonthDate = dates.find((date) => {
+    const dateMonthIso = monthStartIsoForDate(date);
+    const dateIsInMonth = dateMonthIso === monthStartIso;
+    return dateIsInMonth;
+  });
+  const dateForRecord = inMonthDateWithRecord ?? inMonthDate ?? dates.at(0) ?? null;
+
+  if (dateForRecord === null) {
+    return null;
+  }
+
+  const dateIso = isoDateForDate(dateForRecord);
+  const record = recordForDate(dateIso, records);
+  return record;
+}
+
 export function CalendarAvailabilityView({
   availabilityMessage,
   isSavingAvailability,
   monthStartIso,
   onCalendarDayChange,
   onMonthChange,
+  onRecordSave,
   onRecordSelect,
+  onRecordShiftRequestChange,
   onSave,
-  onShiftRequestChange,
   records,
 }: CalendarAvailabilityViewProps) {
   const [editingDateIso, setEditingDateIso] = useState<string | null>(null);
   const monthStart = dateAtUtcMidnight(monthStartIso);
   const monthLabel = monthLabelForDate(monthStart);
   const calendarDates = calendarDatesForMonth(monthStartIso);
+  const calendarRows = calendarWeekRows(calendarDates);
   const monthOptions = monthOptionsForRecords(records);
   const currentMonthIndex = monthOptions.indexOf(monthStartIso);
   const previousMonthIndex = currentMonthIndex - 1;
@@ -69,6 +131,16 @@ export function CalendarAvailabilityView({
     }
 
     onMonthChange(nextMonthIso);
+  }
+
+  async function saveAndCloseEditingDate() {
+    const saveSucceeded = await onSave();
+
+    if (!saveSucceeded) {
+      return;
+    }
+
+    setEditingDateIso(null);
   }
 
   return (
@@ -122,11 +194,13 @@ export function CalendarAvailabilityView({
       <p className="mt-3 max-w-3xl text-sm text-slate-600">
         Use this view to scan and edit availability across a month. Click an open day to choose a
         shift option; grey days are not open for provider entry, and locked days have already been
-        published.
+        published. Use the week request column to set min and max shifts for that week. Weekends
+        are hidden.
       </p>
       {records.length > 0 ? (
         <div className="mt-4 grid gap-4">
-          <div className="grid grid-cols-7 border-t border-l border-slate-200 bg-slate-200">
+          <div className="overflow-x-auto">
+          <div className="grid min-w-[760px] grid-cols-[repeat(5,minmax(0,1fr))_minmax(132px,180px)] border-t border-l border-slate-200 bg-slate-200">
             {calendarWeekdayLabels.map((label) => {
               return (
                 <div key={label} className="bg-slate-50 px-1 py-2 text-center text-xs font-semibold uppercase text-slate-500">
@@ -134,54 +208,28 @@ export function CalendarAvailabilityView({
                 </div>
               );
             })}
-            {calendarDates.map((date) => {
-              const dateIso = isoDateForDate(date);
-              const dayNumber = date.getUTCDate();
-              const dateMonthIso = monthStartIsoForDate(date);
-              const dateIsInMonth = dateMonthIso === monthStartIso;
-              const record = recordForDate(dateIso, records);
-              const weekday = weekdayForDate(date);
-              const day = record?.availability.days.find((candidate) => {
-                const weekdayMatches = candidate.weekday === weekday;
-                return weekdayMatches;
-              }) ?? null;
-              const options = day?.options ?? ["unset"];
-              const dateIsClosed = record === null || !dateIsInMonth;
-              const dateIsLocked = record?.availability.isLocked ?? false;
-              const dateIsEditable = !dateIsClosed && !dateIsLocked;
-              const dateIsEditing = editingDateIso === dateIso;
-              const cellBaseClass = "relative min-h-20 border-r border-b border-slate-200 p-1 text-left sm:min-h-28 sm:p-2";
-              const closedClass = "bg-slate-100 text-slate-400";
-              const openClass = dateIsEditing ? "bg-teal-50 ring-2 ring-inset ring-teal-600" : "bg-white text-slate-950";
-              const lockedClass = dateIsLocked ? "bg-slate-50" : "";
-              const cellStateClass = dateIsClosed ? closedClass : `${openClass} ${lockedClass}`;
-              const cellClass = `${cellBaseClass} ${cellStateClass}`;
-
+            <div className="bg-slate-50 px-1 py-2 text-center text-xs font-semibold uppercase text-slate-500">
+              Week request
+            </div>
+            {calendarRows.map((dates) => {
+              const firstDate = dates.at(0);
+              const rowKey = firstDate === undefined ? "empty-week" : isoDateForDate(firstDate);
               return (
-                <button
-                  key={dateIso}
-                  type="button"
-                  className={cellClass}
-                  disabled={!dateIsEditable}
-                  onClick={() => {
-                    if (record !== null) {
-                      onRecordSelect(record.scheduleWeekId);
-                    }
-
-                    setEditingDateIso(dateIso);
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-xs font-semibold sm:text-sm">{dayNumber}</span>
-                    {dateIsLocked ? <LockIcon /> : null}
-                  </div>
-                  <CalendarDayAvailabilityMark
-                    isClosed={dateIsClosed}
-                    options={options}
-                  />
-                </button>
+                <CalendarWeekRow
+                  key={rowKey}
+                  dates={dates}
+                  editingDateIso={editingDateIso}
+                  isSavingAvailability={isSavingAvailability}
+                  monthStartIso={monthStartIso}
+                  onEditDate={setEditingDateIso}
+                  onRecordSave={onRecordSave}
+                  onRecordSelect={onRecordSelect}
+                  onRecordShiftRequestChange={onRecordShiftRequestChange}
+                  records={records}
+                />
               );
             })}
+            </div>
           </div>
         </div>
       ) : (
@@ -218,34 +266,180 @@ export function CalendarAvailabilityView({
                 );
               })}
             </div>
-            <div className="mt-4">
-              <ShiftRequestControls
-                maxShiftsRequested={editingRecord.availability.maxShiftsRequested}
-                minShiftsRequested={editingRecord.availability.minShiftsRequested}
-                onChange={onShiftRequestChange}
-              />
-            </div>
             <div className="mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
                 type="button"
                 className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
                 onClick={() => setEditingDateIso(null)}
               >
-                Close
+                Cancel
               </button>
               <button
                 type="button"
                 className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                 disabled={isSavingAvailability}
-                onClick={onSave}
+                onClick={() => {
+                  void saveAndCloseEditingDate();
+                }}
               >
-                {isSavingAvailability ? "Saving..." : "Save availability"}
+                {isSavingAvailability ? "Saving..." : "Save & close"}
               </button>
             </div>
           </div>
         </div>
       ) : null}
     </section>
+  );
+}
+
+function CalendarWeekRow({
+  dates,
+  editingDateIso,
+  isSavingAvailability,
+  monthStartIso,
+  onEditDate,
+  onRecordSave,
+  onRecordSelect,
+  onRecordShiftRequestChange,
+  records,
+}: CalendarWeekRowProps) {
+  const weekRecord = recordForWeekRow(dates, records, monthStartIso);
+
+  return (
+    <>
+      {dates.map((date) => {
+        const dateIso = isoDateForDate(date);
+        const dayNumber = date.getUTCDate();
+        const dateMonthIso = monthStartIsoForDate(date);
+        const dateIsInMonth = dateMonthIso === monthStartIso;
+        const record = recordForDate(dateIso, records);
+        const weekday = weekdayForDate(date);
+        const day = record?.availability.days.find((candidate) => {
+          const weekdayMatches = candidate.weekday === weekday;
+          return weekdayMatches;
+        }) ?? null;
+        const options = day?.options ?? ["unset"];
+        const dateIsClosed = record === null || !dateIsInMonth;
+        const dateIsLocked = record?.availability.isLocked ?? false;
+        const dateIsEditable = !dateIsClosed && !dateIsLocked;
+        const dateIsEditing = editingDateIso === dateIso;
+        const cellBaseClass = "relative min-h-20 border-r border-b border-slate-200 p-1 text-left sm:min-h-28 sm:p-2";
+        const closedClass = "bg-slate-100 text-slate-400";
+        const openClass = dateIsEditing ? "bg-teal-50 ring-2 ring-inset ring-teal-600" : "bg-white text-slate-950";
+        const lockedClass = dateIsLocked ? "bg-slate-50" : "";
+        const cellStateClass = dateIsClosed ? closedClass : `${openClass} ${lockedClass}`;
+        const cellClass = `${cellBaseClass} ${cellStateClass}`;
+
+        return (
+          <button
+            key={dateIso}
+            type="button"
+            className={cellClass}
+            disabled={!dateIsEditable}
+            onClick={() => {
+              if (record !== null) {
+                onRecordSelect(record.scheduleWeekId);
+              }
+
+              onEditDate(dateIso);
+            }}
+          >
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-xs font-semibold sm:text-sm">{dayNumber}</span>
+              {dateIsLocked ? <LockIcon /> : null}
+            </div>
+            <CalendarDayAvailabilityMark
+              isClosed={dateIsClosed}
+              options={options}
+            />
+          </button>
+        );
+      })}
+      <CalendarWeekRequestCell
+        isSavingAvailability={isSavingAvailability}
+        onRecordSave={onRecordSave}
+        onRecordSelect={onRecordSelect}
+        onRecordShiftRequestChange={onRecordShiftRequestChange}
+        record={weekRecord}
+      />
+    </>
+  );
+}
+
+function CalendarWeekRequestCell({
+  isSavingAvailability,
+  onRecordSave,
+  onRecordSelect,
+  onRecordShiftRequestChange,
+  record,
+}: {
+  isSavingAvailability: boolean;
+  onRecordSave: (record: ProviderPortalAvailabilityRecord) => void;
+  onRecordSelect: (weekId: string) => void;
+  onRecordShiftRequestChange: (
+    record: ProviderPortalAvailabilityRecord,
+    field: ShiftRequestField,
+    value: string,
+  ) => void;
+  record: ProviderPortalAvailabilityRecord | null;
+}) {
+  if (record === null) {
+    return <div className="min-h-20 border-r border-b border-slate-200 bg-slate-100 sm:min-h-28" />;
+  }
+
+  const isLocked = record.availability.isLocked;
+  const completionClass = record.completion.isComplete ? "text-emerald-700" : "text-amber-800";
+
+  return (
+    <div className="min-h-20 border-r border-b border-slate-200 bg-white p-2 sm:min-h-28">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold text-slate-950">Week request</span>
+        {isLocked ? <LockIcon /> : null}
+      </div>
+      <div className={`mt-1 text-xs font-medium ${completionClass}`}>
+        {record.completion.isComplete ? "Complete" : "Incomplete"}
+      </div>
+      <div className="mt-2 grid gap-2">
+        <label className="flex items-center justify-between gap-2 text-xs font-medium text-slate-700">
+          Min
+          <input
+            className="h-8 w-16 rounded-md border border-slate-300 px-2 text-sm text-slate-950 disabled:bg-slate-100"
+            type="number"
+            min={0}
+            step={0.5}
+            disabled={isLocked}
+            value={record.availability.minShiftsRequested}
+            onChange={(event) => {
+              onRecordSelect(record.scheduleWeekId);
+              onRecordShiftRequestChange(record, "min", event.target.value);
+            }}
+          />
+        </label>
+        <label className="flex items-center justify-between gap-2 text-xs font-medium text-slate-700">
+          Max
+          <input
+            className="h-8 w-16 rounded-md border border-slate-300 px-2 text-sm text-slate-950 disabled:bg-slate-100"
+            type="number"
+            min={0}
+            step={0.5}
+            disabled={isLocked}
+            value={record.availability.maxShiftsRequested}
+            onChange={(event) => {
+              onRecordSelect(record.scheduleWeekId);
+              onRecordShiftRequestChange(record, "max", event.target.value);
+            }}
+          />
+        </label>
+      </div>
+      <button
+        type="button"
+        className="mt-2 w-full rounded-md bg-teal-700 px-2 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+        disabled={isLocked || isSavingAvailability}
+        onClick={() => onRecordSave(record)}
+      >
+        {isSavingAvailability ? "Saving..." : "Save"}
+      </button>
+    </div>
   );
 }
 

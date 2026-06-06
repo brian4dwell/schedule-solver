@@ -80,7 +80,9 @@ export function WeekAvailabilityView({
             type="button"
             className="w-fit rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
             disabled={isSavingAvailability}
-            onClick={onSave}
+            onClick={() => {
+              void onSave();
+            }}
           >
             {isSavingAvailability ? "Saving..." : "Save availability"}
           </button>

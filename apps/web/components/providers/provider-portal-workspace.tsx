@@ -217,9 +217,37 @@ export function ProviderPortalWorkspace({
     updateSelectedAvailability(nextAvailability);
   }
 
+  function updateRecordShiftRequest(
+    record: ProviderPortalAvailabilityRecord,
+    field: ShiftRequestField,
+    value: string,
+  ) {
+    const parsedValue = Number.parseFloat(value);
+    const valueIsInvalid = Number.isNaN(parsedValue);
+
+    if (valueIsInvalid) {
+      return;
+    }
+
+    const workAvailableDayCount = countWorkAvailableDays(record.availability.days);
+    const currentMinimum = record.availability.minShiftsRequested;
+    const currentMaximum = record.availability.maxShiftsRequested;
+    const requestedMinimum = field === "min" ? parsedValue : currentMinimum;
+    const requestedMaximum = field === "max" ? parsedValue : currentMaximum;
+    const nextMinimum = clampValue(requestedMinimum, 0, workAvailableDayCount);
+    const nextMaximum = clampValue(requestedMaximum, nextMinimum, workAvailableDayCount);
+    const nextAvailability = {
+      ...record.availability,
+      minShiftsRequested: nextMinimum,
+      maxShiftsRequested: nextMaximum,
+    };
+    updateRecordAvailability(record.scheduleWeekId, nextAvailability);
+    setSelectedWeekId(record.scheduleWeekId);
+  }
+
   async function saveAvailability() {
     if (selectedRecord === null) {
-      return;
+      return false;
     }
 
     setIsSavingAvailability(true);
@@ -239,6 +267,36 @@ export function ProviderPortalWorkspace({
         });
         return nextRecords;
       });
+      setAvailabilityMessage("Availability saved.");
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Availability save failed.";
+      setAvailabilityMessage(message);
+      return false;
+    } finally {
+      setIsSavingAvailability(false);
+    }
+  }
+
+  async function saveAvailabilityRecord(record: ProviderPortalAvailabilityRecord) {
+    setIsSavingAvailability(true);
+    setAvailabilityMessage(null);
+    try {
+      const savedRecord = await saveCurrentProviderWeeklyAvailability(
+        record.scheduleWeekId,
+        record.availability,
+      );
+      setRecords((currentRecords) => {
+        const nextRecords = currentRecords.map((currentRecord) => {
+          if (currentRecord.scheduleWeekId !== savedRecord.scheduleWeekId) {
+            return currentRecord;
+          }
+
+          return savedRecord;
+        });
+        return nextRecords;
+      });
+      setSelectedWeekId(savedRecord.scheduleWeekId);
       setAvailabilityMessage("Availability saved.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Availability save failed.";
@@ -292,12 +350,11 @@ export function ProviderPortalWorkspace({
             isSavingAvailability={isSavingAvailability}
             monthStartIso={selectedMonthStartIso}
             onCalendarDayChange={updateCalendarDay}
-            onDayChange={updateDay}
             onMonthChange={setSelectedMonthStartIso}
+            onRecordSave={saveAvailabilityRecord}
             onRecordSelect={setSelectedWeekId}
+            onRecordShiftRequestChange={updateRecordShiftRequest}
             onSave={saveAvailability}
-            onShiftRequestChange={updateShiftRequest}
-            record={selectedRecord}
             records={records}
           />
         ) : null}

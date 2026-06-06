@@ -41,13 +41,11 @@ export const weekdayOrder: Weekday[] = [
 ];
 
 export const calendarWeekdayLabels = [
-  "Sun",
   "Mon",
   "Tue",
   "Wed",
   "Thu",
   "Fri",
-  "Sat",
 ];
 
 export const calendarEditableOptions: AvailabilityOption[] = [
@@ -176,9 +174,16 @@ export function calendarStartForMonth(monthStart: Date) {
 export function calendarDatesForMonth(monthStartIso: string) {
   const monthStart = dateAtUtcMidnight(monthStartIso);
   const calendarStart = calendarStartForMonth(monthStart);
-  const dates = Array.from({ length: 42 }, (_value, index) => {
+  const allDates = Array.from({ length: 42 }, (_value, index) => {
     const date = addDays(calendarStart, index);
     return date;
+  });
+  const dates = allDates.filter((date) => {
+    const weekdayIndex = date.getUTCDay();
+    const isSunday = weekdayIndex === 0;
+    const isSaturday = weekdayIndex === 6;
+    const isWeekday = !isSunday && !isSaturday;
+    return isWeekday;
   });
   return dates;
 }
