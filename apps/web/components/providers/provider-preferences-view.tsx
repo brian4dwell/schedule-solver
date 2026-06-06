@@ -107,42 +107,57 @@ export function PreferencesView({
       {preferenceMessage ? (
         <p className="mt-3 text-sm text-slate-600">{preferenceMessage}</p>
       ) : null}
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {centerDrafts.map((draft, index) => {
-          return (
-            <PreferenceSlider
-              key={draft.centerId}
-              label={draft.name}
-              preferenceLevel={draft.preferenceLevel}
-              onChange={(preferenceLevel) => {
-                const nextDrafts = [...centerDrafts];
-                nextDrafts[index] = {
-                  ...draft,
-                  preferenceLevel,
-                };
-                onCenterDraftsChange(nextDrafts);
-              }}
-            />
-          );
-        })}
-        {shiftTypeDrafts.map((draft, index) => {
-          const shiftTypeLabel = labelFromSnake(draft.shiftType);
-          return (
-            <PreferenceSlider
-              key={draft.shiftType}
-              label={shiftTypeLabel}
-              preferenceLevel={draft.preferenceLevel}
-              onChange={(preferenceLevel) => {
-                const nextDrafts = [...shiftTypeDrafts];
-                nextDrafts[index] = {
-                  ...draft,
-                  preferenceLevel,
-                };
-                onShiftTypeDraftsChange(nextDrafts);
-              }}
-            />
-          );
-        })}
+      <div className="mt-4 space-y-5">
+        <div>
+          <h3 className="text-sm font-semibold uppercase text-slate-500">
+            Center-based preferences
+          </h3>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {centerDrafts.map((draft, index) => {
+              return (
+                <PreferenceSlider
+                  key={draft.centerId}
+                  label={draft.name}
+                  preferenceLevel={draft.preferenceLevel}
+                  onChange={(preferenceLevel) => {
+                    const nextDrafts = [...centerDrafts];
+                    nextDrafts[index] = {
+                      ...draft,
+                      preferenceLevel,
+                    };
+                    onCenterDraftsChange(nextDrafts);
+                  }}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold uppercase text-slate-500">
+            Shift-based preferences
+          </h3>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {shiftTypeDrafts.map((draft, index) => {
+              const shiftTypeLabel = labelFromSnake(draft.shiftType);
+              return (
+                <PreferenceSlider
+                  key={draft.shiftType}
+                  label={shiftTypeLabel}
+                  preferenceLevel={draft.preferenceLevel}
+                  onChange={(preferenceLevel) => {
+                    const nextDrafts = [...shiftTypeDrafts];
+                    nextDrafts[index] = {
+                      ...draft,
+                      preferenceLevel,
+                    };
+                    onShiftTypeDraftsChange(nextDrafts);
+                  }}
+                />
+              );
+            })}
+          </div>
+        </div>
       </div>
       <button
         type="button"

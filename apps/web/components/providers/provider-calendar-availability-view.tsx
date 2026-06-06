@@ -192,8 +192,8 @@ export function CalendarAvailabilityView({
         <p className="mt-3 text-sm text-slate-600">{availabilityMessage}</p>
       ) : null}
       <p className="mt-3 max-w-3xl text-sm text-slate-600">
-        Use this view to scan and edit availability across a month. Click an open day to choose a
-        shift option; grey days are not open for provider entry, and locked days have already been
+        Use this view to scan and edit availability across a month. Click an open day to choose
+        shift options; grey days are not open for provider entry, and locked days have already been
         published. Use the week request column to set min and max shifts for that week. Weekends
         are hidden.
       </p>
@@ -252,17 +252,28 @@ export function CalendarAvailabilityView({
                 const selectedClass = optionIsSelected
                   ? "border-teal-700 bg-teal-50 text-teal-950"
                   : "border-slate-200 bg-white text-slate-700";
-                const buttonClass = `rounded-md border px-3 py-3 text-left text-sm font-semibold ${selectedClass}`;
+                const controlClass = `flex items-center gap-3 rounded-md border px-3 py-3 text-left text-sm font-semibold ${selectedClass}`;
 
                 return (
-                  <button
+                  <label
                     key={option}
-                    type="button"
-                    className={buttonClass}
-                    onClick={() => onCalendarDayChange(editingRecord, editingWeekday, option)}
+                    className={controlClass}
                   >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300"
+                      checked={optionIsSelected}
+                      onChange={(event) => {
+                        onCalendarDayChange(
+                          editingRecord,
+                          editingWeekday,
+                          option,
+                          event.target.checked,
+                        );
+                      }}
+                    />
                     {labelFromSnake(option)}
-                  </button>
+                  </label>
                 );
               })}
             </div>
@@ -462,6 +473,56 @@ function LockIcon() {
   );
 }
 
+function calendarAvailabilityOptionLabel(option: AvailabilityOption) {
+  if (option === "full_shift") {
+    return "Full";
+  }
+
+  if (option === "first_half") {
+    return "1st";
+  }
+
+  if (option === "second_half") {
+    return "2nd";
+  }
+
+  if (option === "short_shift") {
+    return "Short";
+  }
+
+  throw new Error("Calendar availability work option must have a label.");
+}
+
+function calendarAvailabilityOptionClassName(option: AvailabilityOption) {
+  if (option === "full_shift") {
+    return "bg-teal-600 text-white";
+  }
+
+  if (option === "first_half") {
+    return "bg-sky-600 text-white";
+  }
+
+  if (option === "second_half") {
+    return "bg-amber-500 text-white";
+  }
+
+  if (option === "short_shift") {
+    return "bg-rose-500 text-white";
+  }
+
+  throw new Error("Calendar availability work option must have a class name.");
+}
+
+function calendarAvailabilityWorkOptions(options: AvailabilityOption[]) {
+  const workOptions = options.filter((option) => {
+    const optionIsNone = option === "none";
+    const optionIsUnset = option === "unset";
+    const optionIsWork = !optionIsNone && !optionIsUnset;
+    return optionIsWork;
+  });
+  return workOptions;
+}
+
 function CalendarDayAvailabilityMark({
   isClosed,
   options,
@@ -469,10 +530,8 @@ function CalendarDayAvailabilityMark({
   isClosed: boolean;
   options: AvailabilityOption[];
 }) {
-  const hasFullShift = options.includes("full_shift");
-  const hasFirstHalf = options.includes("first_half");
-  const hasSecondHalf = options.includes("second_half");
-  const hasShortShift = options.includes("short_shift");
+  const workOptions = calendarAvailabilityWorkOptions(options);
+  const hasWorkOptions = workOptions.length > 0;
   const hasNone = options.includes("none");
   const hasUnset = options.includes("unset");
 
@@ -480,33 +539,21 @@ function CalendarDayAvailabilityMark({
     return <div className="mt-3 h-12 rounded-md bg-slate-200/70 sm:h-16" />;
   }
 
-  if (hasFullShift) {
+  if (hasWorkOptions) {
     return (
-      <div className="mt-3 flex h-12 items-center justify-center rounded-md bg-teal-600 text-xs font-bold text-white sm:h-16">
-        Full
-      </div>
-    );
-  }
-
-  if (hasFirstHalf || hasSecondHalf) {
-    return (
-      <div className="mt-3 h-12 overflow-hidden rounded-md border border-teal-200 bg-white sm:h-16">
-        <div className={`flex h-1/2 items-center justify-center text-[11px] font-bold ${hasFirstHalf ? "bg-teal-600 text-white" : "bg-white text-transparent"}`}>
-          1st
-        </div>
-        <div className={`flex h-1/2 items-center justify-center text-[11px] font-bold ${hasSecondHalf ? "bg-teal-600 text-white" : "bg-white text-transparent"}`}>
-          2nd
-        </div>
-      </div>
-    );
-  }
-
-  if (hasShortShift) {
-    return (
-      <div className="mt-3 flex h-12 items-center justify-center rounded-md bg-white sm:h-16">
-        <span className="rounded-md bg-teal-600 px-2 py-1 text-[11px] font-bold text-white">
-          Short
-        </span>
+      <div className="mt-3 flex h-12 flex-wrap content-center items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-1 sm:h-16">
+        {workOptions.map((option) => {
+          const optionLabel = calendarAvailabilityOptionLabel(option);
+          const optionClassName = calendarAvailabilityOptionClassName(option);
+          return (
+            <span
+              key={option}
+              className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${optionClassName}`}
+            >
+              {optionLabel}
+            </span>
+          );
+        })}
       </div>
     );
   }

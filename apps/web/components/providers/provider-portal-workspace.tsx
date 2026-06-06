@@ -163,15 +163,28 @@ export function ProviderPortalWorkspace({
     record: ProviderPortalAvailabilityRecord,
     weekday: Weekday,
     option: AvailabilityOption,
+    isChecked: boolean,
   ) {
     const nextDays = record.availability.days.map((day) => {
       if (day.weekday !== weekday) {
         return day;
       }
 
+      const optionsWithoutSelected = day.options.filter((value) => value !== option);
+      const workOptions = day.options.filter((value) => !optionIsExclusive(value));
+      const checkedExclusiveOptions: AvailabilityOption[] = [option];
+      const checkedWorkOptions = [...workOptions, option];
+      const checkedOptions = optionIsExclusive(option) ? checkedExclusiveOptions : checkedWorkOptions;
+      const optionsWithClickedChoice = isChecked ? checkedOptions : optionsWithoutSelected;
+      const optionsWithoutExclusiveIfNeeded = optionsWithClickedChoice.filter((value) => {
+        const keepValue = isChecked || !optionIsExclusive(value);
+        return keepValue;
+      });
+      const uniqueOptions = Array.from(new Set(optionsWithoutExclusiveIfNeeded));
+      const nextOptions = uniqueOptions.length === 0 ? ["unset" as AvailabilityOption] : uniqueOptions;
       const nextDay = {
         weekday: day.weekday,
-        options: [option],
+        options: nextOptions,
       };
       return nextDay;
     });

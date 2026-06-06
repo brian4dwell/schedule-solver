@@ -59,6 +59,7 @@ export type CalendarAvailabilityViewProps = {
     record: ProviderPortalAvailabilityRecord,
     weekday: Weekday,
     option: AvailabilityOption,
+    isChecked: boolean,
   ) => void;
   onMonthChange: (monthStartIso: string) => void;
   onRecordSave: (record: ProviderPortalAvailabilityRecord) => void;
