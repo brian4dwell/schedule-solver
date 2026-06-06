@@ -37,6 +37,13 @@ export function CalendarAvailabilityView({
   const monthLabel = monthLabelForDate(monthStart);
   const calendarDates = calendarDatesForMonth(monthStartIso);
   const monthOptions = monthOptionsForRecords(records);
+  const currentMonthIndex = monthOptions.indexOf(monthStartIso);
+  const previousMonthIndex = currentMonthIndex - 1;
+  const nextMonthIndex = currentMonthIndex + 1;
+  const previousMonthIso = monthOptions.at(previousMonthIndex) ?? null;
+  const nextMonthIso = monthOptions.at(nextMonthIndex) ?? null;
+  const hasPreviousMonth = previousMonthIso !== null;
+  const hasNextMonth = nextMonthIso !== null;
   const editingRecord = editingDateIso === null
     ? null
     : recordForDate(editingDateIso, records);
@@ -48,6 +55,22 @@ export function CalendarAvailabilityView({
     return weekdayMatches;
   }) ?? null;
 
+  function selectPreviousMonth() {
+    if (previousMonthIso === null) {
+      return;
+    }
+
+    onMonthChange(previousMonthIso);
+  }
+
+  function selectNextMonth() {
+    if (nextMonthIso === null) {
+      return;
+    }
+
+    onMonthChange(nextMonthIso);
+  }
+
   return (
     <section className="rounded-md border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -56,21 +79,41 @@ export function CalendarAvailabilityView({
           <p className="mt-1 text-sm text-slate-600">Calendar availability</p>
         </div>
         {monthOptions.length > 0 ? (
-          <select
-            className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-950"
-            value={monthStartIso}
-            onChange={(event) => onMonthChange(event.target.value)}
-          >
-            {monthOptions.map((monthIso) => {
-              const optionDate = dateAtUtcMidnight(monthIso);
-              const optionLabel = monthLabelForDate(optionDate);
-              return (
-                <option key={monthIso} value={monthIso}>
-                  {optionLabel}
-                </option>
-              );
-            })}
-          </select>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label="Previous month"
+              className="h-10 rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-40"
+              disabled={!hasPreviousMonth}
+              onClick={selectPreviousMonth}
+            >
+              {"<-"}
+            </button>
+            <select
+              className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-950"
+              value={monthStartIso}
+              onChange={(event) => onMonthChange(event.target.value)}
+            >
+              {monthOptions.map((monthIso) => {
+                const optionDate = dateAtUtcMidnight(monthIso);
+                const optionLabel = monthLabelForDate(optionDate);
+                return (
+                  <option key={monthIso} value={monthIso}>
+                    {optionLabel}
+                  </option>
+                );
+              })}
+            </select>
+            <button
+              type="button"
+              aria-label="Next month"
+              className="h-10 rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-40"
+              disabled={!hasNextMonth}
+              onClick={selectNextMonth}
+            >
+              {"->"}
+            </button>
+          </div>
         ) : null}
       </div>
       {availabilityMessage ? (
@@ -154,13 +197,6 @@ export function CalendarAvailabilityView({
                 </h3>
                 <p className="mt-1 text-sm text-slate-600">{editingRecord.scheduleWeekName}</p>
               </div>
-              <button
-                type="button"
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
-                onClick={() => setEditingDateIso(null)}
-              >
-                Close
-              </button>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {calendarEditableOptions.map((option) => {
@@ -189,14 +225,23 @@ export function CalendarAvailabilityView({
                 onChange={onShiftRequestChange}
               />
             </div>
-            <button
-              type="button"
-              className="mt-4 w-full rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 sm:w-fit"
-              disabled={isSavingAvailability}
-              onClick={onSave}
-            >
-              {isSavingAvailability ? "Saving..." : "Save availability"}
-            </button>
+            <div className="mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
+                onClick={() => setEditingDateIso(null)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                disabled={isSavingAvailability}
+                onClick={onSave}
+              >
+                {isSavingAvailability ? "Saving..." : "Save availability"}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
