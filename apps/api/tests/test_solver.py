@@ -62,6 +62,8 @@ def create_provider(
         provider_id=uuid4(),
         min_shifts_requested=min_shifts_requested,
         max_shifts_requested=max_shifts_requested,
+        min_shifts_requested_units=min_shifts_requested * 2,
+        max_shifts_requested_units=max_shifts_requested * 2,
         days=[availability_day],
     )
     room_type_skill = SolverProviderRoomTypeSkill(
@@ -477,6 +479,44 @@ def test_solver_records_max_shift_request_warning_without_blocking_assignment() 
     assert len(result.assignments) == 1
     assert result.violations[0].severity == "warning"
     assert result.violations[0].constraint_type == "provider_max_shifts_exceeded"
+
+
+def test_solver_uses_half_shift_units_for_max_shift_warning() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    center_id = uuid4()
+    room_type_id = uuid4()
+    room = create_room(center_id, room_type_id)
+    provider = create_provider(
+        center_id,
+        room_type_id,
+        availability_options=["full_shift", "first_half"],
+        max_shifts_requested=1,
+    )
+    provider.week_availability.max_shifts_requested_units = 3
+    credential = create_credential(provider.id, center_id)
+    full_shift = create_shift(center_id, room.id, 7, 15)
+    half_shift = create_shift(center_id, room.id, 15, 19, shift_type="first_half")
+    solver_input = SolverInput(
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        rooms=[room],
+        providers=[provider],
+        center_credentials=[credential],
+        shift_requirements=[full_shift, half_shift],
+    )
+
+    result = solve_schedule(solver_input)
+
+    max_shift_warnings = [
+        violation
+        for violation in result.violations
+        if violation.constraint_type == "provider_max_shifts_exceeded"
+    ]
+
+    assert result.is_feasible is True
+    assert len(result.assignments) == 2
+    assert max_shift_warnings == []
 
 
 def test_solver_records_min_shift_request_warning_without_blocking_schedule() -> None:

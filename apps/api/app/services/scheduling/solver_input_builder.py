@@ -203,11 +203,15 @@ def solver_provider_week_availability(
     has_matching_row = len(matching_rows) > 0
     min_shifts_requested = 0
     max_shifts_requested = 0
+    min_shifts_requested_units = 0
+    max_shifts_requested_units = 0
 
     if has_matching_row:
         first_row = matching_rows[0]
         min_shifts_requested = first_row.min_shifts_requested
         max_shifts_requested = first_row.max_shifts_requested
+        min_shifts_requested_units = first_row.min_shifts_requested_units
+        max_shifts_requested_units = first_row.max_shifts_requested_units
 
     days = solver_weekly_availability_days(
         provider,
@@ -217,6 +221,8 @@ def solver_provider_week_availability(
         provider_id=provider.id,
         min_shifts_requested=min_shifts_requested,
         max_shifts_requested=max_shifts_requested,
+        min_shifts_requested_units=min_shifts_requested_units,
+        max_shifts_requested_units=max_shifts_requested_units,
         days=days,
     )
     return week_availability

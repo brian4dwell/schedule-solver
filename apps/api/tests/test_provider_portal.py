@@ -11,11 +11,11 @@ from app.db.models import SchedulePeriod
 from app.routers.provider_portal import account_state_for_provider
 from app.routers.provider_portal import admin_router
 from app.routers.provider_portal import availability_completion
-from app.routers.provider_portal import provider_invite_email
 from app.routers.provider_portal import provider_router
 from app.schemas.provider_availability_week import ProviderAvailabilityDayRead
 from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityRead
 from app.schemas.provider_portal import ProviderInviteCreate
+from app.services.provider_portal_service import provider_invite_email
 
 
 def create_provider(email: str | None = "provider@example.com") -> Provider:

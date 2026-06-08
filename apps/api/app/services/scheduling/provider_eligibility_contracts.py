@@ -35,6 +35,8 @@ class ProviderWeeklyAvailabilitySummary(BaseModel):
     options: list[str] = Field(default_factory=list)
     min_shifts_requested: int = 0
     max_shifts_requested: int = 0
+    min_shifts_requested_units: int = 0
+    max_shifts_requested_units: int = 0
 
 
 class ProviderEligibilityContext(BaseModel):
@@ -48,6 +50,7 @@ class ProviderEligibilityContext(BaseModel):
     provider_room_type_skills: list[ProviderRoomTypeSkillSummary] = Field(default_factory=list)
     weekly_availability: ProviderWeeklyAvailabilitySummary
     schedule_week_assignment_count: int = 0
+    schedule_week_assignment_units: int = 0
     has_double_booking: bool = False
 
 

@@ -68,8 +68,11 @@ def create_context(provider_id, room_type_id=None) -> ProviderEligibilityContext
             options=["full_shift"],
             min_shifts_requested=0,
             max_shifts_requested=5,
+            min_shifts_requested_units=0,
+            max_shifts_requested_units=10,
         ),
         schedule_week_assignment_count=1,
+        schedule_week_assignment_units=2,
     )
     return context
 
@@ -213,6 +216,7 @@ def test_missing_shift_type_availability_creates_visible_reason() -> None:
         weekday="monday",
         options=["first_half"],
         max_shifts_requested=5,
+        max_shifts_requested_units=10,
     )
 
     result = evaluate_provider_slot_eligibility(request, context)
@@ -250,6 +254,7 @@ def test_max_shift_request_creates_visible_reason() -> None:
     request = create_request(provider_id)
     context = create_context(provider_id)
     context.schedule_week_assignment_count = 6
+    context.schedule_week_assignment_units = 12
 
     result = evaluate_provider_slot_eligibility(request, context)
 
@@ -257,6 +262,26 @@ def test_max_shift_request_creates_visible_reason() -> None:
     assert result.violations[0].severity == "warning"
     assert result.violations[0].constraint_type == "provider_max_shifts_exceeded"
     assert result.violations[0].category == "shift_request_conflict"
+
+
+def test_max_shift_request_uses_half_shift_units() -> None:
+    provider_id = uuid4()
+    request = create_request(provider_id)
+    context = create_context(provider_id)
+    context.weekly_availability.max_shifts_requested = 1
+    context.weekly_availability.max_shifts_requested_units = 3
+    context.schedule_week_assignment_count = 2
+    context.schedule_week_assignment_units = 3
+
+    result = evaluate_provider_slot_eligibility(request, context)
+
+    max_shift_warnings = [
+        violation
+        for violation in result.violations
+        if violation.constraint_type == "provider_max_shifts_exceeded"
+    ]
+
+    assert max_shift_warnings == []
 
 
 def test_credential_date_range_must_cover_slot() -> None:

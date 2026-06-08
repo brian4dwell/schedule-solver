@@ -12,18 +12,18 @@ from app.db.models import ProviderScheduleWeekAvailability
 from app.db.models import SchedulePeriod
 from app.db.models import ScheduleVersion
 from app.routers.schedules import clone_schedule_period_name
-from app.routers.schedules import create_cloned_weekly_availability_row
 from app.routers.schedules import create_assignment_from_request
 from app.routers.schedules import duplicate_assignment_request
 from app.routers.schedules import duplicate_assignment_requests
 from app.routers.schedules import require_open_schedule_period
 from app.routers.schedules import router
-from app.routers.schedules import shift_request_constraint_violations_for_provider
 from app.routers.schedules import stable_assignment_request
 from app.routers.schedules import unassigned_provider_violation
 from app.routers.schedules import validate_schedule_period_dates
 from app.schemas.schedule import ScheduleAssignmentCreate
 from app.schemas.schedule import SchedulePeriodCreate
+from app.services.scheduling.availability_service import create_cloned_weekly_availability_row
+from app.services.scheduling.shift_request_warning_service import shift_request_constraint_violations_for_provider
 
 
 def test_schedule_period_route_accepts_delete() -> None:
@@ -148,6 +148,8 @@ def create_availability_for_shift_requests(
         availability_options=["full_shift"],
         min_shifts_requested=min_shifts_requested,
         max_shifts_requested=max_shifts_requested,
+        min_shifts_requested_units=min_shifts_requested * 2,
+        max_shifts_requested_units=max_shifts_requested * 2,
     )
     return availability
 
@@ -405,6 +407,8 @@ def test_create_cloned_weekly_availability_row_targets_new_period() -> None:
         availability_options=["full_shift"],
         min_shifts_requested=1,
         max_shifts_requested=3,
+        min_shifts_requested_units=2,
+        max_shifts_requested_units=6,
     )
 
     availability = create_cloned_weekly_availability_row(
@@ -419,6 +423,8 @@ def test_create_cloned_weekly_availability_row_targets_new_period() -> None:
     assert availability.availability_options == ["full_shift"]
     assert availability.min_shifts_requested == 1
     assert availability.max_shifts_requested == 3
+    assert availability.min_shifts_requested_units == 2
+    assert availability.max_shifts_requested_units == 6
 
 
 def test_stable_assignment_request_preserves_parent_slot_date() -> None:
@@ -584,6 +590,31 @@ def test_shift_request_warning_lists_provider_above_maximum() -> None:
     assert violations[0].assignment_id is None
     assert violations[0].constraint_type == "provider_max_shifts_exceeded"
     assert violations[0].message == "Blair is scheduled for 2/1 requested maximum shifts."
+
+
+def test_shift_request_warning_uses_half_shift_units() -> None:
+    provider = create_provider_for_shift_requests("Casey")
+    schedule_version = create_schedule_version_for_shift_requests(provider)
+    first_assignment = create_assignment_for_shift_requests(provider, schedule_version)
+    second_assignment = create_assignment_for_shift_requests(provider, schedule_version)
+    second_assignment.shift_type = "first_half"
+    availability = create_availability_for_shift_requests(
+        provider,
+        schedule_version,
+        min_shifts_requested=0,
+        max_shifts_requested=1,
+    )
+    availability.max_shifts_requested_units = 3
+
+    violations = shift_request_constraint_violations_for_provider(
+        provider,
+        [first_assignment, second_assignment],
+        availability,
+        schedule_version,
+        provider.organization_id,
+    )
+
+    assert violations == []
 
 
 def test_schedule_period_route_accepts_availability_email() -> None:

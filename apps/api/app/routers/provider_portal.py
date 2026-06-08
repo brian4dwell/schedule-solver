@@ -1,4 +1,3 @@
-from secrets import token_urlsafe
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -20,7 +19,6 @@ from app.db.models import ProviderScheduleWeekAvailability
 from app.db.models import ProviderShiftTypePreference
 from app.db.models import SchedulePeriod
 from app.db.models import Center
-from app.db.models.scheduling import current_utc_time
 from app.db.session import get_db
 from app.dependencies import CurrentProvider
 from app.dependencies import get_current_organization_id
@@ -58,6 +56,12 @@ from app.services.email.gmail import GmailSendError
 from app.services.email.provider_invites import ProviderInviteEmailSendResult
 from app.services.email.provider_invites import ProviderInviteEmailMessage
 from app.services.email.provider_invites import provider_invite_email_message
+from app.services.provider_portal_service import INVITE_STATUS_ACCEPTED
+from app.services.provider_portal_service import accept_provider_invite_request
+from app.services.provider_portal_service import create_or_reset_provider_invite
+from app.services.provider_portal_service import provider_profile
+from app.services.provider_portal_service import require_active_provider
+from app.services.provider_portal_service import require_provider_is_unlinked
 
 
 provider_router = APIRouter(prefix="/provider-portal", tags=["provider-portal"])
@@ -67,9 +71,6 @@ admin_router = APIRouter(
     dependencies=[Depends(require_admin_user)],
 )
 
-INVITE_TOKEN_BYTE_COUNT = 32
-INVITE_STATUS_INVITED = "invited"
-INVITE_STATUS_ACCEPTED = "accepted"
 SCHEDULE_PERIOD_STATUS_DRAFT = "draft"
 SCHEDULE_PERIOD_STATUS_PUBLISHED = "published"
 PROVIDER_PORTAL_REQUIRED_WEEKDAYS = [
@@ -79,29 +80,6 @@ PROVIDER_PORTAL_REQUIRED_WEEKDAYS = [
     "thursday",
     "friday",
 ]
-
-
-def provider_profile(provider: Provider) -> ProviderPortalProfileRead:
-    profile = ProviderPortalProfileRead(
-        provider_id=provider.id,
-        display_name=provider.display_name,
-        email=provider.email,
-    )
-    return profile
-
-
-def require_active_provider(provider_id: UUID, organization_id: UUID, session: Session) -> Provider:
-    statement = select(Provider)
-    statement = statement.where(Provider.id == provider_id)
-    statement = statement.where(Provider.organization_id == organization_id)
-    statement = statement.where(Provider.is_active.is_(True))
-    provider = session.scalar(statement)
-
-    if provider is None:
-        raise HTTPException(status_code=404, detail="Provider not found")
-
-    return provider
-
 
 def open_schedule_weeks(organization_id: UUID, session: Session) -> list[SchedulePeriod]:
     statement = select(SchedulePeriod)
@@ -207,97 +185,6 @@ def account_state_for_provider(
         return "accepted"
 
     return "invited"
-
-
-def provider_invite_email(provider: Provider, request: ProviderInviteCreate) -> str:
-    requested_email = request.email
-
-    if requested_email is not None:
-        return str(requested_email)
-
-    provider_email = provider.email
-
-    if provider_email is None:
-        raise HTTPException(status_code=400, detail="Provider email is required before inviting")
-
-    return provider_email
-
-
-def existing_provider_invite(
-    provider_id: UUID,
-    organization_id: UUID,
-    session: Session,
-) -> ProviderInvite | None:
-    statement = select(ProviderInvite)
-    statement = statement.where(ProviderInvite.provider_id == provider_id)
-    statement = statement.where(ProviderInvite.organization_id == organization_id)
-    invite = session.scalar(statement)
-    return invite
-
-
-def provider_identity_link(
-    provider_id: UUID,
-    organization_id: UUID,
-    session: Session,
-) -> ProviderIdentityLink | None:
-    statement = select(ProviderIdentityLink)
-    statement = statement.where(ProviderIdentityLink.provider_id == provider_id)
-    statement = statement.where(ProviderIdentityLink.organization_id == organization_id)
-    identity_link = session.scalar(statement)
-    return identity_link
-
-
-def user_identity_link(
-    clerk_user_id: str,
-    organization_id: UUID,
-    session: Session,
-) -> ProviderIdentityLink | None:
-    statement = select(ProviderIdentityLink)
-    statement = statement.where(ProviderIdentityLink.clerk_user_id == clerk_user_id)
-    statement = statement.where(ProviderIdentityLink.organization_id == organization_id)
-    identity_link = session.scalar(statement)
-    return identity_link
-
-
-def require_provider_is_unlinked(
-    provider_id: UUID,
-    organization_id: UUID,
-    session: Session,
-) -> None:
-    existing_link = provider_identity_link(provider_id, organization_id, session)
-
-    if existing_link is not None:
-        raise HTTPException(status_code=409, detail="Provider is already linked")
-
-
-def create_or_reset_provider_invite(
-    provider: Provider,
-    request: ProviderInviteCreate,
-    organization_id: UUID,
-    session: Session,
-) -> ProviderInvite:
-    invite_email = provider_invite_email(provider, request)
-    invite = existing_provider_invite(provider.id, organization_id, session)
-
-    if invite is None:
-        invite_token = token_urlsafe(INVITE_TOKEN_BYTE_COUNT)
-        invite = ProviderInvite(
-            organization_id=organization_id,
-            provider_id=provider.id,
-            email=invite_email,
-            invite_token=invite_token,
-            status=INVITE_STATUS_INVITED,
-            accepted_by_clerk_user_id=None,
-            accepted_at=None,
-        )
-        session.add(invite)
-    else:
-        invite.email = invite_email
-        invite.status = INVITE_STATUS_INVITED
-        invite.accepted_by_clerk_user_id = None
-        invite.accepted_at = None
-
-    return invite
 
 
 def require_provider_portal_base_url(settings: Settings) -> str:
@@ -406,46 +293,12 @@ def accept_provider_invite(
     organization_id: UUID = Depends(get_current_organization_id),
     session: Session = Depends(get_db),
 ) -> ProviderPortalInviteAcceptanceRead:
-    statement = select(ProviderInvite)
-    statement = statement.where(ProviderInvite.organization_id == organization_id)
-    statement = statement.where(ProviderInvite.invite_token == request.invite_token)
-    invite = session.scalar(statement)
-
-    if invite is None:
-        raise HTTPException(status_code=404, detail="Provider invite not found")
-
-    provider = require_active_provider(invite.provider_id, organization_id, session)
-    existing_provider_link = provider_identity_link(provider.id, organization_id, session)
-    existing_user_link = user_identity_link(current_user.user_id, organization_id, session)
-    provider_link_conflicts = (
-        existing_provider_link is not None
-        and existing_provider_link.clerk_user_id != current_user.user_id
+    response = accept_provider_invite_request(
+        request,
+        current_user,
+        organization_id,
+        session,
     )
-    user_link_conflicts = (
-        existing_user_link is not None
-        and existing_user_link.provider_id != provider.id
-    )
-
-    if provider_link_conflicts:
-        raise HTTPException(status_code=409, detail="Provider is already linked to another user")
-
-    if user_link_conflicts:
-        raise HTTPException(status_code=409, detail="User is already linked to another Provider")
-
-    if existing_provider_link is None:
-        identity_link = ProviderIdentityLink(
-            organization_id=organization_id,
-            provider_id=provider.id,
-            clerk_user_id=current_user.user_id,
-        )
-        session.add(identity_link)
-
-    invite.status = INVITE_STATUS_ACCEPTED
-    invite.accepted_by_clerk_user_id = current_user.user_id
-    invite.accepted_at = current_utc_time()
-    session.commit()
-    profile = provider_profile(provider)
-    response = ProviderPortalInviteAcceptanceRead(provider=profile)
     return response
 
 

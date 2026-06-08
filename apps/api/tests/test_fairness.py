@@ -101,6 +101,8 @@ def create_weekly_availability(provider: Provider) -> ProviderScheduleWeekAvaila
         availability_options=["full_shift"],
         min_shifts_requested=2,
         max_shifts_requested=1,
+        min_shifts_requested_units=4,
+        max_shifts_requested_units=2,
     )
     return weekly_availability
 
@@ -112,6 +114,8 @@ def test_requested_assignment_does_not_create_fairness_debt_event() -> None:
     weekly_availability = create_weekly_availability(provider)
     weekly_availability.min_shifts_requested = 0
     weekly_availability.max_shifts_requested = 2
+    weekly_availability.min_shifts_requested_units = 0
+    weekly_availability.max_shifts_requested_units = 4
     provider_inputs = ProviderFairnessInputs(
         provider=provider,
         state=None,
@@ -137,6 +141,8 @@ def test_fairness_events_use_shift_request_debt_events() -> None:
     weekly_availability = create_weekly_availability(provider)
     weekly_availability.min_shifts_requested = 0
     weekly_availability.max_shifts_requested = 1
+    weekly_availability.min_shifts_requested_units = 0
+    weekly_availability.max_shifts_requested_units = 2
     provider_inputs = ProviderFairnessInputs(
         provider=provider,
         state=None,
@@ -160,6 +166,41 @@ def test_fairness_events_use_shift_request_debt_events() -> None:
     assert event_types == [
         "above_maximum_shift_request",
     ]
+
+
+def test_fairness_events_use_half_shift_units_for_maximum_requests() -> None:
+    provider = create_provider("Avery")
+    full_assignment = create_assignment(provider)
+    half_assignment = create_assignment(provider)
+    half_assignment.shift_type = "first_half"
+    schedule_version = create_schedule_version(provider.organization_id)
+    weekly_availability = create_weekly_availability(provider)
+    weekly_availability.min_shifts_requested = 0
+    weekly_availability.max_shifts_requested = 1
+    weekly_availability.min_shifts_requested_units = 0
+    weekly_availability.max_shifts_requested_units = 3
+    provider_inputs = ProviderFairnessInputs(
+        provider=provider,
+        state=None,
+        weekly_availability=weekly_availability,
+        assignment_count=2,
+        average_assignment_count=2.0,
+    )
+
+    events = fairness_events_for_provider(
+        provider_inputs,
+        [full_assignment, half_assignment],
+        schedule_version,
+        provider.organization_id,
+    )
+
+    above_maximum_events = [
+        event
+        for event in events
+        if event.event_type == "above_maximum_shift_request"
+    ]
+
+    assert above_maximum_events == []
 
 
 def test_fairness_events_credit_full_shift_availability_accommodation() -> None:
@@ -284,6 +325,8 @@ def test_replacement_period_fairness_uses_rebuilt_ledger_state() -> None:
     weekly_availability = create_weekly_availability(provider)
     weekly_availability.min_shifts_requested = 0
     weekly_availability.max_shifts_requested = 2
+    weekly_availability.min_shifts_requested_units = 0
+    weekly_availability.max_shifts_requested_units = 4
     first_inputs = ProviderFairnessInputs(
         provider=provider,
         state=None,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
   saveCurrentProviderPreferences,
@@ -34,6 +34,38 @@ import {
 } from "./provider-portal-utils";
 import { WeekAvailabilityView } from "./provider-week-availability-view";
 
+type ShiftRequestEditState = {
+  scheduleWeekId: string;
+  minShiftsWasEdited: boolean;
+  maxShiftsWasEdited: boolean;
+};
+
+type ShiftRequestValues = {
+  minShiftsRequested: number;
+  maxShiftsRequested: number;
+};
+
+function shiftRequestEditStateForRecord(
+  record: ProviderPortalAvailabilityRecord,
+): ShiftRequestEditState {
+  const workAvailableDayCount = countWorkAvailableDays(record.availability.days);
+  const minShiftsWasEdited = record.availability.minShiftsRequested !== 0;
+  const maxShiftsWasEdited = record.availability.maxShiftsRequested !== workAvailableDayCount;
+  const editState = {
+    scheduleWeekId: record.scheduleWeekId,
+    minShiftsWasEdited,
+    maxShiftsWasEdited,
+  };
+  return editState;
+}
+
+function shiftRequestEditStatesForRecords(
+  records: ProviderPortalAvailabilityRecord[],
+) {
+  const editStates = records.map(shiftRequestEditStateForRecord);
+  return editStates;
+}
+
 export function ProviderPortalWorkspace({
   availabilityRecords,
   preferenceOptions,
@@ -45,11 +77,17 @@ export function ProviderPortalWorkspace({
   const firstWeekStartDate = availabilityRecords.at(0)?.scheduleWeekStartDate ?? todayIso;
   const firstWeekStart = dateAtUtcMidnight(firstWeekStartDate);
   const firstMonthStartIso = monthStartIsoForDate(firstWeekStart);
+  const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const requestedSection = searchParams.get("view");
   const requestedWeekId = searchParams.get("weekId");
   const activeSection = providerPortalSectionFromViewValue(requestedSection);
   const [records, setRecords] = useState(availabilityRecords);
+  const [shiftRequestEditStates, setShiftRequestEditStates] = useState(() => {
+    const editStates = shiftRequestEditStatesForRecords(availabilityRecords);
+    return editStates;
+  });
   const [selectedMonthStartIso, setSelectedMonthStartIso] = useState(firstMonthStartIso);
   const [centerDrafts, setCenterDrafts] = useState(() => {
     const drafts = centerPreferenceDrafts(preferenceOptions, preferences);
@@ -68,6 +106,8 @@ export function ProviderPortalWorkspace({
     return matchesWeek;
   });
   const selectedWeekId = requestedWeekExists ? requestedWeekId ?? firstWeekId : firstWeekId;
+  const hasAvailabilityWeeks = records.length > 0;
+  const weekSelectorIsVisible = activeSection === "weekAvailability" && hasAvailabilityWeeks;
 
   const selectedRecord = useMemo(() => {
     const record = records.find((candidate) => {
@@ -87,6 +127,108 @@ export function ProviderPortalWorkspace({
     ? "All availability weeks complete"
     : `${incompleteCount} availability weeks incomplete`;
 
+  function shiftRequestEditStateForWeek(scheduleWeekId: string) {
+    const editState = shiftRequestEditStates.find((candidate) => {
+      const matchesWeek = candidate.scheduleWeekId === scheduleWeekId;
+      return matchesWeek;
+    });
+    const defaultEditState = {
+      scheduleWeekId,
+      minShiftsWasEdited: false,
+      maxShiftsWasEdited: false,
+    };
+    const selectedEditState = editState ?? defaultEditState;
+    return selectedEditState;
+  }
+
+  function setShiftRequestWasEdited(
+    scheduleWeekId: string,
+    field: ShiftRequestField,
+  ) {
+    setShiftRequestEditStates((currentStates) => {
+      const nextStates = currentStates.map((currentState) => {
+        if (currentState.scheduleWeekId !== scheduleWeekId) {
+          return currentState;
+        }
+
+        const minShiftsWasEdited = field === "min"
+          ? true
+          : currentState.minShiftsWasEdited;
+        const maxShiftsWasEdited = field === "max"
+          ? true
+          : currentState.maxShiftsWasEdited;
+        const nextState = {
+          scheduleWeekId: currentState.scheduleWeekId,
+          minShiftsWasEdited,
+          maxShiftsWasEdited,
+        };
+        return nextState;
+      });
+      const stateAlreadyExists = currentStates.some((currentState) => {
+        const matchesWeek = currentState.scheduleWeekId === scheduleWeekId;
+        return matchesWeek;
+      });
+
+      if (stateAlreadyExists) {
+        return nextStates;
+      }
+
+      const nextState = {
+        scheduleWeekId,
+        minShiftsWasEdited: field === "min",
+        maxShiftsWasEdited: field === "max",
+      };
+      const nextStatesWithNewState = [...currentStates, nextState];
+      return nextStatesWithNewState;
+    });
+  }
+
+  function replaceShiftRequestEditState(record: ProviderPortalAvailabilityRecord) {
+    const savedEditState = shiftRequestEditStateForRecord(record);
+    setShiftRequestEditStates((currentStates) => {
+      const nextStates = currentStates.map((currentState) => {
+        if (currentState.scheduleWeekId !== savedEditState.scheduleWeekId) {
+          return currentState;
+        }
+
+        return savedEditState;
+      });
+      const stateAlreadyExists = currentStates.some((currentState) => {
+        const matchesWeek = currentState.scheduleWeekId === savedEditState.scheduleWeekId;
+        return matchesWeek;
+      });
+
+      if (stateAlreadyExists) {
+        return nextStates;
+      }
+
+      const nextStatesWithSavedState = [...currentStates, savedEditState];
+      return nextStatesWithSavedState;
+    });
+  }
+
+  function normalizeShiftRequests(
+    days: ProviderWeeklyAvailabilityRecord["days"],
+    requestedMinimum: number,
+    requestedMaximum: number,
+    minShiftsWasEdited: boolean,
+    maxShiftsWasEdited: boolean,
+  ): ShiftRequestValues {
+    const workAvailableDayCount = countWorkAvailableDays(days);
+    const defaultMinimum = 0;
+    const defaultMaximum = workAvailableDayCount;
+    const selectedMinimum = minShiftsWasEdited ? requestedMinimum : defaultMinimum;
+    const selectedMaximum = maxShiftsWasEdited ? requestedMaximum : defaultMaximum;
+    const nextMinimum = clampValue(selectedMinimum, 0, workAvailableDayCount);
+    const minimumForMaximum = Math.min(nextMinimum, workAvailableDayCount);
+    const nextMaximum = clampValue(selectedMaximum, minimumForMaximum, workAvailableDayCount);
+    const shiftRequests = {
+      minShiftsRequested: nextMinimum,
+      maxShiftsRequested: nextMaximum,
+    };
+    return shiftRequests;
+  }
+
   function updateSelectedAvailability(nextAvailability: ProviderWeeklyAvailabilityRecord) {
     setRecords((currentRecords) => {
       const nextRecords = currentRecords.map((record) => {
@@ -102,6 +244,16 @@ export function ProviderPortalWorkspace({
       });
       return nextRecords;
     });
+  }
+
+  function selectWeek(weekId: string) {
+    const params = new URLSearchParams(searchParams);
+    params.set("view", "week");
+    params.set("weekId", weekId);
+
+    const query = params.toString();
+    const href = `${pathname}?${query}`;
+    router.push(href);
   }
 
   function updateRecordAvailability(
@@ -152,15 +304,20 @@ export function ProviderPortalWorkspace({
       };
       return nextDay;
     });
-    const workAvailableDayCount = countWorkAvailableDays(nextDays);
+    const editState = shiftRequestEditStateForWeek(selectedRecord.scheduleWeekId);
     const currentMinimum = selectedRecord.availability.minShiftsRequested;
     const currentMaximum = selectedRecord.availability.maxShiftsRequested;
-    const nextMinimum = clampValue(currentMinimum, 0, workAvailableDayCount);
-    const nextMaximum = clampValue(currentMaximum, nextMinimum, workAvailableDayCount);
+    const nextShiftRequests = normalizeShiftRequests(
+      nextDays,
+      currentMinimum,
+      currentMaximum,
+      editState.minShiftsWasEdited,
+      editState.maxShiftsWasEdited,
+    );
     const nextAvailability = {
       ...selectedRecord.availability,
-      minShiftsRequested: nextMinimum,
-      maxShiftsRequested: nextMaximum,
+      minShiftsRequested: nextShiftRequests.minShiftsRequested,
+      maxShiftsRequested: nextShiftRequests.maxShiftsRequested,
       days: nextDays,
     };
     updateSelectedAvailability(nextAvailability);
@@ -195,15 +352,20 @@ export function ProviderPortalWorkspace({
       };
       return nextDay;
     });
-    const workAvailableDayCount = countWorkAvailableDays(nextDays);
+    const editState = shiftRequestEditStateForWeek(record.scheduleWeekId);
     const currentMinimum = record.availability.minShiftsRequested;
     const currentMaximum = record.availability.maxShiftsRequested;
-    const nextMinimum = clampValue(currentMinimum, 0, workAvailableDayCount);
-    const nextMaximum = clampValue(currentMaximum, nextMinimum, workAvailableDayCount);
+    const nextShiftRequests = normalizeShiftRequests(
+      nextDays,
+      currentMinimum,
+      currentMaximum,
+      editState.minShiftsWasEdited,
+      editState.maxShiftsWasEdited,
+    );
     const nextAvailability = {
       ...record.availability,
-      minShiftsRequested: nextMinimum,
-      maxShiftsRequested: nextMaximum,
+      minShiftsRequested: nextShiftRequests.minShiftsRequested,
+      maxShiftsRequested: nextShiftRequests.maxShiftsRequested,
       days: nextDays,
     };
     updateRecordAvailability(record.scheduleWeekId, nextAvailability);
@@ -227,12 +389,14 @@ export function ProviderPortalWorkspace({
     const requestedMinimum = field === "min" ? parsedValue : currentMinimum;
     const requestedMaximum = field === "max" ? parsedValue : currentMaximum;
     const nextMinimum = clampValue(requestedMinimum, 0, workAvailableDayCount);
-    const nextMaximum = clampValue(requestedMaximum, nextMinimum, workAvailableDayCount);
+    const minimumForMaximum = Math.min(nextMinimum, workAvailableDayCount);
+    const nextMaximum = clampValue(requestedMaximum, minimumForMaximum, workAvailableDayCount);
     const nextAvailability = {
       ...selectedRecord.availability,
       minShiftsRequested: nextMinimum,
       maxShiftsRequested: nextMaximum,
     };
+    setShiftRequestWasEdited(selectedRecord.scheduleWeekId, field);
     updateSelectedAvailability(nextAvailability);
   }
 
@@ -254,12 +418,14 @@ export function ProviderPortalWorkspace({
     const requestedMinimum = field === "min" ? parsedValue : currentMinimum;
     const requestedMaximum = field === "max" ? parsedValue : currentMaximum;
     const nextMinimum = clampValue(requestedMinimum, 0, workAvailableDayCount);
-    const nextMaximum = clampValue(requestedMaximum, nextMinimum, workAvailableDayCount);
+    const minimumForMaximum = Math.min(nextMinimum, workAvailableDayCount);
+    const nextMaximum = clampValue(requestedMaximum, minimumForMaximum, workAvailableDayCount);
     const nextAvailability = {
       ...record.availability,
       minShiftsRequested: nextMinimum,
       maxShiftsRequested: nextMaximum,
     };
+    setShiftRequestWasEdited(record.scheduleWeekId, field);
     updateRecordAvailability(record.scheduleWeekId, nextAvailability);
   }
 
@@ -285,6 +451,7 @@ export function ProviderPortalWorkspace({
         });
         return nextRecords;
       });
+      replaceShiftRequestEditState(savedRecord);
       setAvailabilityMessage("Availability saved.");
       return true;
     } catch (error) {
@@ -314,6 +481,7 @@ export function ProviderPortalWorkspace({
         });
         return nextRecords;
       });
+      replaceShiftRequestEditState(savedRecord);
       setAvailabilityMessage("Availability saved.");
       return true;
     } catch (error) {
@@ -352,6 +520,27 @@ export function ProviderPortalWorkspace({
             <div className="truncate text-sm text-slate-600">
               {profile.email ?? "No email on file"}
             </div>
+            {weekSelectorIsVisible ? (
+              <label className="mt-4 flex flex-wrap items-center gap-3 text-sm font-semibold text-slate-700">
+                Week
+                <select
+                  className="h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-950 sm:w-72"
+                  value={selectedWeekId}
+                  onChange={(event) => selectWeek(event.target.value)}
+                >
+                  {records.map((record) => {
+                    return (
+                      <option
+                        key={record.scheduleWeekId}
+                        value={record.scheduleWeekId}
+                      >
+                        {record.scheduleWeekName}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+            ) : null}
           </div>
           <div className="rounded-md border border-slate-200 px-3 py-2">
             <div className="text-sm font-semibold text-slate-950">{completionText}</div>

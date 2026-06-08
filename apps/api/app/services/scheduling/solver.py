@@ -25,9 +25,10 @@ from app.services.scheduling.solver_contracts import SolverResult
 from app.services.scheduling.solver_contracts import SolverRoom
 from app.services.scheduling.solver_contracts import SolverShiftRequirement
 from app.services.scheduling.solver_contracts import SolverViolation
+from app.services.scheduling.shift_request_units import shift_request_units_for_shift_type
 
-BELOW_MIN_SHIFT_REQUEST_PENALTY = 20
-ABOVE_MAX_SHIFT_REQUEST_PENALTY = 30
+BELOW_MIN_SHIFT_REQUEST_UNIT_PENALTY = 10
+ABOVE_MAX_SHIFT_REQUEST_UNIT_PENALTY = 15
 ASSIGNMENT_IMBALANCE_PENALTY = 3
 FAIRNESS_PRESSURE_SCALE = 10
 MAX_SOLVE_SECONDS = 30.0
@@ -164,6 +165,8 @@ def weekly_availability_for_shift(
             options=day.options,
             min_shifts_requested=provider.week_availability.min_shifts_requested,
             max_shifts_requested=provider.week_availability.max_shifts_requested,
+            min_shifts_requested_units=provider.week_availability.min_shifts_requested_units,
+            max_shifts_requested_units=provider.week_availability.max_shifts_requested_units,
         )
         return summary
 
@@ -173,6 +176,8 @@ def weekly_availability_for_shift(
         options=["unset"],
         min_shifts_requested=provider.week_availability.min_shifts_requested,
         max_shifts_requested=provider.week_availability.max_shifts_requested,
+        min_shifts_requested_units=provider.week_availability.min_shifts_requested_units,
+        max_shifts_requested_units=provider.week_availability.max_shifts_requested_units,
     )
     return summary
 
@@ -463,17 +468,23 @@ def create_provider_assignment_totals(
     decisions: list[CandidateDecision],
 ) -> list[ProviderAssignmentTotal]:
     provider_assignment_totals: list[ProviderAssignmentTotal] = []
-    assignment_total_upper_bound = len(solver_input.shift_requirements)
+    shift_requirement_units = [
+        shift_request_units_for_shift_type(shift_requirement.shift_type)
+        for shift_requirement in solver_input.shift_requirements
+    ]
+    assignment_total_upper_bound = sum(shift_requirement_units)
 
     for provider in solver_input.providers:
         provider_decisions = decisions_for_provider(provider, decisions)
-        provider_variables = [
-            decision.variable
+        provider_unit_terms = [
+            decision.variable * shift_request_units_for_shift_type(
+                decision.candidate.shift_requirement.shift_type,
+            )
             for decision in provider_decisions
         ]
         variable_name = f"total_{provider.id}"
         assignment_total = model.NewIntVar(0, assignment_total_upper_bound, variable_name)
-        model.Add(assignment_total == sum(provider_variables))
+        model.Add(assignment_total == sum(provider_unit_terms))
         provider_assignment_total = ProviderAssignmentTotal(
             provider=provider,
             variable=assignment_total,
@@ -489,28 +500,32 @@ def add_shift_request_objective_terms(
     provider_assignment_totals: list[ProviderAssignmentTotal],
     objective_terms: list[cp_model.LinearExpr],
 ) -> None:
-    assignment_total_upper_bound = len(solver_input.shift_requirements)
+    shift_requirement_units = [
+        shift_request_units_for_shift_type(shift_requirement.shift_type)
+        for shift_requirement in solver_input.shift_requirements
+    ]
+    assignment_total_upper_bound = sum(shift_requirement_units)
 
     for provider_assignment_total in provider_assignment_totals:
         provider = provider_assignment_total.provider
         assignment_total = provider_assignment_total.variable
-        min_shifts_requested = provider.week_availability.min_shifts_requested
-        max_shifts_requested = provider.week_availability.max_shifts_requested
+        min_shifts_requested_units = provider.week_availability.min_shifts_requested_units
+        max_shifts_requested_units = provider.week_availability.max_shifts_requested_units
 
-        if min_shifts_requested > 0:
+        if min_shifts_requested_units > 0:
             shortfall_name = f"below_min_{provider.id}"
-            shortfall = model.NewIntVar(0, min_shifts_requested, shortfall_name)
-            minimum_difference = min_shifts_requested - assignment_total
+            shortfall = model.NewIntVar(0, min_shifts_requested_units, shortfall_name)
+            minimum_difference = min_shifts_requested_units - assignment_total
             model.Add(shortfall >= minimum_difference)
-            objective_term = shortfall * -BELOW_MIN_SHIFT_REQUEST_PENALTY
+            objective_term = shortfall * -BELOW_MIN_SHIFT_REQUEST_UNIT_PENALTY
             objective_terms.append(objective_term)
 
-        if max_shifts_requested >= 0:
+        if max_shifts_requested_units >= 0:
             excess_name = f"above_max_{provider.id}"
             excess = model.NewIntVar(0, assignment_total_upper_bound, excess_name)
-            maximum_difference = assignment_total - max_shifts_requested
+            maximum_difference = assignment_total - max_shifts_requested_units
             model.Add(excess >= maximum_difference)
-            objective_term = excess * -ABOVE_MAX_SHIFT_REQUEST_PENALTY
+            objective_term = excess * -ABOVE_MAX_SHIFT_REQUEST_UNIT_PENALTY
             objective_terms.append(objective_term)
 
 
@@ -520,7 +535,11 @@ def add_assignment_balance_objective_terms(
     provider_assignment_totals: list[ProviderAssignmentTotal],
     objective_terms: list[cp_model.LinearExpr],
 ) -> None:
-    assignment_total_upper_bound = len(solver_input.shift_requirements)
+    shift_requirement_units = [
+        shift_request_units_for_shift_type(shift_requirement.shift_type)
+        for shift_requirement in solver_input.shift_requirements
+    ]
+    assignment_total_upper_bound = sum(shift_requirement_units)
 
     for first_index, first_total in enumerate(provider_assignment_totals):
         remaining_totals = provider_assignment_totals[first_index + 1 :]
@@ -747,11 +766,11 @@ def assignment_from_decision(
     return assignment
 
 
-def assignment_count_for_provider(
+def assignment_units_for_provider(
     provider: SolverProvider,
     assignments: list[SolverAssignment],
 ) -> int:
-    assignment_count = 0
+    assignment_units = 0
 
     for assignment in assignments:
         provider_matches = assignment.provider_id == provider.id
@@ -759,9 +778,10 @@ def assignment_count_for_provider(
         if not provider_matches:
             continue
 
-        assignment_count = assignment_count + 1
+        shift_units = shift_request_units_for_shift_type(assignment.shift_type)
+        assignment_units = assignment_units + shift_units
 
-    return assignment_count
+    return assignment_units
 
 
 def provider_for_assignment(
@@ -832,11 +852,11 @@ def shift_request_warnings(
     warnings: list[SolverViolation] = []
 
     for provider in solver_input.providers:
-        assignment_count = assignment_count_for_provider(provider, assignments)
-        min_shifts_requested = provider.week_availability.min_shifts_requested
-        max_shifts_requested = provider.week_availability.max_shifts_requested
-        below_minimum = assignment_count < min_shifts_requested
-        above_maximum = assignment_count > max_shifts_requested
+        assignment_units = assignment_units_for_provider(provider, assignments)
+        min_shifts_requested_units = provider.week_availability.min_shifts_requested_units
+        max_shifts_requested_units = provider.week_availability.max_shifts_requested_units
+        below_minimum = assignment_units < min_shifts_requested_units
+        above_maximum = assignment_units > max_shifts_requested_units
 
         if below_minimum:
             message = f"Provider {provider.id} is below the minimum requested shifts for this schedule week."

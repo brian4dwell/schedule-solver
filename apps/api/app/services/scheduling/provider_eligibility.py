@@ -1,7 +1,6 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -19,6 +18,7 @@ from app.services.scheduling.provider_eligibility_contracts import ProviderSlotE
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityResult
 from app.services.scheduling.provider_eligibility_contracts import ProviderWeeklyAvailabilitySummary
 from app.services.scheduling.provider_eligibility_contracts import RequiredRoomTypeSkill
+from app.services.scheduling.shift_request_units import shift_request_units_for_shift_type
 
 
 
@@ -278,7 +278,7 @@ def evaluate_provider_slot_eligibility(
                     )
                     violations.append(warning)
 
-        exceeds_maximum_shifts = context.schedule_week_assignment_count > weekly_availability.max_shifts_requested
+        exceeds_maximum_shifts = context.schedule_week_assignment_units > weekly_availability.max_shifts_requested_units
 
         if exceeds_maximum_shifts:
             violation = create_warning(
@@ -447,33 +447,38 @@ def load_weekly_availability(
         options=availability.availability_options,
         min_shifts_requested=availability.min_shifts_requested,
         max_shifts_requested=availability.max_shifts_requested,
+        min_shifts_requested_units=availability.min_shifts_requested_units,
+        max_shifts_requested_units=availability.max_shifts_requested_units,
     )
     return summary
 
 
-def provider_assignment_count_for_week(
+def provider_assignment_units_for_week(
     request: ProviderSlotEligibilityInput,
     session: Session,
 ) -> int:
     if request.schedule_version_id is None:
-        return 1
+        requested_units = shift_request_units_for_shift_type(request.shift_type)
+        return requested_units
 
-    statement = select(func.count(Assignment.id))
+    statement = select(Assignment)
     statement = statement.where(Assignment.organization_id == request.organization_id)
     statement = statement.where(Assignment.schedule_period_id == request.schedule_period_id)
     statement = statement.where(Assignment.schedule_version_id == request.schedule_version_id)
     statement = statement.where(Assignment.provider_id == request.provider_id)
-    assignment_count = session.scalar(statement)
+    if request.assignment_id is not None:
+        statement = statement.where(Assignment.id != request.assignment_id)
 
-    if assignment_count is None:
-        return 0
+    assignments = list(session.scalars(statement))
+    assignment_units = 0
 
-    count = int(assignment_count)
+    for assignment in assignments:
+        shift_units = shift_request_units_for_shift_type(assignment.shift_type)
+        assignment_units = assignment_units + shift_units
 
-    if request.assignment_id is None:
-        count = count + 1
-
-    return count
+    requested_units = shift_request_units_for_shift_type(request.shift_type)
+    assignment_units = assignment_units + requested_units
+    return assignment_units
 
 
 def has_double_booking(
@@ -536,7 +541,8 @@ def load_provider_eligibility_context(
         room_md_only = room.md_only
 
     weekly_availability = load_weekly_availability(request, session)
-    schedule_week_assignment_count = provider_assignment_count_for_week(request, session)
+    schedule_week_assignment_units = provider_assignment_units_for_week(request, session)
+    schedule_week_assignment_count = schedule_week_assignment_units // 2
     double_booking = has_double_booking(request, session)
     context = ProviderEligibilityContext(
         provider_id=provider.id,
@@ -549,6 +555,7 @@ def load_provider_eligibility_context(
         provider_room_type_skills=provider_skills,
         weekly_availability=weekly_availability,
         schedule_week_assignment_count=schedule_week_assignment_count,
+        schedule_week_assignment_units=schedule_week_assignment_units,
         has_double_booking=double_booking,
     )
     return context

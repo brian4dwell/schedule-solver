@@ -14,6 +14,8 @@ class SolverProviderWeekAvailability(BaseModel):
     provider_id: UUID
     min_shifts_requested: int = 0
     max_shifts_requested: int = 0
+    min_shifts_requested_units: int = 0
+    max_shifts_requested_units: int = 0
     days: list[SolverWeeklyAvailabilityDay] = Field(default_factory=list)
 
 

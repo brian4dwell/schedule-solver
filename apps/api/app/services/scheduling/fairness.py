@@ -24,6 +24,7 @@ from app.schemas.fairness import ProviderFairnessSnapshotRead
 from app.schemas.schedule import SchedulePeriodRead
 from app.schemas.schedule import ScheduleVersionRead
 from app.services.scheduling.provider_eligibility import full_shift_availability_accommodates_shift_type
+from app.services.scheduling.shift_request_units import shift_request_units_for_shift_type
 
 DEFAULT_DECAY_FACTOR = 0.95
 DEFAULT_DEBT_WEIGHT = 1.0
@@ -279,6 +280,24 @@ def assignment_count_for_provider(
     return assignment_count
 
 
+def assignment_units_for_provider(
+    provider_id: UUID,
+    assignments: list[Assignment],
+) -> int:
+    assignment_units = 0
+
+    for assignment in assignments:
+        provider_matches = assignment.provider_id == provider_id
+
+        if not provider_matches:
+            continue
+
+        shift_units = shift_request_units_for_shift_type(assignment.shift_type)
+        assignment_units = assignment_units + shift_units
+
+    return assignment_units
+
+
 def average_assignment_count(
     assignments: list[Assignment],
     providers: list[Provider],
@@ -376,19 +395,21 @@ def below_minimum_event(
     provider_inputs: ProviderFairnessInputs,
     schedule_version: ScheduleVersion,
     organization_id: UUID,
+    assignment_units: int,
 ) -> ProviderFairnessEvent | None:
     weekly_availability = provider_inputs.weekly_availability
 
     if weekly_availability is None:
         return None
 
-    minimum_requested = weekly_availability.min_shifts_requested
-    shortfall = minimum_requested - provider_inputs.assignment_count
+    minimum_requested_units = weekly_availability.min_shifts_requested_units
+    shortfall_units = minimum_requested_units - assignment_units
 
-    if shortfall <= 0:
+    if shortfall_units <= 0:
         return None
 
-    debt_delta = shortfall * BELOW_MINIMUM_SHIFT_DEBT
+    shortfall_shifts = shortfall_units / 2
+    debt_delta = shortfall_shifts * BELOW_MINIMUM_SHIFT_DEBT
     reason = "Provider was assigned fewer shifts than their weekly minimum request."
     event = create_fairness_event(
         provider_inputs,
@@ -407,23 +428,25 @@ def above_maximum_event(
     provider_inputs: ProviderFairnessInputs,
     schedule_version: ScheduleVersion,
     organization_id: UUID,
+    assignment_units: int,
 ) -> ProviderFairnessEvent | None:
     weekly_availability = provider_inputs.weekly_availability
 
     if weekly_availability is None:
         return None
 
-    maximum_requested = weekly_availability.max_shifts_requested
+    maximum_requested_units = weekly_availability.max_shifts_requested_units
 
-    if maximum_requested <= 0:
+    if maximum_requested_units <= 0:
         return None
 
-    excess = provider_inputs.assignment_count - maximum_requested
+    excess_units = assignment_units - maximum_requested_units
 
-    if excess <= 0:
+    if excess_units <= 0:
         return None
 
-    debt_delta = excess * ABOVE_MAXIMUM_SHIFT_DEBT
+    excess_shifts = excess_units / 2
+    debt_delta = excess_shifts * ABOVE_MAXIMUM_SHIFT_DEBT
     reason = "Provider was assigned more shifts than their weekly maximum request."
     event = create_fairness_event(
         provider_inputs,
@@ -479,10 +502,15 @@ def fairness_events_for_provider(
         organization_id,
     )
     events.extend(accommodation_events)
+    assignment_units = assignment_units_for_provider(
+        provider_inputs.provider.id,
+        assignments,
+    )
     below_minimum = below_minimum_event(
         provider_inputs,
         schedule_version,
         organization_id,
+        assignment_units,
     )
 
     if below_minimum is not None:
@@ -492,6 +520,7 @@ def fairness_events_for_provider(
         provider_inputs,
         schedule_version,
         organization_id,
+        assignment_units,
     )
 
     if above_maximum is not None:
