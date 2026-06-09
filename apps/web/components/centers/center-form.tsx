@@ -6,12 +6,14 @@ import { useState } from "react";
 import { createCenter, type Center, updateCenter } from "@/lib/api";
 import type { CenterFormValues } from "@/lib/schemas/center";
 import { parseUsTimezone, usTimezoneOptions } from "@/lib/timezones";
+import { useToast } from "@/components/ui/toast-provider";
 
 type CenterFormProps = {
   center?: Center;
 };
 
 export function CenterForm({ center }: CenterFormProps) {
+  const { showToast } = useToast();
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const isEditing = center !== undefined;
@@ -38,11 +40,21 @@ export function CenterForm({ center }: CenterFormProps) {
         await updateCenter(center.id, values);
       }
 
+      showToast({
+        title: isEditing ? "Center saved" : "Center created",
+        description: "Center details were saved.",
+        tone: "success",
+      });
       router.push("/centers");
       router.refresh();
     } catch (error) {
       const nextErrorMessage = error instanceof Error ? error.message : "Center save failed.";
       setErrorMessage(nextErrorMessage);
+      showToast({
+        title: "Center save failed",
+        description: nextErrorMessage,
+        tone: "error",
+      });
     }
   }
 

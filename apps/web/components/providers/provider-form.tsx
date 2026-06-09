@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { createProvider, type Center, type Provider, type RoomType, updateProvider } from "@/lib/api";
 import type { ProviderFormValues } from "@/lib/schemas/provider";
+import { useToast } from "@/components/ui/toast-provider";
 
 type ProviderFormProps = {
   centers: Center[];
@@ -33,6 +34,7 @@ function providerHasRoomTypeSkill(provider: Provider | undefined, roomTypeId: st
 }
 
 export function ProviderForm({ centers, provider, roomTypes }: ProviderFormProps) {
+  const { showToast } = useToast();
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const isEditing = provider !== undefined;
@@ -70,11 +72,21 @@ export function ProviderForm({ centers, provider, roomTypes }: ProviderFormProps
         await updateProvider(provider.id, values);
       }
 
+      showToast({
+        title: isEditing ? "Provider saved" : "Provider created",
+        description: "Provider details were saved.",
+        tone: "success",
+      });
       router.push("/providers");
       router.refresh();
     } catch (error) {
       const nextErrorMessage = error instanceof Error ? error.message : "Provider save failed.";
       setErrorMessage(nextErrorMessage);
+      showToast({
+        title: "Provider save failed",
+        description: nextErrorMessage,
+        tone: "error",
+      });
     }
   }
 

@@ -32,6 +32,7 @@ import {
   schedulePublishEventSchema,
   scheduleVersionSchema,
 } from "@/lib/schemas/schedule";
+import { useToast } from "@/components/ui/toast-provider";
 
 type RoomRow = {
   room: Room;
@@ -1375,6 +1376,7 @@ export function ScheduleWorkspace({
   schedulePeriod,
   scheduleId,
 }: ScheduleWorkspaceProps) {
+  const { showToast } = useToast();
   const availableRooms = useMemo(() => {
     return availableRoomsFromRows(rooms);
   }, [rooms]);
@@ -1446,6 +1448,11 @@ export function ScheduleWorkspace({
         }
 
         setAvailabilityLoadMessage("Availability could not be loaded.");
+        showToast({
+          title: "Availability load failed",
+          description: "Provider availability could not be loaded for this schedule.",
+          tone: "error",
+        });
       }
     }
 
@@ -1454,7 +1461,7 @@ export function ScheduleWorkspace({
     return () => {
       isMounted = false;
     };
-  }, [providers, scheduleId]);
+  }, [providers, scheduleId, showToast]);
 
   const visibleColumns = dayColumns.filter((column) => {
     const shouldShowColumn = showWeekends || !column.isWeekend;
@@ -1535,11 +1542,21 @@ export function ScheduleWorkspace({
 
     if (hasInvalidAssignments) {
       setActionMessage("Resolve publish blockers before publishing.");
+      showToast({
+        title: "Publish blocked",
+        description: "Resolve publish blockers before publishing.",
+        tone: "warning",
+      });
       return;
     }
 
     if (savedVersionDetail === null) {
       setActionMessage("Save a draft before publishing.");
+      showToast({
+        title: "Publish blocked",
+        description: "Save a draft before publishing.",
+        tone: "warning",
+      });
       return;
     }
 
@@ -1572,8 +1589,22 @@ export function ScheduleWorkspace({
         return nextOptions;
       });
       setActionMessage("Schedule published.");
-    } catch {
-      setActionMessage("Publish failed because the saved version has blockers.");
+      showToast({
+        title: "Schedule published",
+        description: "The saved schedule version is now published.",
+        tone: "success",
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Publish failed because the saved version has blockers.";
+      setActionMessage(message);
+      showToast({
+        title: "Publish failed",
+        description: message,
+        tone: "error",
+      });
     } finally {
       setIsPublishing(false);
     }
@@ -1634,8 +1665,19 @@ export function ScheduleWorkspace({
       });
       updateWorkingVersion(nextVersion);
       setActionMessage("Draft saved.");
-    } catch {
-      setActionMessage("Draft save failed.");
+      showToast({
+        title: "Draft saved",
+        description: "Your schedule changes were saved.",
+        tone: "success",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Draft save failed.";
+      setActionMessage(message);
+      showToast({
+        title: "Draft save failed",
+        description: message,
+        tone: "error",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -1652,6 +1694,11 @@ export function ScheduleWorkspace({
 
     setIsGenerating(true);
     setActionMessage(null);
+    showToast({
+      title: "Generation started",
+      description: "The solver is building a draft schedule.",
+      tone: "info",
+    });
 
     try {
       const detail = await generateScheduleVersion(scheduleId, payload);
@@ -1662,6 +1709,11 @@ export function ScheduleWorkspace({
 
       if (wouldClearWorkingSchedule) {
         setActionMessage("Generation produced no assignments, so the current board was kept.");
+        showToast({
+          title: "Generation returned no assignments",
+          description: "The current board was kept.",
+          tone: "warning",
+        });
         return;
       }
 
@@ -1675,8 +1727,22 @@ export function ScheduleWorkspace({
       });
       updateWorkingVersion(nextVersion);
       setActionMessage(`Generated draft in ${duration} ms.`);
-    } catch {
-      setActionMessage("Schedule generation could not satisfy all constraints.");
+      showToast({
+        title: "Draft generated",
+        description: `Generated draft in ${duration} ms.`,
+        tone: "success",
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Schedule generation could not satisfy all constraints.";
+      setActionMessage(message);
+      showToast({
+        title: "Generation failed",
+        description: message,
+        tone: "error",
+      });
     } finally {
       setIsGenerating(false);
     }
@@ -1695,8 +1761,19 @@ export function ScheduleWorkspace({
       setPublishEvents(nextPublishEvents);
       updateWorkingVersion(nextVersion);
       setActionMessage("Draft loaded.");
-    } catch {
-      setActionMessage("Draft load failed.");
+      showToast({
+        title: "Draft loaded",
+        description: "The selected schedule draft is now open.",
+        tone: "success",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Draft load failed.";
+      setActionMessage(message);
+      showToast({
+        title: "Draft load failed",
+        description: message,
+        tone: "error",
+      });
     } finally {
       setIsLoadingVersion(false);
     }
@@ -2019,6 +2096,11 @@ export function ScheduleWorkspace({
     try {
       selectedOption = await verifiedProviderOption(assignment, option);
     } catch {
+      showToast({
+        title: "Provider check failed",
+        description: "Provider eligibility could not be verified.",
+        tone: "warning",
+      });
       const reason = createHardProviderReason(
         "provider_eligibility_check_failed",
         "other_hard_constraint",
@@ -2038,6 +2120,11 @@ export function ScheduleWorkspace({
 
     if (!optionIsSelectable) {
       setActionMessage("Provider is already assigned to an overlapping slot.");
+      showToast({
+        title: "Provider not assigned",
+        description: "Provider is already assigned to an overlapping slot.",
+        tone: "warning",
+      });
       setOpenProviderAssignmentId(null);
       return;
     }

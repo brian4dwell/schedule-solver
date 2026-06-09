@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { createRoom, type Center, type RoomType } from "@/lib/api";
 import type { RoomFormValues } from "@/lib/schemas/room";
+import { useToast } from "@/components/ui/toast-provider";
 
 type RoomFormProps = {
   centers: Center[];
@@ -13,6 +14,7 @@ type RoomFormProps = {
 };
 
 export function RoomForm({ centers, roomTypes, selectedCenterId }: RoomFormProps) {
+  const { showToast } = useToast();
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [currentCenterId, setCurrentCenterId] = useState(selectedCenterId ?? "");
@@ -44,10 +46,20 @@ export function RoomForm({ centers, roomTypes, selectedCenterId }: RoomFormProps
 
     try {
       await createRoom(values);
+      showToast({
+        title: "Room added",
+        description: "The room was added to the schedule workspace.",
+        tone: "success",
+      });
       router.refresh();
     } catch (error) {
       const nextErrorMessage = error instanceof Error ? error.message : "Room save failed.";
       setErrorMessage(nextErrorMessage);
+      showToast({
+        title: "Room save failed",
+        description: nextErrorMessage,
+        tone: "error",
+      });
     }
   }
 

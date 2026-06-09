@@ -10,6 +10,7 @@ import {
   renameSchedulePeriod,
 } from "@/lib/api";
 import type { SchedulePeriodSummary } from "@/lib/schemas/schedule";
+import { useToast } from "@/components/ui/toast-provider";
 
 type SchedulesTableProps = {
   periods: SchedulePeriodSummary[];
@@ -40,6 +41,7 @@ function publishStatus(period: SchedulePeriodSummary) {
 }
 
 export function SchedulesTable({ periods }: SchedulesTableProps) {
+  const { showToast } = useToast();
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [openMenuPeriodId, setOpenMenuPeriodId] = useState<string | null>(null);
@@ -66,11 +68,21 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
         name: nextName,
       };
       await renameSchedulePeriod(period.id, renameValues);
+      showToast({
+        title: "Schedule renamed",
+        description: "The schedule period name was updated.",
+        tone: "success",
+      });
       router.refresh();
     } catch (error) {
       const nextErrorMessage =
         error instanceof Error ? error.message : "Schedule rename failed.";
       setErrorMessage(nextErrorMessage);
+      showToast({
+        title: "Schedule rename failed",
+        description: nextErrorMessage,
+        tone: "error",
+      });
     }
   }
 
@@ -88,11 +100,21 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
 
     try {
       await deleteSchedulePeriod(period.id);
+      showToast({
+        title: "Schedule deleted",
+        description: "The schedule period was deleted.",
+        tone: "success",
+      });
       router.refresh();
     } catch (error) {
       const nextErrorMessage =
         error instanceof Error ? error.message : "Schedule delete failed.";
       setErrorMessage(nextErrorMessage);
+      showToast({
+        title: "Schedule delete failed",
+        description: nextErrorMessage,
+        tone: "error",
+      });
     }
   }
 
@@ -102,14 +124,29 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
     setCloningPeriodId(period.id);
 
     try {
+      showToast({
+        title: "Cloning schedule",
+        description: "Creating a copy of the schedule period.",
+        tone: "info",
+      });
       const response = await cloneSchedulePeriod(period.id);
       const schedulePeriodId = response.schedule_period.id;
+      showToast({
+        title: "Schedule cloned",
+        description: "Opening the cloned schedule period.",
+        tone: "success",
+      });
       router.push(`/schedules/${schedulePeriodId}`);
     } catch (error) {
       const nextErrorMessage =
         error instanceof Error ? error.message : "Schedule clone failed.";
       setErrorMessage(nextErrorMessage);
       setCloningPeriodId(null);
+      showToast({
+        title: "Schedule clone failed",
+        description: nextErrorMessage,
+        tone: "error",
+      });
     }
   }
 

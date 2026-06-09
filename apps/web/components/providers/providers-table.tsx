@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { deactivateProvider, type Center, type Provider, type RoomType } from "@/lib/api";
+import { useToast } from "@/components/ui/toast-provider";
 
 type ProvidersTableProps = {
   centers: Center[];
@@ -45,6 +46,7 @@ function providerSkillNames(provider: Provider, roomTypes: RoomType[]) {
 }
 
 export function ProvidersTable({ centers, providers, roomTypes }: ProvidersTableProps) {
+  const { showToast } = useToast();
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -53,10 +55,20 @@ export function ProvidersTable({ centers, providers, roomTypes }: ProvidersTable
 
     try {
       await deactivateProvider(providerId);
+      showToast({
+        title: "Provider deactivated",
+        description: "The provider is no longer active.",
+        tone: "success",
+      });
       router.refresh();
     } catch (error) {
       const nextErrorMessage = error instanceof Error ? error.message : "Provider deactivation failed.";
       setErrorMessage(nextErrorMessage);
+      showToast({
+        title: "Provider deactivation failed",
+        description: nextErrorMessage,
+        tone: "error",
+      });
     }
   }
 

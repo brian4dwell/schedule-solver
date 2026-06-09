@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { deleteRoom, updateRoom, type Center, type Room, type RoomType } from "@/lib/api";
 import type { RoomFormValues } from "@/lib/schemas/room";
+import { useToast } from "@/components/ui/toast-provider";
 
 type RoomRow = {
   room: Room;
@@ -17,6 +18,7 @@ type RoomsTableProps = {
 };
 
 export function RoomsTable({ rows, roomTypes }: RoomsTableProps) {
+  const { showToast } = useToast();
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
@@ -75,10 +77,20 @@ export function RoomsTable({ rows, roomTypes }: RoomsTableProps) {
     try {
       await updateRoom(row.room.id, values);
       handleEditCancel();
+      showToast({
+        title: "Room saved",
+        description: "Room details were updated.",
+        tone: "success",
+      });
       router.refresh();
     } catch (error) {
       const nextErrorMessage = error instanceof Error ? error.message : "Room update failed.";
       setErrorMessage(nextErrorMessage);
+      showToast({
+        title: "Room update failed",
+        description: nextErrorMessage,
+        tone: "error",
+      });
     }
   }
 
@@ -87,10 +99,20 @@ export function RoomsTable({ rows, roomTypes }: RoomsTableProps) {
 
     try {
       await deleteRoom(roomId);
+      showToast({
+        title: "Room deleted",
+        description: "The room was removed.",
+        tone: "success",
+      });
       router.refresh();
     } catch (error) {
       const nextErrorMessage = error instanceof Error ? error.message : "Room delete failed.";
       setErrorMessage(nextErrorMessage);
+      showToast({
+        title: "Room delete failed",
+        description: nextErrorMessage,
+        tone: "error",
+      });
     }
   }
 

@@ -12,6 +12,7 @@ primary_region = "ord"
   INTERNAL_API_BASE_URL = "http://127.0.0.1:8000"
   NEXT_PUBLIC_API_BASE_URL = "/api"
   PORT = "3000"
+  PROVIDER_PORTAL_BASE_URL = "https://bespoke-web.fly.dev"
 
 [http_service]
   internal_port = 3000

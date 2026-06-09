@@ -13,6 +13,7 @@ import {
   type ProviderPreferences,
   type ProviderPreferencesSavePayload,
 } from "@/lib/api";
+import { useToast } from "@/components/ui/toast-provider";
 
 type ProviderPreferencesEditorProps = {
   centers: Center[];
@@ -219,6 +220,7 @@ export function ProviderPreferencesEditor({
   preferences,
   provider,
 }: ProviderPreferencesEditorProps) {
+  const { showToast } = useToast();
   const router = useRouter();
   const initialCenterDrafts = useMemo(() => {
     const drafts = createCenterPreferenceDrafts(centers, preferences);
@@ -310,10 +312,20 @@ export function ProviderPreferencesEditor({
       const payload = visiblePreferencePayload(centerDrafts, shiftTypeDrafts);
       await saveProviderPreferences(provider.id, payload);
       setVisibleMessage("Preferences saved.");
+      showToast({
+        title: "Preferences saved",
+        description: "Provider-visible preferences were updated.",
+        tone: "success",
+      });
       router.refresh();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Preference save failed.";
       setErrorMessage(message);
+      showToast({
+        title: "Preference save failed",
+        description: message,
+        tone: "error",
+      });
     } finally {
       setIsSavingVisible(false);
     }
@@ -328,10 +340,20 @@ export function ProviderPreferencesEditor({
       const payload = managerPreferencePayload(managerDrafts);
       await saveManagerProviderPreferences(provider.id, payload);
       setManagerMessage("Manager preferences saved.");
+      showToast({
+        title: "Manager preferences saved",
+        description: "Manager-only preferences were updated.",
+        tone: "success",
+      });
       router.refresh();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Manager preference save failed.";
       setErrorMessage(message);
+      showToast({
+        title: "Manager preference save failed",
+        description: message,
+        tone: "error",
+      });
     } finally {
       setIsSavingManager(false);
     }

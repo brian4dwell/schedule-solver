@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { createSchedulePeriod } from "@/lib/api";
 import { schedulePeriodFormSchema } from "@/lib/schemas/schedule";
+import { useToast } from "@/components/ui/toast-provider";
 
 const MONDAY_DAY_INDEX = 1;
 const MONDAY_DATE_INPUT_STEP_BASE = "1970-01-05";
@@ -66,6 +67,7 @@ function scheduleNameValue(startDateValue: string): string {
 }
 
 export function SchedulePeriodForm() {
+  const { showToast } = useToast();
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [startDateValue, setStartDateValue] = useState("");
@@ -111,16 +113,31 @@ export function SchedulePeriodForm() {
 
       if (!dateValueIsMonday(values.startDate)) {
         setErrorMessage("Start date must be a Monday.");
+        showToast({
+          title: "Start date is not Monday",
+          description: "Schedule weeks must start on Monday.",
+          tone: "warning",
+        });
         return;
       }
 
       const period = await createSchedulePeriod(values);
+      showToast({
+        title: "Schedule created",
+        description: "Opening the new schedule period.",
+        tone: "success",
+      });
       router.push(`/schedules/${period.id}`);
       router.refresh();
     } catch (error) {
       const nextErrorMessage =
         error instanceof Error ? error.message : "Schedule period save failed.";
       setErrorMessage(nextErrorMessage);
+      showToast({
+        title: "Schedule save failed",
+        description: nextErrorMessage,
+        tone: "error",
+      });
     }
   }
 

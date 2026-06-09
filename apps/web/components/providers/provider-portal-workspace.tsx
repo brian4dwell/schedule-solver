@@ -13,6 +13,7 @@ import type {
   AvailabilityOption,
   Weekday,
 } from "@/lib/schemas/provider-weekly-availability";
+import { useToast } from "@/components/ui/toast-provider";
 
 import { CalendarAvailabilityView } from "./provider-calendar-availability-view";
 import { PreferencesView } from "./provider-preferences-view";
@@ -72,6 +73,7 @@ export function ProviderPortalWorkspace({
   preferences,
   profile,
 }: ProviderPortalWorkspaceProps) {
+  const { showToast } = useToast();
   const firstWeekId = availabilityRecords.at(0)?.scheduleWeekId ?? "";
   const todayIso = isoDateForDate(new Date());
   const firstWeekStartDate = availabilityRecords.at(0)?.scheduleWeekStartDate ?? todayIso;
@@ -453,10 +455,20 @@ export function ProviderPortalWorkspace({
       });
       replaceShiftRequestEditState(savedRecord);
       setAvailabilityMessage("Availability saved.");
+      showToast({
+        title: "Availability saved",
+        description: "Your availability changes were saved.",
+        tone: "success",
+      });
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Availability save failed.";
       setAvailabilityMessage(message);
+      showToast({
+        title: "Availability save failed",
+        description: message,
+        tone: "error",
+      });
       return false;
     } finally {
       setIsSavingAvailability(false);
@@ -483,10 +495,20 @@ export function ProviderPortalWorkspace({
       });
       replaceShiftRequestEditState(savedRecord);
       setAvailabilityMessage("Availability saved.");
+      showToast({
+        title: "Availability saved",
+        description: "Your availability changes were saved.",
+        tone: "success",
+      });
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Availability save failed.";
       setAvailabilityMessage(message);
+      showToast({
+        title: "Availability save failed",
+        description: message,
+        tone: "error",
+      });
       return false;
     } finally {
       setIsSavingAvailability(false);
@@ -500,9 +522,19 @@ export function ProviderPortalWorkspace({
       const payload = preferencePayload(centerDrafts, shiftTypeDrafts);
       await saveCurrentProviderPreferences(payload);
       setPreferenceMessage("Preferences saved.");
+      showToast({
+        title: "Preferences saved",
+        description: "Your preference changes were saved.",
+        tone: "success",
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Preference save failed.";
       setPreferenceMessage(message);
+      showToast({
+        title: "Preference save failed",
+        description: message,
+        tone: "error",
+      });
     } finally {
       setIsSavingPreferences(false);
     }

@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import { centerSchema, type CenterFormValues } from "@/lib/schemas/center";
 import { nextPublicApiBaseUrl } from "@/lib/env";
 import {
@@ -183,6 +185,10 @@ export type ProviderSlotEligibilityPayload = {
   end_time: string;
 };
 
+const apiErrorResponseSchema = z.object({
+  detail: z.string().min(1),
+});
+
 async function serverAuthorizationHeaders(): Promise<Record<string, string>> {
   const runsInBrowser = typeof window !== "undefined";
 
@@ -224,6 +230,26 @@ async function requestInitWithAuth(init?: RequestInit): Promise<RequestInit> {
   return requestInit;
 }
 
+function apiErrorMessageFromText(responseText: string): string {
+  let parsedJson: unknown;
+
+  try {
+    parsedJson = JSON.parse(responseText);
+  } catch {
+    return responseText;
+  }
+
+  const parsedErrorResult = apiErrorResponseSchema.safeParse(parsedJson);
+  const detailIsMissing = !parsedErrorResult.success;
+
+  if (detailIsMissing) {
+    return responseText;
+  }
+
+  const message = parsedErrorResult.data.detail;
+  return message;
+}
+
 async function requestJson<TResponse>(
   path: string,
   init?: RequestInit,
@@ -234,7 +260,8 @@ async function requestJson<TResponse>(
 
   if (!response.ok) {
     const responseText = await response.text();
-    throw new Error(responseText);
+    const responseMessage = apiErrorMessageFromText(responseText);
+    throw new Error(responseMessage);
   }
 
   const responseJson = (await response.json()) as TResponse;

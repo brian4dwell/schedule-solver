@@ -7,9 +7,18 @@ import {
   sendProviderInviteEmail,
   type AdminProviderStatusRecord,
 } from "@/lib/api";
+import { useToast } from "@/components/ui/toast-provider";
 
 type AdminProviderStatusTableProps = {
   statuses: AdminProviderStatusRecord[];
+};
+
+type ProviderInviteWorkflowTone = "success" | "error";
+
+type ProviderInviteWorkflowMessage = {
+  providerId: string;
+  text: string;
+  tone: ProviderInviteWorkflowTone;
 };
 
 function accountStateLabel(value: AdminProviderStatusRecord["accountState"]) {
@@ -46,16 +55,33 @@ function statusToneClass(status: AdminProviderStatusRecord) {
   return "bg-amber-100 text-amber-900";
 }
 
+function errorMessageFromUnknown(error: unknown, defaultMessage: string) {
+  const errorIsError = error instanceof Error;
+
+  if (errorIsError) {
+    return error.message;
+  }
+
+  return defaultMessage;
+}
+
+function workflowMessageClass(tone: ProviderInviteWorkflowTone) {
+  if (tone === "success") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  }
+
+  return "border-rose-200 bg-rose-50 text-rose-800";
+}
+
 export function AdminProviderStatusTable({ statuses }: AdminProviderStatusTableProps) {
+  const { showToast } = useToast();
   const [inviteLinksByProviderId, setInviteLinksByProviderId] = useState<Record<string, string>>({});
   const [pendingProviderId, setPendingProviderId] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [workflowMessage, setWorkflowMessage] = useState<ProviderInviteWorkflowMessage | null>(null);
 
   async function inviteProvider(providerId: string) {
     setPendingProviderId(providerId);
-    setErrorMessage(null);
-    setSuccessMessage(null);
+    setWorkflowMessage(null);
     try {
       const invite = await createProviderInvite(providerId);
       const inviteUrl = new URL("/provider-portal/accept", window.location.origin);
@@ -67,9 +93,24 @@ export function AdminProviderStatusTable({ statuses }: AdminProviderStatusTableP
         };
         return nextLinks;
       });
+      showToast({
+        title: "Invite link created",
+        description: "The link is ready to copy from the provider row.",
+        tone: "success",
+      });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Provider invite failed.";
-      setErrorMessage(message);
+      const message = errorMessageFromUnknown(error, "Provider invite failed.");
+      const nextWorkflowMessage = {
+        providerId,
+        text: message,
+        tone: "error" as const,
+      };
+      setWorkflowMessage(nextWorkflowMessage);
+      showToast({
+        title: "Invite link failed",
+        description: message,
+        tone: "error",
+      });
     } finally {
       setPendingProviderId(null);
     }
@@ -77,15 +118,34 @@ export function AdminProviderStatusTable({ statuses }: AdminProviderStatusTableP
 
   async function emailProvider(providerId: string) {
     setPendingProviderId(providerId);
-    setErrorMessage(null);
-    setSuccessMessage(null);
+    setWorkflowMessage(null);
     try {
       const emailSend = await sendProviderInviteEmail(providerId);
       const message = `Invite sent to ${emailSend.recipient_email}.`;
-      setSuccessMessage(message);
+      const nextWorkflowMessage = {
+        providerId,
+        text: message,
+        tone: "success" as const,
+      };
+      setWorkflowMessage(nextWorkflowMessage);
+      showToast({
+        title: "Invite email sent",
+        description: message,
+        tone: "success",
+      });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Provider invite email failed.";
-      setErrorMessage(message);
+      const message = errorMessageFromUnknown(error, "Provider invite email failed.");
+      const nextWorkflowMessage = {
+        providerId,
+        text: message,
+        tone: "error" as const,
+      };
+      setWorkflowMessage(nextWorkflowMessage);
+      showToast({
+        title: "Invite email failed",
+        description: message,
+        tone: "error",
+      });
     } finally {
       setPendingProviderId(null);
     }
@@ -93,16 +153,6 @@ export function AdminProviderStatusTable({ statuses }: AdminProviderStatusTableP
 
   return (
     <section className="rounded-md border border-slate-200 bg-white">
-      {successMessage ? (
-        <div className="border-b border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          {successMessage}
-        </div>
-      ) : null}
-      {errorMessage ? (
-        <div className="border-b border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-          {errorMessage}
-        </div>
-      ) : null}
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-100 text-left text-slate-700">
@@ -120,6 +170,12 @@ export function AdminProviderStatusTable({ statuses }: AdminProviderStatusTableP
               const providerIsPending = pendingProviderId === status.providerId;
               const availabilityClass = statusToneClass(status);
               const lastUpdate = status.lastAvailabilityUpdateAt ?? "None";
+              const providerMessageIsVisible = workflowMessage?.providerId === status.providerId;
+              const providerMessageTone = workflowMessage?.tone;
+              const providerMessageText = workflowMessage?.text;
+              const providerMessageClass = providerMessageTone
+                ? workflowMessageClass(providerMessageTone)
+                : "";
               return (
                 <tr key={status.providerId}>
                   <td className="px-4 py-3">
@@ -159,6 +215,11 @@ export function AdminProviderStatusTable({ statuses }: AdminProviderStatusTableP
                           readOnly
                           value={inviteLink}
                         />
+                      ) : null}
+                      {providerMessageIsVisible && providerMessageText ? (
+                        <p className={`w-80 max-w-full rounded-md border px-2 py-1 text-xs ${providerMessageClass}`}>
+                          {providerMessageText}
+                        </p>
                       ) : null}
                     </div>
                   </td>

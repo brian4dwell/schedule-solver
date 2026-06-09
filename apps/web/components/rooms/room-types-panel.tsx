@@ -10,6 +10,7 @@ import {
   updateRoomType,
 } from "@/lib/api";
 import type { RoomTypeFormValues } from "@/lib/schemas/room";
+import { useToast } from "@/components/ui/toast-provider";
 
 type RoomTypesPanelProps = {
   roomTypes: RoomType[];
@@ -18,6 +19,7 @@ type RoomTypesPanelProps = {
 export function RoomTypesPanel({
   roomTypes,
 }: RoomTypesPanelProps) {
+  const { showToast } = useToast();
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [editingRoomTypeId, setEditingRoomTypeId] = useState<string | null>(null);
@@ -51,10 +53,20 @@ export function RoomTypesPanel({
 
     try {
       await createRoomType(values);
+      showToast({
+        title: "Room type added",
+        description: "The room type is available for rooms.",
+        tone: "success",
+      });
       router.refresh();
     } catch (error) {
       const nextErrorMessage = error instanceof Error ? error.message : "Room type save failed.";
       setErrorMessage(nextErrorMessage);
+      showToast({
+        title: "Room type save failed",
+        description: nextErrorMessage,
+        tone: "error",
+      });
     }
   }
 
@@ -63,10 +75,20 @@ export function RoomTypesPanel({
 
     try {
       await deactivateRoomType(roomTypeId);
+      showToast({
+        title: "Room type deactivated",
+        description: "The room type is no longer active.",
+        tone: "success",
+      });
       router.refresh();
     } catch (error) {
       const nextErrorMessage = error instanceof Error ? error.message : "Room type deactivation failed.";
       setErrorMessage(nextErrorMessage);
+      showToast({
+        title: "Room type deactivation failed",
+        description: nextErrorMessage,
+        tone: "error",
+      });
     }
   }
 
@@ -81,10 +103,20 @@ export function RoomTypesPanel({
     try {
       await updateRoomType(roomTypeId, values);
       handleEditCancel();
+      showToast({
+        title: "Room type saved",
+        description: "Room type details were updated.",
+        tone: "success",
+      });
       router.refresh();
     } catch (error) {
       const nextErrorMessage = error instanceof Error ? error.message : "Room type update failed.";
       setErrorMessage(nextErrorMessage);
+      showToast({
+        title: "Room type update failed",
+        description: nextErrorMessage,
+        tone: "error",
+      });
     }
   }
 

@@ -6,12 +6,14 @@ import { useState } from "react";
 
 import { deactivateCenter, type Center } from "@/lib/api";
 import { formatTimezone } from "@/lib/timezones";
+import { useToast } from "@/components/ui/toast-provider";
 
 type CentersTableProps = {
   centers: Center[];
 };
 
 export function CentersTable({ centers }: CentersTableProps) {
+  const { showToast } = useToast();
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -20,10 +22,20 @@ export function CentersTable({ centers }: CentersTableProps) {
 
     try {
       await deactivateCenter(centerId);
+      showToast({
+        title: "Center deactivated",
+        description: "The center is no longer active.",
+        tone: "success",
+      });
       router.refresh();
     } catch (error) {
       const nextErrorMessage = error instanceof Error ? error.message : "Center deactivation failed.";
       setErrorMessage(nextErrorMessage);
+      showToast({
+        title: "Center deactivation failed",
+        description: nextErrorMessage,
+        tone: "error",
+      });
     }
   }
 

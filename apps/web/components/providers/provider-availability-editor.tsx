@@ -14,6 +14,7 @@ import {
   type AvailabilityOption,
   type Weekday,
 } from "@/lib/schemas/provider-weekly-availability";
+import { useToast } from "@/components/ui/toast-provider";
 
 const weekdayOrder: Weekday[] = [
   "monday",
@@ -171,6 +172,7 @@ export function ProviderAvailabilityEditor(props: {
   periods: SchedulePeriod[];
   providers: Provider[];
 }) {
+  const { showToast } = useToast();
   const { periods, providers } = props;
   const firstPeriodId = periods.at(0)?.id ?? "";
   const firstProviderId = providers.at(0)?.id ?? "";
@@ -218,6 +220,11 @@ export function ProviderAvailabilityEditor(props: {
           const message = error instanceof Error ? error.message : "Failed to load availability.";
           setErrorMessage(message);
           setRecord(null);
+          showToast({
+            title: "Availability load failed",
+            description: message,
+            tone: "error",
+          });
         }
       } finally {
         if (isMounted) {
@@ -231,7 +238,7 @@ export function ProviderAvailabilityEditor(props: {
     return () => {
       isMounted = false;
     };
-  }, [scheduleWeekId, providerId]);
+  }, [scheduleWeekId, providerId, showToast]);
 
   const dayMap = useMemo(() => {
     if (record === null) {
@@ -417,9 +424,19 @@ export function ProviderAvailabilityEditor(props: {
       setMinShiftsWasEdited(savedMinimumWasEdited);
       setMaxShiftsWasEdited(savedMaximumWasEdited);
       setSuccessMessage("Availability saved.");
+      showToast({
+        title: "Availability saved",
+        description: "Provider availability was updated.",
+        tone: "success",
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save availability.";
       setErrorMessage(message);
+      showToast({
+        title: "Availability save failed",
+        description: message,
+        tone: "error",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -439,9 +456,19 @@ export function ProviderAvailabilityEditor(props: {
       setMinShiftsWasEdited(loadedMinimumWasEdited);
       setMaxShiftsWasEdited(loadedMaximumWasEdited);
       setSuccessMessage("Availability deleted.");
+      showToast({
+        title: "Availability deleted",
+        description: "Provider availability was reset.",
+        tone: "success",
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to delete availability.";
       setErrorMessage(message);
+      showToast({
+        title: "Availability delete failed",
+        description: message,
+        tone: "error",
+      });
     } finally {
       setIsDeleting(false);
     }
