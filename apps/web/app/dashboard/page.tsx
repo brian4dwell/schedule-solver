@@ -28,9 +28,9 @@ const dashboardLinks = [
     description: "Maintain the people available for anesthesia coverage.",
   },
   {
-    href: "/admin/provider-status",
-    title: "Provider Status",
-    description: "Create Provider invites and review open-week availability completion.",
+    href: "/admin/provider-invites",
+    title: "Provider Invites",
+    description: "Create Provider Portal invite links and send invite emails.",
   },
   {
     href: "/schedules",
@@ -41,6 +41,11 @@ const dashboardLinks = [
     href: "/reports/monthly-availability",
     title: "Monthly Availability",
     description: "Review Provider availability selections on a calendar report.",
+  },
+  {
+    href: "/reports/availability-submission-monitor",
+    title: "Availability Submission Monitor",
+    description: "Review which Providers have submitted open-week availability.",
   },
   {
     href: "/reports/fairness",

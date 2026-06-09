@@ -51,8 +51,8 @@ const setupMenu: NavigationMenu = {
       label: "Providers",
     },
     {
-      href: "/admin/provider-status",
-      label: "Provider Status",
+      href: "/admin/provider-invites",
+      label: "Provider Invites",
     },
   ],
 };
@@ -63,6 +63,10 @@ const reportsMenu: NavigationMenu = {
     {
       href: "/reports/monthly-availability",
       label: "Monthly Availability",
+    },
+    {
+      href: "/reports/availability-submission-monitor",
+      label: "Availability Submission Monitor",
     },
     {
       href: "/reports/fairness",
