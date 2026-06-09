@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { useToast } from "@/components/ui/toast-provider";
 import type { ProviderPortalAvailabilityRecord } from "@/lib/api";
 import type { AvailabilityOption } from "@/lib/schemas/provider-weekly-availability";
 
@@ -29,7 +30,9 @@ type CalendarWeekRowProps = {
   editingDateIso: string | null;
   isSavingAvailability: boolean;
   monthStartIso: string;
+  onClosedDateClick: () => void;
   onEditDate: (dateIso: string) => void;
+  onLockedDateClick: (record: ProviderPortalAvailabilityRecord) => void;
   onRecordSave: (record: ProviderPortalAvailabilityRecord) => Promise<boolean>;
   onRecordShiftRequestChange: (
     record: ProviderPortalAvailabilityRecord,
@@ -53,31 +56,36 @@ function calendarWeekRows(dates: Date[]) {
 function recordForWeekRow(
   dates: Date[],
   records: ProviderPortalAvailabilityRecord[],
-  monthStartIso: string,
 ) {
-  const inMonthDateWithRecord = dates.find((date) => {
-    const dateMonthIso = monthStartIsoForDate(date);
-    const dateIsInMonth = dateMonthIso === monthStartIso;
+  const dateWithRecord = dates.find((date) => {
     const dateIso = isoDateForDate(date);
     const record = recordForDate(dateIso, records);
     const hasRecord = record !== null;
-    const shouldUseDate = dateIsInMonth && hasRecord;
-    return shouldUseDate;
+    return hasRecord;
   });
-  const inMonthDate = dates.find((date) => {
-    const dateMonthIso = monthStartIsoForDate(date);
-    const dateIsInMonth = dateMonthIso === monthStartIso;
-    return dateIsInMonth;
-  });
-  const dateForRecord = inMonthDateWithRecord ?? inMonthDate ?? dates.at(0) ?? null;
 
-  if (dateForRecord === null) {
+  if (dateWithRecord === undefined) {
     return null;
   }
 
-  const dateIso = isoDateForDate(dateForRecord);
+  const dateIso = isoDateForDate(dateWithRecord);
   const record = recordForDate(dateIso, records);
   return record;
+}
+
+function calendarDayLabel(date: Date, dateIsInMonth: boolean) {
+  if (dateIsInMonth) {
+    const dayLabel = date.getUTCDate().toString();
+    return dayLabel;
+  }
+
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+  const dayLabel = formatter.format(date);
+  return dayLabel;
 }
 
 export function CalendarAvailabilityView({
@@ -90,6 +98,7 @@ export function CalendarAvailabilityView({
   onRecordShiftRequestChange,
   records,
 }: CalendarAvailabilityViewProps) {
+  const { showToast } = useToast();
   const [editingDateIso, setEditingDateIso] = useState<string | null>(null);
   const monthStart = dateAtUtcMidnight(monthStartIso);
   const monthLabel = monthLabelForDate(monthStart);
@@ -144,6 +153,22 @@ export function CalendarAvailabilityView({
     setEditingDateIso(null);
   }
 
+  function showLockedDateToast(record: ProviderPortalAvailabilityRecord) {
+    showToast({
+      title: "Schedule week published",
+      description: `${record.scheduleWeekName} has already been published for use, so availability edits are locked.`,
+      tone: "info",
+    });
+  }
+
+  function showClosedDateToast() {
+    showToast({
+      title: "Schedule week not open",
+      description: "This week has not been opened for scheduling availability.",
+      tone: "info",
+    });
+  }
+
   return (
     <section className="rounded-md border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -193,10 +218,10 @@ export function CalendarAvailabilityView({
         <p className="mt-3 text-sm text-slate-600">{availabilityMessage}</p>
       ) : null}
       <p className="mt-3 max-w-3xl text-sm text-slate-600">
-        Use this view to scan and edit availability across a month. Click an open day to choose
-        shift options; grey days are not open for provider entry, and locked days have already been
-        published. Use the week request column to set min and max shifts for that week. Weekends
-        are hidden.
+        Use this view to scan and edit availability across calendar weeks. Click an open weekday to
+        choose shift options; grey days do not have an open schedule week, and locked days have
+        already been published. Use the week request column to set min and max shifts for that week.
+        Weekends are hidden.
       </p>
       {records.length > 0 ? (
         <div className="mt-4 grid gap-4">
@@ -222,7 +247,9 @@ export function CalendarAvailabilityView({
                   editingDateIso={editingDateIso}
                   isSavingAvailability={isSavingAvailability}
                   monthStartIso={monthStartIso}
+                  onClosedDateClick={showClosedDateToast}
                   onEditDate={setEditingDateIso}
+                  onLockedDateClick={showLockedDateToast}
                   onRecordSave={onRecordSave}
                   onRecordShiftRequestChange={onRecordShiftRequestChange}
                   records={records}
@@ -308,20 +335,22 @@ function CalendarWeekRow({
   editingDateIso,
   isSavingAvailability,
   monthStartIso,
+  onClosedDateClick,
   onEditDate,
+  onLockedDateClick,
   onRecordSave,
   onRecordShiftRequestChange,
   records,
 }: CalendarWeekRowProps) {
-  const weekRecord = recordForWeekRow(dates, records, monthStartIso);
+  const weekRecord = recordForWeekRow(dates, records);
 
   return (
     <>
       {dates.map((date) => {
         const dateIso = isoDateForDate(date);
-        const dayNumber = date.getUTCDate();
         const dateMonthIso = monthStartIsoForDate(date);
         const dateIsInMonth = dateMonthIso === monthStartIso;
+        const dayLabel = calendarDayLabel(date, dateIsInMonth);
         const record = recordForDate(dateIso, records);
         const weekday = weekdayForDate(date);
         const day = record?.availability.days.find((candidate) => {
@@ -329,14 +358,13 @@ function CalendarWeekRow({
           return weekdayMatches;
         }) ?? null;
         const options = day?.options ?? ["unset"];
-        const dateIsClosed = record === null || !dateIsInMonth;
+        const dateIsClosed = record === null;
         const dateIsLocked = record?.availability.isLocked ?? false;
-        const dateIsEditable = !dateIsClosed && !dateIsLocked;
         const dateIsEditing = editingDateIso === dateIso;
         const cellBaseClass = "relative min-h-20 border-r border-b border-slate-200 p-1 text-left sm:min-h-28 sm:p-2";
-        const closedClass = "bg-slate-100 text-slate-400";
+        const closedClass = "cursor-not-allowed bg-slate-100 text-slate-400";
         const openClass = dateIsEditing ? "bg-teal-50 ring-2 ring-inset ring-teal-600" : "bg-white text-slate-950";
-        const lockedClass = dateIsLocked ? "bg-slate-50" : "";
+        const lockedClass = dateIsLocked ? "cursor-not-allowed bg-slate-50" : "";
         const cellStateClass = dateIsClosed ? closedClass : `${openClass} ${lockedClass}`;
         const cellClass = `${cellBaseClass} ${cellStateClass}`;
 
@@ -345,13 +373,22 @@ function CalendarWeekRow({
             key={dateIso}
             type="button"
             className={cellClass}
-            disabled={!dateIsEditable}
             onClick={() => {
+              if (dateIsClosed) {
+                onClosedDateClick();
+                return;
+              }
+
+              if (dateIsLocked && record !== null) {
+                onLockedDateClick(record);
+                return;
+              }
+
               onEditDate(dateIso);
             }}
           >
             <div className="flex items-center justify-between gap-1">
-              <span className="text-xs font-semibold sm:text-sm">{dayNumber}</span>
+              <span className="text-xs font-semibold sm:text-sm">{dayLabel}</span>
               {dateIsLocked ? <LockIcon /> : null}
             </div>
             <CalendarDayAvailabilityMark

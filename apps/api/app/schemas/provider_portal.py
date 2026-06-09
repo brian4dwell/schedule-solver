@@ -69,6 +69,14 @@ class ProviderWeeklyAvailabilityCompletion(BaseModel):
     unset_weekdays: list[str] = Field(default_factory=list)
 
 
+class AdminProviderIncompleteWeek(BaseModel):
+    schedule_week_id: UUID
+    schedule_week_name: str
+    schedule_week_start_date: date
+    schedule_week_end_date: date
+    unset_weekdays: list[str] = Field(default_factory=list)
+
+
 class AdminProviderStatusRow(BaseModel):
     provider_id: UUID
     provider_name: str
@@ -77,6 +85,7 @@ class AdminProviderStatusRow(BaseModel):
     last_availability_update_at: datetime | None
     open_week_count: int
     incomplete_open_required_week_count: int
+    incomplete_open_required_weeks: list[AdminProviderIncompleteWeek] = Field(default_factory=list)
     open_week_availability_complete: bool
 
 

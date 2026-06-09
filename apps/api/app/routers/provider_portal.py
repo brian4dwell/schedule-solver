@@ -39,6 +39,7 @@ from app.schemas.preferences import ProviderPreferencesReplace
 from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityRead
 from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityReplaceRequest
 from app.schemas.provider_availability_week import half_shift_units
+from app.schemas.provider_portal import AdminProviderIncompleteWeek
 from app.schemas.provider_portal import AdminProviderStatusRow
 from app.schemas.provider_portal import ProviderAccountState
 from app.schemas.provider_portal import ProviderInviteAcceptanceRequest
@@ -518,6 +519,16 @@ def list_admin_provider_status(
             for completion in completion_values
             if not completion.is_complete
         ]
+        incomplete_weeks = [
+            AdminProviderIncompleteWeek(
+                schedule_week_id=completion.schedule_week_id,
+                schedule_week_name=completion.schedule_week_name,
+                schedule_week_start_date=completion.schedule_week_start_date,
+                schedule_week_end_date=completion.schedule_week_end_date,
+                unset_weekdays=completion.unset_weekdays,
+            )
+            for completion in incomplete_completions
+        ]
         incomplete_count = len(incomplete_completions)
         open_week_count = len(schedule_weeks)
         all_open_weeks_complete = incomplete_count == 0
@@ -540,6 +551,7 @@ def list_admin_provider_status(
             last_availability_update_at=last_availability_update_at,
             open_week_count=open_week_count,
             incomplete_open_required_week_count=incomplete_count,
+            incomplete_open_required_weeks=incomplete_weeks,
             open_week_availability_complete=all_open_weeks_complete,
         )
         status_rows.append(status_row)

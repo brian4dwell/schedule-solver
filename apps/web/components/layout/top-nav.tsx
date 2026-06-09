@@ -3,6 +3,7 @@
 import { Show, UserButton, useAuth, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 
 import { userHasAdminRole } from "@/lib/auth";
 
@@ -15,6 +16,8 @@ type NavigationMenu = {
   label: string;
   links: NavigationLink[];
 };
+
+type NavigationMenuKey = "reports" | "setup";
 
 const scheduleBoardLink: NavigationLink = {
   href: "/schedules",
@@ -117,6 +120,7 @@ export function TopNav({
   secondaryNavigation,
   workspaceTitle,
 }: TopNavProps) {
+  const [openMenuKey, setOpenMenuKey] = useState<NavigationMenuKey | null>(null);
   const pathname = usePathname();
   const auth = useAuth();
   const userResult = useUser();
@@ -140,6 +144,21 @@ export function TopNav({
   });
   const reportsMenuTriggerClass = buildMenuTriggerClass(reportsMenuHasActiveLink);
   const secondaryNavigationIsVisible = secondaryNavigation !== undefined;
+  const setupMenuIsOpen = openMenuKey === "setup";
+  const reportsMenuIsOpen = openMenuKey === "reports";
+
+  function handleMenuTriggerClick(menuKey: NavigationMenuKey) {
+    setOpenMenuKey((currentOpenMenuKey) => {
+      const selectedMenuIsOpen = currentOpenMenuKey === menuKey;
+      const nextOpenMenuKey = selectedMenuIsOpen ? null : menuKey;
+
+      return nextOpenMenuKey;
+    });
+  }
+
+  function handleMenuLinkClick() {
+    setOpenMenuKey(null);
+  }
 
   return (
     <header className="border-b border-slate-200 bg-white">
@@ -183,6 +202,77 @@ export function TopNav({
                 {availabilityLink.label}
               </Link>
             ) : null}
+            {currentUserIsAdmin ? (
+              <details
+                className="group relative shrink-0"
+                open={setupMenuIsOpen}
+              >
+                <summary
+                  className={setupMenuTriggerClass}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    handleMenuTriggerClick("setup");
+                  }}
+                >
+                  {setupMenu.label}
+                </summary>
+                <div className="absolute left-0 top-10 z-20 min-w-44 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                  {setupLinks.map((item) => {
+                    const isActive = isNavigationLinkActive(pathname, item.href);
+                    const linkClass = buildLinkClass(isActive);
+
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`${linkClass} w-full`}
+                        onClick={handleMenuLinkClick}
+                      >
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </details>
+            ) : null}
+            {currentUserIsAdmin ? (
+              <details
+                className="group relative shrink-0"
+                open={reportsMenuIsOpen}
+              >
+                <summary
+                  className={reportsMenuTriggerClass}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    handleMenuTriggerClick("reports");
+                  }}
+                >
+                  {reportsMenu.label}
+                </summary>
+                <div className="absolute left-0 top-10 z-20 min-w-56 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                  {reportLinks.map((item) => {
+                    const isActive = isNavigationLinkActive(pathname, item.href);
+                    const linkClass = buildLinkClass(isActive);
+
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`${linkClass} w-full`}
+                        onClick={handleMenuLinkClick}
+                      >
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </details>
+            ) : null}
+            {currentUserIsAdmin ? (
+              <span className="mx-1 inline-flex h-9 items-center text-slate-300" aria-hidden="true">
+                |
+              </span>
+            ) : null}
             <Link
               href={providerPortalLink.href}
               className={buildLinkClass(
@@ -191,40 +281,6 @@ export function TopNav({
             >
               {providerPortalLink.label}
             </Link>
-            {currentUserIsAdmin ? (
-              <details className="group relative shrink-0">
-                <summary className={setupMenuTriggerClass}>{setupMenu.label}</summary>
-                <div className="absolute left-0 top-10 z-20 min-w-44 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
-                  {setupLinks.map((item) => {
-                    const isActive = isNavigationLinkActive(pathname, item.href);
-                    const linkClass = buildLinkClass(isActive);
-
-                    return (
-                      <Link key={item.href} href={item.href} className={`${linkClass} w-full`}>
-                        {item.label}
-                      </Link>
-                    );
-                  })}
-                </div>
-              </details>
-            ) : null}
-            {currentUserIsAdmin ? (
-              <details className="group relative shrink-0">
-                <summary className={reportsMenuTriggerClass}>{reportsMenu.label}</summary>
-                <div className="absolute left-0 top-10 z-20 min-w-56 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
-                  {reportLinks.map((item) => {
-                    const isActive = isNavigationLinkActive(pathname, item.href);
-                    const linkClass = buildLinkClass(isActive);
-
-                    return (
-                      <Link key={item.href} href={item.href} className={`${linkClass} w-full`}>
-                        {item.label}
-                      </Link>
-                    );
-                  })}
-                </div>
-              </details>
-            ) : null}
           </div>
         </nav>
       ) : null}

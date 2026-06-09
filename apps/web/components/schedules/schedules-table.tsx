@@ -9,6 +9,12 @@ import {
   deleteSchedulePeriod,
   renameSchedulePeriod,
 } from "@/lib/api";
+import {
+  captureScheduleWorkflowException,
+  trackSchedulePeriodCloned,
+  trackSchedulePeriodDeleted,
+  trackSchedulePeriodRenamed,
+} from "@/lib/logrocket";
 import type { SchedulePeriodSummary } from "@/lib/schemas/schedule";
 import { useToast } from "@/components/ui/toast-provider";
 
@@ -68,6 +74,10 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
         name: nextName,
       };
       await renameSchedulePeriod(period.id, renameValues);
+      trackSchedulePeriodRenamed({
+        schedulePeriodId: period.id,
+        scheduleName: nextName,
+      });
       showToast({
         title: "Schedule renamed",
         description: "The schedule period name was updated.",
@@ -75,6 +85,10 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
       });
       router.refresh();
     } catch (error) {
+      captureScheduleWorkflowException({
+        workflowName: "rename_schedule_period",
+        error,
+      });
       const nextErrorMessage =
         error instanceof Error ? error.message : "Schedule rename failed.";
       setErrorMessage(nextErrorMessage);
@@ -100,6 +114,9 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
 
     try {
       await deleteSchedulePeriod(period.id);
+      trackSchedulePeriodDeleted({
+        schedulePeriodId: period.id,
+      });
       showToast({
         title: "Schedule deleted",
         description: "The schedule period was deleted.",
@@ -107,6 +124,10 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
       });
       router.refresh();
     } catch (error) {
+      captureScheduleWorkflowException({
+        workflowName: "delete_schedule_period",
+        error,
+      });
       const nextErrorMessage =
         error instanceof Error ? error.message : "Schedule delete failed.";
       setErrorMessage(nextErrorMessage);
@@ -131,6 +152,10 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
       });
       const response = await cloneSchedulePeriod(period.id);
       const schedulePeriodId = response.schedule_period.id;
+      trackSchedulePeriodCloned({
+        sourceSchedulePeriodId: period.id,
+        clonedSchedulePeriodId: schedulePeriodId,
+      });
       showToast({
         title: "Schedule cloned",
         description: "Opening the cloned schedule period.",
@@ -138,6 +163,10 @@ export function SchedulesTable({ periods }: SchedulesTableProps) {
       });
       router.push(`/schedules/${schedulePeriodId}`);
     } catch (error) {
+      captureScheduleWorkflowException({
+        workflowName: "clone_schedule_period",
+        error,
+      });
       const nextErrorMessage =
         error instanceof Error ? error.message : "Schedule clone failed.";
       setErrorMessage(nextErrorMessage);

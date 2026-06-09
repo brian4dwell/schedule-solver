@@ -2,6 +2,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
+import { LogRocketProvider } from "@/components/analytics/logrocket-provider";
 import { ToastProvider } from "@/components/ui/toast-provider";
 
 import "./globals.css";
@@ -38,7 +39,9 @@ export default function RootLayout({
           signUpUrl="/sign-up"
           afterSignOutUrl="/sign-in"
         >
-          <ToastProvider>{children}</ToastProvider>
+          <LogRocketProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </LogRocketProvider>
         </ClerkProvider>
       </body>
     </html>

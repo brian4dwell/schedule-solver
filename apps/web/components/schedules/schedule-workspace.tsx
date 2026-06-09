@@ -32,6 +32,12 @@ import {
   schedulePublishEventSchema,
   scheduleVersionSchema,
 } from "@/lib/schemas/schedule";
+import {
+  captureScheduleWorkflowException,
+  trackScheduleDraftSaved,
+  trackScheduleGenerated,
+  trackSchedulePublished,
+} from "@/lib/logrocket";
 import { useToast } from "@/components/ui/toast-provider";
 
 type RoomRow = {
@@ -1588,6 +1594,10 @@ export function ScheduleWorkspace({
         const nextOptions = upsertVersionOption(currentOptions, response.version);
         return nextOptions;
       });
+      trackSchedulePublished({
+        schedulePeriodId: scheduleId,
+        scheduleVersionId: response.version.id,
+      });
       setActionMessage("Schedule published.");
       showToast({
         title: "Schedule published",
@@ -1595,6 +1605,10 @@ export function ScheduleWorkspace({
         tone: "success",
       });
     } catch (error) {
+      captureScheduleWorkflowException({
+        workflowName: "publish_schedule_version",
+        error,
+      });
       const message =
         error instanceof Error
           ? error.message
@@ -1664,6 +1678,11 @@ export function ScheduleWorkspace({
         return nextOptions;
       });
       updateWorkingVersion(nextVersion);
+      trackScheduleDraftSaved({
+        schedulePeriodId: scheduleId,
+        scheduleVersionId: detail.version.id,
+        assignmentCount: detail.assignments.length,
+      });
       setActionMessage("Draft saved.");
       showToast({
         title: "Draft saved",
@@ -1671,6 +1690,10 @@ export function ScheduleWorkspace({
         tone: "success",
       });
     } catch (error) {
+      captureScheduleWorkflowException({
+        workflowName: "save_schedule_draft",
+        error,
+      });
       const message = error instanceof Error ? error.message : "Draft save failed.";
       setActionMessage(message);
       showToast({
@@ -1726,6 +1749,12 @@ export function ScheduleWorkspace({
         return nextOptions;
       });
       updateWorkingVersion(nextVersion);
+      trackScheduleGenerated({
+        schedulePeriodId: scheduleId,
+        scheduleVersionId: detail.version.id,
+        assignmentCount: detail.assignments.length,
+        solveDurationMs: duration,
+      });
       setActionMessage(`Generated draft in ${duration} ms.`);
       showToast({
         title: "Draft generated",
@@ -1733,6 +1762,10 @@ export function ScheduleWorkspace({
         tone: "success",
       });
     } catch (error) {
+      captureScheduleWorkflowException({
+        workflowName: "generate_schedule_version",
+        error,
+      });
       const message =
         error instanceof Error
           ? error.message

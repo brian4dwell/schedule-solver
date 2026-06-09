@@ -4,6 +4,10 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { createSchedulePeriod } from "@/lib/api";
+import {
+  captureScheduleWorkflowException,
+  trackSchedulePeriodCreated,
+} from "@/lib/logrocket";
 import { schedulePeriodFormSchema } from "@/lib/schemas/schedule";
 import { useToast } from "@/components/ui/toast-provider";
 
@@ -122,6 +126,10 @@ export function SchedulePeriodForm() {
       }
 
       const period = await createSchedulePeriod(values);
+      trackSchedulePeriodCreated({
+        schedulePeriodId: period.id,
+        scheduleName: period.name,
+      });
       showToast({
         title: "Schedule created",
         description: "Opening the new schedule period.",
@@ -130,6 +138,10 @@ export function SchedulePeriodForm() {
       router.push(`/schedules/${period.id}`);
       router.refresh();
     } catch (error) {
+      captureScheduleWorkflowException({
+        workflowName: "create_schedule_period",
+        error,
+      });
       const nextErrorMessage =
         error instanceof Error ? error.message : "Schedule period save failed.";
       setErrorMessage(nextErrorMessage);

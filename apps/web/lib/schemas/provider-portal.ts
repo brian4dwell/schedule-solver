@@ -102,6 +102,26 @@ export const providerPortalPreferenceOptionsApiSchema = z
     return options;
   });
 
+export const adminProviderIncompleteWeekApiSchema = z
+  .object({
+    schedule_week_id: z.string().uuid(),
+    schedule_week_name: z.string().min(1),
+    schedule_week_start_date: z.string().min(1),
+    schedule_week_end_date: z.string().min(1),
+    unset_weekdays: z.array(z.string().min(1)),
+  })
+  .strict()
+  .transform((value) => {
+    const week = {
+      scheduleWeekId: value.schedule_week_id,
+      scheduleWeekName: value.schedule_week_name,
+      scheduleWeekStartDate: value.schedule_week_start_date,
+      scheduleWeekEndDate: value.schedule_week_end_date,
+      unsetWeekdays: value.unset_weekdays,
+    };
+    return week;
+  });
+
 export const adminProviderStatusApiSchema = z
   .object({
     provider_id: z.string().uuid(),
@@ -111,6 +131,7 @@ export const adminProviderStatusApiSchema = z
     last_availability_update_at: z.string().nullable(),
     open_week_count: z.number().int().min(0),
     incomplete_open_required_week_count: z.number().int().min(0),
+    incomplete_open_required_weeks: z.array(adminProviderIncompleteWeekApiSchema),
     open_week_availability_complete: z.boolean(),
   })
   .strict()
@@ -123,6 +144,7 @@ export const adminProviderStatusApiSchema = z
       lastAvailabilityUpdateAt: value.last_availability_update_at,
       openWeekCount: value.open_week_count,
       incompleteOpenRequiredWeekCount: value.incomplete_open_required_week_count,
+      incompleteOpenRequiredWeeks: value.incomplete_open_required_weeks,
       openWeekAvailabilityComplete: value.open_week_availability_complete,
     };
     return status;
