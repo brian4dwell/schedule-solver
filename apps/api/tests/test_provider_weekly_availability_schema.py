@@ -104,7 +104,7 @@ def test_provider_weekly_availability_rejects_min_above_available_days() -> None
         ProviderWeeklyAvailabilityReplaceRequest(**request_data)
 
 
-def test_provider_weekly_availability_rejects_max_above_available_days() -> None:
+def test_provider_weekly_availability_allows_max_above_available_capacity() -> None:
     request_data = {
         "min_shifts_requested": 2,
         "max_shifts_requested": 6,
@@ -119,8 +119,9 @@ def test_provider_weekly_availability_rejects_max_above_available_days() -> None
         ],
     }
 
-    with pytest.raises(ValueError):
-        ProviderWeeklyAvailabilityReplaceRequest(**request_data)
+    request = ProviderWeeklyAvailabilityReplaceRequest(**request_data)
+
+    assert request.max_shifts_requested == 6
 
 
 def test_provider_weekly_availability_remains_editable_for_draft_week() -> None:
@@ -166,7 +167,51 @@ def test_provider_weekly_availability_read_normalizes_invalid_existing_requests(
     response = build_read_response(schedule_week, provider_id, rows)
 
     assert response.min_shifts_requested == 0
-    assert response.max_shifts_requested == 0
+    assert response.max_shifts_requested == 14
+
+
+def test_provider_weekly_availability_read_preserves_max_above_half_shift_capacity() -> None:
+    provider_id = uuid4()
+    schedule_week = create_schedule_week("draft")
+    rows = [
+        ProviderScheduleWeekAvailability(
+            organization_id=schedule_week.organization_id,
+            schedule_week_id=schedule_week.id,
+            provider_id=provider_id,
+            weekday="monday",
+            availability_options=["second_half"],
+            min_shifts_requested=0,
+            max_shifts_requested=14,
+            min_shifts_requested_units=0,
+            max_shifts_requested_units=28,
+        ),
+        ProviderScheduleWeekAvailability(
+            organization_id=schedule_week.organization_id,
+            schedule_week_id=schedule_week.id,
+            provider_id=provider_id,
+            weekday="tuesday",
+            availability_options=["second_half"],
+            min_shifts_requested=0,
+            max_shifts_requested=14,
+            min_shifts_requested_units=0,
+            max_shifts_requested_units=28,
+        ),
+        ProviderScheduleWeekAvailability(
+            organization_id=schedule_week.organization_id,
+            schedule_week_id=schedule_week.id,
+            provider_id=provider_id,
+            weekday="wednesday",
+            availability_options=["short_shift"],
+            min_shifts_requested=0,
+            max_shifts_requested=14,
+            min_shifts_requested_units=0,
+            max_shifts_requested_units=28,
+        ),
+    ]
+
+    response = build_read_response(schedule_week, provider_id, rows)
+
+    assert response.max_shifts_requested == 14
 
 
 def test_provider_weekly_availability_defaults_weekends_to_none() -> None:

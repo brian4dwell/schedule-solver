@@ -133,7 +133,10 @@ Rules:
 Min/max shift requests:
 
 - `min_shifts_requested` and `max_shifts_requested` are schedule-level soft requests.
-- Both values are constrained to fit within selected work-available days.
+- `min_shifts_requested` is constrained to fit within selected availability capacity.
+- `max_shifts_requested` can be any half-shift value greater than or equal to `min_shifts_requested`, up to `14`.
+- Full-shift days count as one shift of capacity.
+- Half-shift and short-shift days count as one half shift of capacity when no full-shift option is selected for that day.
 - Below-min and above-max states are schedule warnings.
 - Min/max values do not make Providers ineligible.
 - Min/max values do not block publish.

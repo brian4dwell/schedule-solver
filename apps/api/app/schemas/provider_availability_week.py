@@ -66,9 +66,12 @@ def half_shift_units(value: float) -> int:
     return unit_value
 
 
-def day_availability_units(day: "ProviderAvailabilityDayInput") -> int:
-    has_full_shift = "full_shift" in day.options
-    has_half_option = "first_half" in day.options or "second_half" in day.options or "short_shift" in day.options
+def options_availability_units(options: list[str]) -> int:
+    has_full_shift = "full_shift" in options
+    has_first_half = "first_half" in options
+    has_second_half = "second_half" in options
+    has_short_shift = "short_shift" in options
+    has_half_option = has_first_half or has_second_half or has_short_shift
 
     if has_full_shift:
         return 2
@@ -77,6 +80,11 @@ def day_availability_units(day: "ProviderAvailabilityDayInput") -> int:
         return 1
 
     return 0
+
+
+def day_availability_units(day: "ProviderAvailabilityDayInput") -> int:
+    units = options_availability_units(day.options)
+    return units
 
 
 def max_available_units(days: list["ProviderAvailabilityDayInput"]) -> int:
@@ -134,19 +142,14 @@ class ProviderWeeklyAvailabilityReplaceRequest(BaseModel):
         range_is_valid = minimum <= maximum
         available_units = max_available_units(self.days)
         minimum_units = half_shift_units(minimum)
-        maximum_units = half_shift_units(maximum)
         minimum_fits_available_days = minimum_units <= available_units
-        maximum_fits_available_days = maximum_units <= available_units
         day_count = len(self.days)
 
         if not range_is_valid:
             raise ValueError("Minimum shifts requested must be less than or equal to maximum shifts requested")
 
         if not minimum_fits_available_days:
-            raise ValueError("Minimum shifts requested cannot exceed available work days")
-
-        if not maximum_fits_available_days:
-            raise ValueError("Maximum shifts requested cannot exceed available work days")
+            raise ValueError("Minimum shifts requested cannot exceed selected availability capacity")
 
         if day_count != 7:
             raise ValueError("Exactly seven day rows are required")

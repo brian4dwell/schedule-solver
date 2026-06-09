@@ -36,6 +36,7 @@ const availabilityOptions: AvailabilityOption[] = [
 ];
 
 const weekendWeekdays: Weekday[] = ["saturday", "sunday"];
+const maxShiftRequest = 14;
 
 function labelForWeekday(weekday: Weekday) {
   const label = weekday.charAt(0).toUpperCase() + weekday.slice(1);
@@ -137,28 +138,32 @@ function optionIsExclusive(option: AvailabilityOption) {
   return isExclusive;
 }
 
-function optionIsWorkAvailability(option: AvailabilityOption) {
-  const optionIsFullShift = option === "full_shift";
-  const optionIsFirstHalf = option === "first_half";
-  const optionIsSecondHalf = option === "second_half";
-  const optionIsShortShift = option === "short_shift";
-  const isWorkAvailability = optionIsFullShift || optionIsFirstHalf || optionIsSecondHalf || optionIsShortShift;
-  return isWorkAvailability;
+function dayAvailableShiftCapacity(day: { options: AvailabilityOption[] }): number {
+  const hasFullShift = day.options.includes("full_shift");
+  const hasFirstHalfShift = day.options.includes("first_half");
+  const hasSecondHalfShift = day.options.includes("second_half");
+  const hasShortShift = day.options.includes("short_shift");
+  const hasPartialShift = hasFirstHalfShift || hasSecondHalfShift || hasShortShift;
+
+  if (hasFullShift) {
+    return 1;
+  }
+
+  if (hasPartialShift) {
+    return 0.5;
+  }
+
+  return 0;
 }
 
-function dayHasWorkAvailability(day: { options: AvailabilityOption[] }) {
-  const hasWorkAvailability = day.options.some(optionIsWorkAvailability);
-  return hasWorkAvailability;
-}
-
-function countWorkAvailableDays(days: { options: AvailabilityOption[] }[]) {
-  const workAvailableDays = days.filter(dayHasWorkAvailability);
-  const workAvailableDayCount = workAvailableDays.length;
-  return workAvailableDayCount;
+function totalAvailableShiftCapacity(days: { options: AvailabilityOption[] }[]) {
+  const capacities: number[] = days.map(dayAvailableShiftCapacity);
+  const totalCapacity = capacities.reduce((sum, capacity) => sum + capacity, 0);
+  return totalCapacity;
 }
 
 function parseShiftCountInput(value: string) {
-  const parsedValue = Number.parseInt(value, 10);
+  const parsedValue = Number.parseFloat(value);
   return parsedValue;
 }
 
@@ -208,9 +213,9 @@ export function ProviderAvailabilityEditor(props: {
           providerId,
         );
         if (isMounted) {
-          const workAvailableDayCount = countWorkAvailableDays(loadedRecord.days);
+          const availableShiftCapacity = totalAvailableShiftCapacity(loadedRecord.days);
           const loadedMinimumWasEdited = loadedRecord.minShiftsRequested !== 0;
-          const loadedMaximumWasEdited = loadedRecord.maxShiftsRequested !== workAvailableDayCount;
+          const loadedMaximumWasEdited = loadedRecord.maxShiftsRequested !== availableShiftCapacity;
           setRecord(loadedRecord);
           setMinShiftsWasEdited(loadedMinimumWasEdited);
           setMaxShiftsWasEdited(loadedMaximumWasEdited);
@@ -263,10 +268,10 @@ export function ProviderAvailabilityEditor(props: {
     ? "bg-amber-100 text-amber-900"
     : "bg-emerald-100 text-emerald-900";
   const statusBadgeClassName = `inline-flex rounded-md px-3 py-1 text-sm font-semibold ${statusToneClassName}`;
-  const workAvailableDayCount = record === null ? 0 : countWorkAvailableDays(record.days);
+  const availableShiftCapacity = record === null ? 0 : totalAvailableShiftCapacity(record.days);
   const minShiftInputMaximum = record === null
     ? 0
-    : Math.min(record.maxShiftsRequested, workAvailableDayCount);
+    : Math.min(record.maxShiftsRequested, availableShiftCapacity);
   const maxShiftInputMinimum = record?.minShiftsRequested ?? 0;
 
   function normalizeShiftRequests(
@@ -276,14 +281,14 @@ export function ProviderAvailabilityEditor(props: {
     minimumWasEdited: boolean,
     maximumWasEdited: boolean,
   ) {
-    const workAvailableDayCount = countWorkAvailableDays(days);
+    const availableShiftCapacity = totalAvailableShiftCapacity(days);
     const defaultMinimum = 0;
-    const defaultMaximum = workAvailableDayCount;
+    const defaultMaximum = availableShiftCapacity;
     const selectedMinimum = minimumWasEdited ? requestedMinimum : defaultMinimum;
     const selectedMaximum = maximumWasEdited ? requestedMaximum : defaultMaximum;
-    const clampedMinimum = clampShiftCount(selectedMinimum, 0, workAvailableDayCount);
-    const minimumForMaximum = Math.min(clampedMinimum, workAvailableDayCount);
-    const clampedMaximum = clampShiftCount(selectedMaximum, minimumForMaximum, workAvailableDayCount);
+    const clampedMinimum = clampShiftCount(selectedMinimum, 0, availableShiftCapacity);
+    const minimumForMaximum = clampedMinimum;
+    const clampedMaximum = clampShiftCount(selectedMaximum, minimumForMaximum, maxShiftRequest);
     const shiftRequests = {
       minShiftsRequested: clampedMinimum,
       maxShiftsRequested: clampedMaximum,
@@ -417,9 +422,9 @@ export function ProviderAvailabilityEditor(props: {
         providerId,
         record,
       );
-      const workAvailableDayCount = countWorkAvailableDays(savedRecord.days);
+      const availableShiftCapacity = totalAvailableShiftCapacity(savedRecord.days);
       const savedMinimumWasEdited = savedRecord.minShiftsRequested !== 0;
-      const savedMaximumWasEdited = savedRecord.maxShiftsRequested !== workAvailableDayCount;
+      const savedMaximumWasEdited = savedRecord.maxShiftsRequested !== availableShiftCapacity;
       setRecord(savedRecord);
       setMinShiftsWasEdited(savedMinimumWasEdited);
       setMaxShiftsWasEdited(savedMaximumWasEdited);
@@ -449,9 +454,9 @@ export function ProviderAvailabilityEditor(props: {
     try {
       await deleteProviderWeeklyAvailability(scheduleWeekId, providerId);
       const loadedRecord = await getProviderWeeklyAvailability(scheduleWeekId, providerId);
-      const workAvailableDayCount = countWorkAvailableDays(loadedRecord.days);
+      const availableShiftCapacity = totalAvailableShiftCapacity(loadedRecord.days);
       const loadedMinimumWasEdited = loadedRecord.minShiftsRequested !== 0;
-      const loadedMaximumWasEdited = loadedRecord.maxShiftsRequested !== workAvailableDayCount;
+      const loadedMaximumWasEdited = loadedRecord.maxShiftsRequested !== availableShiftCapacity;
       setRecord(loadedRecord);
       setMinShiftsWasEdited(loadedMinimumWasEdited);
       setMaxShiftsWasEdited(loadedMaximumWasEdited);
@@ -548,7 +553,7 @@ export function ProviderAvailabilityEditor(props: {
                 className="w-24 rounded-md border border-slate-300 px-3 py-2 text-sm"
                 type="number"
                 min={maxShiftInputMinimum}
-                max={workAvailableDayCount}
+                max={maxShiftRequest}
                 step={0.5}
                 value={record.maxShiftsRequested}
                 disabled={isLocked}

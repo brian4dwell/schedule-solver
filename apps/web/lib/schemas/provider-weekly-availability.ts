@@ -9,13 +9,6 @@ export const availabilityOptionSchema = z.enum([
   "unset",
 ]);
 
-const workAvailabilityOptions: AvailabilityOption[] = [
-  "full_shift",
-  "first_half",
-  "second_half",
-  "short_shift",
-];
-
 export const weekdaySchema = z.enum([
   "monday",
   "tuesday",
@@ -39,15 +32,28 @@ function hasOneRowPerWeekday(value: { days: { weekday: Weekday }[] }) {
   return hasEveryWeekday;
 }
 
-function dayHasWorkAvailability(day: { options: AvailabilityOption[] }) {
-  const hasWorkOption = day.options.some((option) => workAvailabilityOptions.includes(option));
-  return hasWorkOption;
+function dayAvailableShiftCapacity(day: { options: AvailabilityOption[] }): number {
+  const hasFullShift = day.options.includes("full_shift");
+  const hasFirstHalfShift = day.options.includes("first_half");
+  const hasSecondHalfShift = day.options.includes("second_half");
+  const hasShortShift = day.options.includes("short_shift");
+  const hasPartialShift = hasFirstHalfShift || hasSecondHalfShift || hasShortShift;
+
+  if (hasFullShift) {
+    return 1;
+  }
+
+  if (hasPartialShift) {
+    return 0.5;
+  }
+
+  return 0;
 }
 
-function countWorkAvailableDays(value: { days: { options: AvailabilityOption[] }[] }) {
-  const workAvailableDays = value.days.filter(dayHasWorkAvailability);
-  const workAvailableDayCount = workAvailableDays.length;
-  return workAvailableDayCount;
+function totalAvailableShiftCapacity(value: { days: { options: AvailabilityOption[] }[] }) {
+  const dayCapacities: number[] = value.days.map(dayAvailableShiftCapacity);
+  const totalCapacity = dayCapacities.reduce((sum, capacity) => sum + capacity, 0);
+  return totalCapacity;
 }
 
 function roundToNearestHalf(value: number) {
@@ -57,16 +63,14 @@ function roundToNearestHalf(value: number) {
   return roundedValue;
 }
 
-function shiftRequestsFitAvailability(value: {
+function minimumRequestFitsAvailability(value: {
   minShiftsRequested: number;
   maxShiftsRequested: number;
   days: { options: AvailabilityOption[] }[];
 }) {
-  const workAvailableDayCount = countWorkAvailableDays(value);
-  const minimumFitsAvailableDays = value.minShiftsRequested <= workAvailableDayCount;
-  const maximumFitsAvailableDays = value.maxShiftsRequested <= workAvailableDayCount;
-  const requestsFitAvailability = minimumFitsAvailableDays && maximumFitsAvailableDays;
-  return requestsFitAvailability;
+  const availableShiftCapacity = totalAvailableShiftCapacity(value);
+  const minimumFitsCapacity = value.minShiftsRequested <= availableShiftCapacity;
+  return minimumFitsCapacity;
 }
 
 function apiShiftRequestsFitAvailability(value: {
@@ -79,7 +83,7 @@ function apiShiftRequestsFitAvailability(value: {
     maxShiftsRequested: value.max_shifts_requested,
     days: value.days,
   };
-  const requestsFitAvailability = shiftRequestsFitAvailability(availability);
+  const requestsFitAvailability = minimumRequestFitsAvailability(availability);
   return requestsFitAvailability;
 }
 
@@ -102,8 +106,8 @@ export const providerWeeklyAvailabilitySchema = z
     { message: "Minimum shifts requested must be less than or equal to maximum shifts requested." },
   )
   .refine(
-    shiftRequestsFitAvailability,
-    { message: "Shift requests cannot exceed days with work availability selected." },
+    minimumRequestFitsAvailability,
+    { message: "Minimum shifts requested cannot exceed selected availability capacity." },
   )
   .refine(
     hasOneRowPerWeekday,
@@ -159,7 +163,7 @@ export const providerWeeklyAvailabilityReplaceApiSchema = z
   )
   .refine(
     apiShiftRequestsFitAvailability,
-    { message: "Shift requests cannot exceed days with work availability selected." },
+    { message: "Minimum shifts requested cannot exceed selected availability capacity." },
   )
   .refine(
     hasOneRowPerWeekday,

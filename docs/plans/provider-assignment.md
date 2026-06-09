@@ -125,9 +125,12 @@ Shift type matching rules:
 Min/max shift request rules:
 
 - `min_shifts_requested` and `max_shifts_requested` are stored on the Provider's schedule-week availability.
-- Both values must be integers from `0` through `14`.
+- Both values must be half-shift increments from `0` through `14`.
 - `min_shifts_requested` must be less than or equal to `max_shifts_requested`.
-- Both values must be less than or equal to the count of weekdays with work availability selected.
+- `min_shifts_requested` must be less than or equal to selected availability capacity.
+- `max_shifts_requested` may exceed selected availability capacity.
+- Full-shift days count as one shift of capacity.
+- Half-shift and short-shift days count as one half shift of capacity when no full-shift option is selected for that day.
 - `min_shifts_requested` and `max_shifts_requested` are schedule-level targets, not per-slot eligibility rules.
 - A Provider below `min_shifts_requested` should produce a schedule-level warning or solver objective signal.
 - A Provider above `max_shifts_requested` should produce a schedule-level warning or solver objective signal.

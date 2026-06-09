@@ -254,9 +254,9 @@
         <li>Work options can be combined with each other.</li>
         <li>Min and max requested shifts must be between <code>0</code> and <code>14</code>.</li>
         <li>Min requested shifts must be less than or equal to max requested shifts.</li>
-        <li>The backend rounds min and max requests to the nearest half shift before validation.</li>
-        <li>The backend validates min and max against available half-shift units: full-shift days count as two units, half/short days count as one unit.</li>
-        <li>The frontend validates min and max against the count of work-available days, so it can be stricter than the backend for half-shift values.</li>
+        <li>The app rounds min and max requests to the nearest half shift before validation.</li>
+        <li>The app validates min against available half-shift units: full-shift days count as two units, half/short days count as one unit.</li>
+        <li>Max requested shifts may exceed selected availability capacity.</li>
         <li>Reading missing availability returns weekday defaults: weekdays default to <code>unset</code>, weekends default to <code>none</code>.</li>
         <li>Saving a day with only <code>unset</code> stores that day as <code>none</code>.</li>
         <li>Published schedule weeks lock availability edits. The API rejects replace and delete with HTTP 409.</li>
@@ -530,7 +530,6 @@
       <h2>Known Rule Mismatches To Watch</h2>
       <ul>
         <li>The API allows warning-only publish, but the UI publish handler can block warning statuses.</li>
-        <li>The frontend availability form validates min and max requested shifts by work-day count, while the backend validates using half-shift units.</li>
         <li>The availability API stores a day submitted as only <code>unset</code> as <code>none</code>.</li>
         <li>Manual UI assignments currently send <code>required_provider_type</code> as null, so provider-type matching applies mainly to saved assignments or solver shift requirements that carry that field.</li>
         <li>Solver shift requirements loaded from stored <code>shift_requirements</code> currently use <code>full_shift</code> as their shift type.</li>

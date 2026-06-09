@@ -324,20 +324,28 @@ export function optionIsExclusive(option: AvailabilityOption) {
   return isExclusive;
 }
 
-export function optionIsWorkAvailability(option: AvailabilityOption) {
-  const isWorkAvailability = !optionIsExclusive(option);
-  return isWorkAvailability;
+export function dayAvailableShiftCapacity(day: { options: AvailabilityOption[] }): number {
+  const hasFullShift = day.options.includes("full_shift");
+  const hasHalfShift = day.options.includes("first_half");
+  const hasSecondHalfShift = day.options.includes("second_half");
+  const hasShortShift = day.options.includes("short_shift");
+  const hasPartialShift = hasHalfShift || hasSecondHalfShift || hasShortShift;
+
+  if (hasFullShift) {
+    return 1;
+  }
+
+  if (hasPartialShift) {
+    return 0.5;
+  }
+
+  return 0;
 }
 
-export function dayHasWorkAvailability(day: { options: AvailabilityOption[] }) {
-  const hasWorkAvailability = day.options.some(optionIsWorkAvailability);
-  return hasWorkAvailability;
-}
-
-export function countWorkAvailableDays(days: { options: AvailabilityOption[] }[]) {
-  const workAvailableDays = days.filter(dayHasWorkAvailability);
-  const workAvailableDayCount = workAvailableDays.length;
-  return workAvailableDayCount;
+export function totalAvailableShiftCapacity(days: { options: AvailabilityOption[] }[]) {
+  const capacities: number[] = days.map(dayAvailableShiftCapacity);
+  const totalCapacity = capacities.reduce((sum, capacity) => sum + capacity, 0);
+  return totalCapacity;
 }
 
 export function clampValue(value: number, minimum: number, maximum: number) {

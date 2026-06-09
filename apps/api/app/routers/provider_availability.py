@@ -17,6 +17,7 @@ from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityRea
 from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityReplaceRequest
 from app.schemas.provider_availability_week import WEEKDAY_VALUES
 from app.schemas.provider_availability_week import half_shift_units
+from app.schemas.provider_availability_week import options_availability_units
 from app.schemas.provider_availability_week import options_include_work_availability
 
 router = APIRouter(tags=["provider-availability"], dependencies=[Depends(require_admin_user)])
@@ -102,9 +103,14 @@ def build_read_response(schedule_week: SchedulePeriod, provider_id: UUID, rows: 
 
         day_values.append(ProviderAvailabilityDayRead(weekday=weekday, options=options))
 
-    work_available_days = [day for day in day_values if options_include_work_availability(day.options)]
-    work_available_day_count = len(work_available_days)
-    max_shifts_requested = min(max_shifts_requested, float(work_available_day_count))
+    available_units = [
+        options_availability_units(day.options)
+        for day in day_values
+        if options_include_work_availability(day.options)
+    ]
+    available_unit_count = sum(available_units)
+    available_shift_capacity = available_unit_count / 2
+    min_shifts_requested = min(min_shifts_requested, available_shift_capacity)
     min_shifts_requested = min(min_shifts_requested, max_shifts_requested)
     is_locked = schedule_week_is_locked(schedule_week)
     response = ProviderWeeklyAvailabilityRead(

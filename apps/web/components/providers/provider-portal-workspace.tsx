@@ -24,7 +24,6 @@ import type {
 import {
   centerPreferenceDrafts,
   clampValue,
-  countWorkAvailableDays,
   dateAtUtcMidnight,
   isoDateForDate,
   monthStartIsoForDate,
@@ -32,6 +31,7 @@ import {
   preferencePayload,
   providerPortalSectionFromViewValue,
   shiftTypePreferenceDrafts,
+  totalAvailableShiftCapacity,
 } from "./provider-portal-utils";
 import { WeekAvailabilityView } from "./provider-week-availability-view";
 
@@ -46,12 +46,14 @@ type ShiftRequestValues = {
   maxShiftsRequested: number;
 };
 
+const maxShiftRequest = 14;
+
 function shiftRequestEditStateForRecord(
   record: ProviderPortalAvailabilityRecord,
 ): ShiftRequestEditState {
-  const workAvailableDayCount = countWorkAvailableDays(record.availability.days);
+  const availableShiftCapacity = totalAvailableShiftCapacity(record.availability.days);
   const minShiftsWasEdited = record.availability.minShiftsRequested !== 0;
-  const maxShiftsWasEdited = record.availability.maxShiftsRequested !== workAvailableDayCount;
+  const maxShiftsWasEdited = record.availability.maxShiftsRequested !== availableShiftCapacity;
   const editState = {
     scheduleWeekId: record.scheduleWeekId,
     minShiftsWasEdited,
@@ -216,14 +218,14 @@ export function ProviderPortalWorkspace({
     minShiftsWasEdited: boolean,
     maxShiftsWasEdited: boolean,
   ): ShiftRequestValues {
-    const workAvailableDayCount = countWorkAvailableDays(days);
+    const availableShiftCapacity = totalAvailableShiftCapacity(days);
     const defaultMinimum = 0;
-    const defaultMaximum = workAvailableDayCount;
+    const defaultMaximum = availableShiftCapacity;
     const selectedMinimum = minShiftsWasEdited ? requestedMinimum : defaultMinimum;
     const selectedMaximum = maxShiftsWasEdited ? requestedMaximum : defaultMaximum;
-    const nextMinimum = clampValue(selectedMinimum, 0, workAvailableDayCount);
-    const minimumForMaximum = Math.min(nextMinimum, workAvailableDayCount);
-    const nextMaximum = clampValue(selectedMaximum, minimumForMaximum, workAvailableDayCount);
+    const nextMinimum = clampValue(selectedMinimum, 0, availableShiftCapacity);
+    const minimumForMaximum = nextMinimum;
+    const nextMaximum = clampValue(selectedMaximum, minimumForMaximum, maxShiftRequest);
     const shiftRequests = {
       minShiftsRequested: nextMinimum,
       maxShiftsRequested: nextMaximum,
@@ -385,14 +387,14 @@ export function ProviderPortalWorkspace({
       return;
     }
 
-    const workAvailableDayCount = countWorkAvailableDays(selectedRecord.availability.days);
+    const availableShiftCapacity = totalAvailableShiftCapacity(selectedRecord.availability.days);
     const currentMinimum = selectedRecord.availability.minShiftsRequested;
     const currentMaximum = selectedRecord.availability.maxShiftsRequested;
     const requestedMinimum = field === "min" ? parsedValue : currentMinimum;
     const requestedMaximum = field === "max" ? parsedValue : currentMaximum;
-    const nextMinimum = clampValue(requestedMinimum, 0, workAvailableDayCount);
-    const minimumForMaximum = Math.min(nextMinimum, workAvailableDayCount);
-    const nextMaximum = clampValue(requestedMaximum, minimumForMaximum, workAvailableDayCount);
+    const nextMinimum = clampValue(requestedMinimum, 0, availableShiftCapacity);
+    const minimumForMaximum = nextMinimum;
+    const nextMaximum = clampValue(requestedMaximum, minimumForMaximum, maxShiftRequest);
     const nextAvailability = {
       ...selectedRecord.availability,
       minShiftsRequested: nextMinimum,
@@ -414,14 +416,14 @@ export function ProviderPortalWorkspace({
       return;
     }
 
-    const workAvailableDayCount = countWorkAvailableDays(record.availability.days);
+    const availableShiftCapacity = totalAvailableShiftCapacity(record.availability.days);
     const currentMinimum = record.availability.minShiftsRequested;
     const currentMaximum = record.availability.maxShiftsRequested;
     const requestedMinimum = field === "min" ? parsedValue : currentMinimum;
     const requestedMaximum = field === "max" ? parsedValue : currentMaximum;
-    const nextMinimum = clampValue(requestedMinimum, 0, workAvailableDayCount);
-    const minimumForMaximum = Math.min(nextMinimum, workAvailableDayCount);
-    const nextMaximum = clampValue(requestedMaximum, minimumForMaximum, workAvailableDayCount);
+    const nextMinimum = clampValue(requestedMinimum, 0, availableShiftCapacity);
+    const minimumForMaximum = nextMinimum;
+    const nextMaximum = clampValue(requestedMaximum, minimumForMaximum, maxShiftRequest);
     const nextAvailability = {
       ...record.availability,
       minShiftsRequested: nextMinimum,
