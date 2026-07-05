@@ -4,6 +4,7 @@ import { ScheduleWorkspace } from "@/components/schedules/schedule-workspace";
 import {
   getSchedulePeriod,
   getScheduleVersion,
+  listScheduleStructureTemplates,
   listCenters,
   listProviders,
   listRoomsForCenter,
@@ -53,6 +54,7 @@ export default async function ScheduleDetailPage({
   const schedulePeriod = await getSchedulePeriod(scheduleId);
   const scheduleVersions = await listScheduleVersions(scheduleId);
   const initialVersionDetail = await loadInitialVersionDetail(scheduleVersions);
+  const scheduleStructureTemplates = await listScheduleStructureTemplates();
   const centers = await listCenters();
   const providers = await listProviders();
   const roomGroups = await Promise.all(
@@ -75,6 +77,7 @@ export default async function ScheduleDetailPage({
       <ScheduleWorkspace
         initialVersionDetail={initialVersionDetail}
         initialVersions={scheduleVersions}
+        initialTemplates={scheduleStructureTemplates}
         schedulePeriod={schedulePeriod}
         providers={providers}
         rooms={rooms}

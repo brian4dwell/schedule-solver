@@ -45,12 +45,18 @@ import {
   schedulePeriodFormSchema,
   schedulePeriodRenameSchema,
   schedulePublishResponseApiSchema,
+  scheduleStructureTemplateApplyResponseApiSchema,
+  scheduleStructureTemplateApiSchema,
+  scheduleStructureTemplatePayloadSchema,
   scheduleVersionDetailApiSchema,
   type ScheduleVersionDetailApi,
   type SchedulePeriodApi,
   type SchedulePeriodFormValues,
   type SchedulePeriodRenameValues,
   type SchedulePeriodCloneResponseApi,
+  type ScheduleStructureTemplateApi,
+  type ScheduleStructureTemplateApplyResponseApi,
+  type ScheduleStructureTemplatePayload,
   type PersistedScheduleVersionApi,
   type ScheduleGenerateResponseApi,
   type SchedulePublishResponseApi,
@@ -123,6 +129,12 @@ export type ManagerProviderPreferencesSavePayload = ManagerProviderPreferencesPa
 export type SchedulePeriod = SchedulePeriodApi;
 
 export type SchedulePeriodCloneResponse = SchedulePeriodCloneResponseApi;
+
+export type ScheduleStructureTemplate = ScheduleStructureTemplateApi;
+export type ScheduleStructureTemplateApplyResponse =
+  ScheduleStructureTemplateApplyResponseApi;
+export type ScheduleStructureTemplateSavePayload =
+  ScheduleStructureTemplatePayload;
 
 export type PersistedScheduleVersion = PersistedScheduleVersionApi;
 
@@ -661,6 +673,72 @@ export async function cloneSchedulePeriod(
     },
   );
   const response = schedulePeriodCloneResponseApiSchema.parse(responseJson);
+  return response;
+}
+
+export async function listScheduleStructureTemplates(): Promise<ScheduleStructureTemplate[]> {
+  const responseJson = await requestJson<unknown[]>(
+    "/schedule-structure-templates",
+    { cache: "no-store" },
+  );
+  const templates = responseJson.map((templateJson) => {
+    const template = scheduleStructureTemplateApiSchema.parse(templateJson);
+    return template;
+  });
+  return templates;
+}
+
+export async function createScheduleStructureTemplate(
+  payload: ScheduleStructureTemplateSavePayload,
+): Promise<ScheduleStructureTemplate> {
+  const parsedPayload = scheduleStructureTemplatePayloadSchema.parse(payload);
+  const init = jsonRequestInit("POST", parsedPayload);
+  const responseJson = await requestJson<unknown>("/schedule-structure-templates", init);
+  const template = scheduleStructureTemplateApiSchema.parse(responseJson);
+  return template;
+}
+
+export async function updateScheduleStructureTemplate(
+  templateId: string,
+  payload: ScheduleStructureTemplateSavePayload,
+): Promise<ScheduleStructureTemplate> {
+  const parsedPayload = scheduleStructureTemplatePayloadSchema.parse(payload);
+  const init = jsonRequestInit("PUT", parsedPayload);
+  const responseJson = await requestJson<unknown>(
+    `/schedule-structure-templates/${templateId}`,
+    init,
+  );
+  const template = scheduleStructureTemplateApiSchema.parse(responseJson);
+  return template;
+}
+
+export async function deleteScheduleStructureTemplate(
+  templateId: string,
+): Promise<ScheduleStructureTemplate> {
+  const responseJson = await requestJson<unknown>(
+    `/schedule-structure-templates/${templateId}`,
+    {
+      method: "DELETE",
+      cache: "no-store",
+    },
+  );
+  const template = scheduleStructureTemplateApiSchema.parse(responseJson);
+  return template;
+}
+
+export async function applyScheduleStructureTemplate(
+  templateId: string,
+  schedulePeriodId: string,
+): Promise<ScheduleStructureTemplateApplyResponse> {
+  const payload = {
+    schedule_period_id: schedulePeriodId,
+  };
+  const init = jsonRequestInit("POST", payload);
+  const responseJson = await requestJson<unknown>(
+    `/schedule-structure-templates/${templateId}/apply`,
+    init,
+  );
+  const response = scheduleStructureTemplateApplyResponseApiSchema.parse(responseJson);
   return response;
 }
 

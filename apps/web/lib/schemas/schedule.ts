@@ -160,6 +160,66 @@ export const schedulePeriodCloneResponseApiSchema = z.object({
   schedule_version: scheduleDraftSaveResponseApiSchema,
 });
 
+export const scheduleStructureTemplateSlotApiSchema = z.object({
+  id: z.string().uuid(),
+  template_id: z.string().uuid(),
+  weekday: scheduleDayKeySchema,
+  room_id: z.string().uuid(),
+  shift_type: z.enum(["full_shift", "first_half", "second_half", "short_shift"]),
+  start_time: z.string().min(1),
+  end_time: z.string().min(1),
+  display_order: z.number().int().min(0),
+  created_at: z.string().min(1),
+  updated_at: z.string().min(1),
+});
+
+export const scheduleStructureTemplateApiSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  slots: z.array(scheduleStructureTemplateSlotApiSchema),
+  created_at: z.string().min(1),
+  updated_at: z.string().min(1),
+});
+
+export const scheduleStructureTemplateSlotPayloadSchema = z.object({
+  weekday: scheduleDayKeySchema,
+  room_id: z.string().uuid(),
+  shift_type: z.enum(["full_shift", "first_half", "second_half", "short_shift"]),
+  start_time: z.string().min(1),
+  end_time: z.string().min(1),
+  display_order: z.number().int().min(0),
+});
+
+export const scheduleStructureTemplatePayloadSchema = z.object({
+  name: z.string().trim().min(1),
+  slots: z.array(scheduleStructureTemplateSlotPayloadSchema),
+});
+
+export const scheduleStructureTemplateAppliedSlotApiSchema = z.object({
+  room_slot_id: z.string().uuid(),
+  weekday: scheduleDayKeySchema,
+  room_id: z.string().uuid(),
+  center_id: z.string().uuid(),
+  shift_type: z.enum(["full_shift", "first_half", "second_half", "short_shift"]),
+  schedule_date: z.string().min(1),
+  start_time: z.string().min(1),
+  end_time: z.string().min(1),
+  display_order: z.number().int().min(0),
+});
+
+export const scheduleStructureTemplateSkippedSlotApiSchema = z.object({
+  weekday: scheduleDayKeySchema,
+  room_id: z.string().uuid(),
+  reason: z.string().min(1),
+  message: z.string().min(1),
+});
+
+export const scheduleStructureTemplateApplyResponseApiSchema = z.object({
+  template: scheduleStructureTemplateApiSchema,
+  applied_slots: z.array(scheduleStructureTemplateAppliedSlotApiSchema),
+  skipped_slots: z.array(scheduleStructureTemplateSkippedSlotApiSchema),
+});
+
 export const solverRunMetricsApiSchema = z.object({
   solve_duration_ms: z.number().int().min(0),
   payload_size_bytes: z.number().int().min(0),
@@ -239,6 +299,22 @@ export type ScheduleVersionDetailApi = z.infer<
 
 export type SchedulePeriodCloneResponseApi = z.infer<
   typeof schedulePeriodCloneResponseApiSchema
+>;
+
+export type ScheduleStructureTemplateApi = z.infer<
+  typeof scheduleStructureTemplateApiSchema
+>;
+
+export type ScheduleStructureTemplatePayload = z.infer<
+  typeof scheduleStructureTemplatePayloadSchema
+>;
+
+export type ScheduleStructureTemplateAppliedSlotApi = z.infer<
+  typeof scheduleStructureTemplateAppliedSlotApiSchema
+>;
+
+export type ScheduleStructureTemplateApplyResponseApi = z.infer<
+  typeof scheduleStructureTemplateApplyResponseApiSchema
 >;
 
 export type ScheduleGenerateResponseApi = z.infer<

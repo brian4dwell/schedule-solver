@@ -2,6 +2,7 @@ import uuid
 from datetime import date
 from datetime import datetime
 from datetime import UTC
+from datetime import time
 
 from sqlalchemy import Boolean
 from sqlalchemy import Date
@@ -11,6 +12,7 @@ from sqlalchemy import Integer
 from sqlalchemy import Numeric
 from sqlalchemy import String
 from sqlalchemy import Text
+from sqlalchemy import Time
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
@@ -381,6 +383,34 @@ class SchedulePeriod(Base, TimestampMixin):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class ScheduleStructureTemplate(Base, TimestampMixin):
+    __tablename__ = "schedule_structure_templates"
+    __table_args__ = (UniqueConstraint("organization_id", "name"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slots: Mapped[list["ScheduleStructureTemplateSlot"]] = relationship(
+        back_populates="template",
+        cascade="all, delete-orphan",
+    )
+
+
+class ScheduleStructureTemplateSlot(Base, TimestampMixin):
+    __tablename__ = "schedule_structure_template_slots"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    template_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("schedule_structure_templates.id"), nullable=False)
+    weekday: Mapped[str] = mapped_column(String(20), nullable=False)
+    room_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("rooms.id"), nullable=False)
+    shift_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    start_time: Mapped[time] = mapped_column(Time(timezone=False), nullable=False)
+    end_time: Mapped[time] = mapped_column(Time(timezone=False), nullable=False)
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    template: Mapped[ScheduleStructureTemplate] = relationship(back_populates="slots")
 
 
 class ScheduleJob(Base, TimestampMixin):

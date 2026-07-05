@@ -4,12 +4,16 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  applyScheduleStructureTemplate,
   checkProviderSlotEligibility,
+  createScheduleStructureTemplate,
+  deleteScheduleStructureTemplate,
   generateScheduleVersion,
   getScheduleVersion,
   getProviderWeeklyAvailability,
   publishScheduleVersion,
   saveDraftScheduleVersion,
+  updateScheduleStructureTemplate,
   type Center,
   type Provider,
   type ProviderSlotEligibility,
@@ -18,9 +22,15 @@ import {
   type Room,
   type ScheduleAssignmentSavePayload,
   type SchedulePeriod,
+  type ScheduleStructureTemplate,
+  type ScheduleStructureTemplateApplyResponse,
+  type ScheduleStructureTemplateSavePayload,
   type ScheduleVersionDetail,
 } from "@/lib/api";
-import type { AvailabilityOption } from "@/lib/schemas/provider-weekly-availability";
+import type {
+  AvailabilityOption,
+  Weekday,
+} from "@/lib/schemas/provider-weekly-availability";
 import type {
   ProviderIneligibilityReason,
   ScheduleDayKey,
@@ -84,6 +94,7 @@ type DropIndicator = {
 
 type ScheduleWorkspaceProps = {
   initialVersionDetail: ScheduleVersionDetail | null;
+  initialTemplates: ScheduleStructureTemplate[];
   initialVersions: PersistedScheduleVersion[];
   providers: Provider[];
   rooms: RoomRow[];
@@ -120,6 +131,14 @@ const dayColumns: DayColumn[] = [
   { key: "friday", label: "Friday", isWeekend: false },
   { key: "saturday", label: "Saturday", isWeekend: true },
   { key: "sunday", label: "Sunday", isWeekend: true },
+];
+
+const availabilityReminderWeekdays: Weekday[] = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
 ];
 
 function createAssignmentId() {
@@ -1187,32 +1206,37 @@ function scheduleConstraintRows(
   return rows;
 }
 
-function providerHasUnsetAvailability(
+function providerNeedsAvailabilityReminder(
   availability: ProviderWeeklyAvailabilityRecord,
 ) {
-  const unsetDays = availability.days.filter((day) => {
-    const hasUnset = day.options.includes("unset");
-    return hasUnset;
+  const requiredDays = availability.days.filter((day) => {
+    const weekdayIsRequired = availabilityReminderWeekdays.includes(day.weekday);
+    return weekdayIsRequired;
   });
-  const hasUnsetAvailability = unsetDays.length > 0;
-  return hasUnsetAvailability;
+  const providerSubmittedRequiredDay = requiredDays.some((day) => {
+    const dayIsUnset = day.options.includes("unset");
+    const dayWasSubmitted = !dayIsUnset;
+    return dayWasSubmitted;
+  });
+  const needsReminder = !providerSubmittedRequiredDay;
+  return needsReminder;
 }
 
-function providersWithUnsetAvailability(
+function providersNeedingAvailabilityReminder(
   providers: Provider[],
   availabilityByProviderId: Map<string, ProviderWeeklyAvailabilityRecord>,
 ) {
-  const unsetProviders = providers.filter((provider) => {
+  const providersNeedingReminder = providers.filter((provider) => {
     const availability = availabilityByProviderId.get(provider.id);
 
     if (availability === undefined) {
       return false;
     }
 
-    const hasUnsetAvailability = providerHasUnsetAvailability(availability);
-    return hasUnsetAvailability;
+    const needsReminder = providerNeedsAvailabilityReminder(availability);
+    return needsReminder;
   });
-  return unsetProviders;
+  return providersNeedingReminder;
 }
 
 function shiftTypeLabel(shiftType: ScheduleRoomAssignment["shiftType"]) {
@@ -1374,8 +1398,68 @@ function createRoomAssignment(
   return assignment;
 }
 
+function templatePayloadFromAssignments(
+  name: string,
+  assignments: ScheduleRoomAssignment[],
+): ScheduleStructureTemplateSavePayload {
+  const slots = assignments.map((assignment) => {
+    const slot = {
+      weekday: assignment.dayKey,
+      room_id: assignment.roomId,
+      shift_type: assignment.shiftType,
+      start_time: assignment.startTime,
+      end_time: assignment.endTime,
+      display_order: assignment.sortOrder,
+    };
+    return slot;
+  });
+  const payload = {
+    name,
+    slots,
+  };
+  return payload;
+}
+
+function assignmentFromAppliedTemplateSlot(
+  slot: ScheduleStructureTemplateApplyResponse["applied_slots"][number],
+): ScheduleRoomAssignment {
+  const assignment: ScheduleRoomAssignment = {
+    id: slot.room_slot_id,
+    dayKey: slot.weekday,
+    slotDate: slot.schedule_date,
+    slotDateChanged: false,
+    centerId: slot.center_id,
+    roomId: slot.room_id,
+    shiftType: slot.shift_type,
+    providerId: null,
+    startTime: timeLabelFromDateTime(slot.start_time),
+    endTime: timeLabelFromDateTime(slot.end_time),
+    sortOrder: slot.display_order,
+    validationStatus: "unknown",
+    validationMessages: [],
+  };
+  return assignment;
+}
+
+function upsertTemplateOption(
+  templates: ScheduleStructureTemplate[],
+  nextTemplate: ScheduleStructureTemplate,
+) {
+  const otherTemplates = templates.filter((template) => {
+    const isSameTemplate = template.id === nextTemplate.id;
+    return !isSameTemplate;
+  });
+  const nextTemplates = [...otherTemplates, nextTemplate];
+  const sortedTemplates = nextTemplates.toSorted((first, second) => {
+    const comparison = first.name.localeCompare(second.name);
+    return comparison;
+  });
+  return sortedTemplates;
+}
+
 export function ScheduleWorkspace({
   initialVersionDetail,
+  initialTemplates,
   initialVersions,
   providers,
   rooms,
@@ -1400,17 +1484,27 @@ export function ScheduleWorkspace({
   });
   const [versionOptions, setVersionOptions] =
     useState<PersistedScheduleVersion[]>(initialVersions);
+  const [templateOptions, setTemplateOptions] =
+    useState<ScheduleStructureTemplate[]>(initialTemplates);
   const [selectedVersionId, setSelectedVersionId] = useState(() => {
     const versionId = initialVersionDetail?.version.id ?? "";
     return versionId;
   });
+  const [selectedTemplateId, setSelectedTemplateId] = useState(() => {
+    const templateId = initialTemplates.at(0)?.id ?? "";
+    return templateId;
+  });
+  const [templateName, setTemplateName] = useState("");
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [isLoadingTemplate, setIsLoadingTemplate] = useState(false);
+  const [isDeletingTemplate, setIsDeletingTemplate] = useState(false);
   const [isLoadingVersion, setIsLoadingVersion] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [showWeekends, setShowWeekends] = useState(false);
-  const [showUnsetAvailabilityProviders, setShowUnsetAvailabilityProviders] = useState(false);
+  const [showAvailabilityReminderProviders, setShowAvailabilityReminderProviders] = useState(false);
   const [compactModeEnabled, setCompactModeEnabled] = useState(false);
   const [openProviderAssignmentId, setOpenProviderAssignmentId] = useState<
     string | null
@@ -1475,6 +1569,10 @@ export function ScheduleWorkspace({
   });
   const latestPublishEvent = publishEvents.at(-1);
   const assignedRoomCount = workingVersion.assignments.length;
+  const providerAssignedRooms = workingVersion.assignments.filter((assignment) => {
+    return assignment.providerId !== null;
+  });
+  const assignedProviderCount = providerAssignedRooms.length;
   const lastPublishedLabel =
     latestPublishEvent === undefined
       ? "Not published yet"
@@ -1490,6 +1588,191 @@ export function ScheduleWorkspace({
       notes,
     });
     updateWorkingVersion(nextVersion);
+  }
+
+  async function handleSaveTemplate() {
+    const normalizedName = templateName.trim();
+    const hasTemplateName = normalizedName.length > 0;
+
+    if (!hasTemplateName) {
+      showToast({
+        title: "Template name required",
+        description: "Enter a template name before saving.",
+        tone: "warning",
+      });
+      return;
+    }
+
+    if (workingVersion.assignments.length === 0) {
+      showToast({
+        title: "Template is empty",
+        description: "Add rooms to the board before saving a template.",
+        tone: "warning",
+      });
+      return;
+    }
+
+    const existingTemplate = templateOptions.find((template) => {
+      return template.name === normalizedName;
+    });
+
+    if (existingTemplate !== undefined) {
+      const shouldUpdate = window.confirm(
+        "Update the existing schedule structure template with this name?",
+      );
+
+      if (!shouldUpdate) {
+        return;
+      }
+    }
+
+    const payload = templatePayloadFromAssignments(
+      normalizedName,
+      workingVersion.assignments,
+    );
+    setIsSavingTemplate(true);
+
+    try {
+      const savedTemplate =
+        existingTemplate === undefined
+          ? await createScheduleStructureTemplate(payload)
+          : await updateScheduleStructureTemplate(existingTemplate.id, payload);
+      setTemplateOptions((currentTemplates) => {
+        const nextTemplates = upsertTemplateOption(currentTemplates, savedTemplate);
+        return nextTemplates;
+      });
+      setSelectedTemplateId(savedTemplate.id);
+      setTemplateName(savedTemplate.name);
+      setActionMessage("Schedule template saved.");
+      showToast({
+        title: "Template saved",
+        description: "The schedule structure template was saved.",
+        tone: "success",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Template save failed.";
+      setActionMessage(message);
+      showToast({
+        title: "Template save failed",
+        description: message,
+        tone: "error",
+      });
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  }
+
+  async function handleLoadTemplate() {
+    const hasSelectedTemplate = selectedTemplateId.length > 0;
+
+    if (!hasSelectedTemplate) {
+      showToast({
+        title: "Select a template",
+        description: "Choose a schedule structure template before loading.",
+        tone: "warning",
+      });
+      return;
+    }
+
+    setIsLoadingTemplate(true);
+
+    try {
+      const response = await applyScheduleStructureTemplate(
+        selectedTemplateId,
+        scheduleId,
+      );
+      const templateAssignments = response.applied_slots.map((slot) => {
+        const assignment = assignmentFromAppliedTemplateSlot(slot);
+        return assignment;
+      });
+      const reorderedAssignments = reorderAssignments(templateAssignments);
+      const nextVersion = scheduleVersionSchema.parse({
+        ...workingVersion,
+        status: "working",
+        assignments: reorderedAssignments,
+      });
+      const appliedSlotCount = response.applied_slots.length;
+      const skippedSlotCount = response.skipped_slots.length;
+      updateWorkingVersion(nextVersion);
+      setSavedVersionDetail(null);
+      setSelectedVersionId("");
+      setActionMessage("Schedule template loaded.");
+      showToast({
+        title: "Template loaded",
+        description: `${appliedSlotCount} room slots were loaded.`,
+        tone: "success",
+      });
+
+      if (skippedSlotCount > 0) {
+        showToast({
+          title: "Some rooms were skipped",
+          description: `${skippedSlotCount} unavailable room slots were skipped.`,
+          tone: "warning",
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Template load failed.";
+      setActionMessage(message);
+      showToast({
+        title: "Template load failed",
+        description: message,
+        tone: "error",
+      });
+    } finally {
+      setIsLoadingTemplate(false);
+    }
+  }
+
+  async function handleDeleteTemplate() {
+    const selectedTemplate = templateOptions.find((template) => {
+      return template.id === selectedTemplateId;
+    });
+
+    if (selectedTemplate === undefined) {
+      showToast({
+        title: "Select a template",
+        description: "Choose a schedule structure template before deleting.",
+        tone: "warning",
+      });
+      return;
+    }
+
+    const shouldDelete = window.confirm(
+      `Delete the ${selectedTemplate.name} schedule structure template?`,
+    );
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setIsDeletingTemplate(true);
+
+    try {
+      await deleteScheduleStructureTemplate(selectedTemplate.id);
+      setTemplateOptions((currentTemplates) => {
+        const nextTemplates = currentTemplates.filter((template) => {
+          return template.id !== selectedTemplate.id;
+        });
+        return nextTemplates;
+      });
+      setSelectedTemplateId("");
+      setActionMessage("Schedule template deleted.");
+      showToast({
+        title: "Template deleted",
+        description: "The schedule structure template was deleted.",
+        tone: "success",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Template delete failed.";
+      setActionMessage(message);
+      showToast({
+        title: "Template delete failed",
+        description: message,
+        tone: "error",
+      });
+    } finally {
+      setIsDeletingTemplate(false);
+    }
   }
 
   function savePayloadFromAssignments(
@@ -2025,13 +2308,64 @@ export function ScheduleWorkspace({
     return targetIndexMatches;
   }
 
-  function handleClearAssignments() {
+  function handleClearProviderAssignments() {
+    const shouldClearProviderAssignments = window.confirm(
+      "Clear all provider assignments while keeping the room schedule structure?",
+    );
+
+    if (!shouldClearProviderAssignments) {
+      return;
+    }
+
+    const option = null;
+    const validationStatus = validationStatusForSelection(option);
+    const validationMessages = validationMessagesForSelection(option);
+    const assignments = workingVersion.assignments.map((assignment) => {
+      const nextAssignment = {
+        ...assignment,
+        providerId: null,
+        validationStatus,
+        validationMessages,
+      };
+      return nextAssignment;
+    });
+    const nextVersion = scheduleVersionSchema.parse({
+      ...workingVersion,
+      assignments,
+    });
+    updateWorkingVersion(nextVersion);
+    setOpenProviderAssignmentId(null);
+    setActionMessage("Provider assignments cleared.");
+    showToast({
+      title: "Provider assignments cleared",
+      description: "Rooms stayed on the schedule.",
+      tone: "success",
+    });
+  }
+
+  function handleClearRooms() {
+    const shouldClearRooms = window.confirm(
+      "Clear all rooms from the schedule, including their provider assignments?",
+    );
+
+    if (!shouldClearRooms) {
+      return;
+    }
+
     const assignments: ScheduleRoomAssignment[] = [];
     const nextVersion = scheduleVersionSchema.parse({
       ...workingVersion,
       assignments,
     });
     updateWorkingVersion(nextVersion);
+    setOpenProviderAssignmentId(null);
+    setOpenShiftTypeAssignmentId(null);
+    setActionMessage("Rooms cleared from the schedule.");
+    showToast({
+      title: "Rooms cleared",
+      description: "All room slots were removed from the schedule.",
+      tone: "success",
+    });
   }
 
   function handleClearDayAssignments(dayKey: ScheduleDayKey) {
@@ -2238,14 +2572,17 @@ export function ScheduleWorkspace({
     return row.severity === "Hard";
   });
   const publishBlockerCount = hardConstraintRows.length;
-  const unsetAvailabilityProviders = providersWithUnsetAvailability(
+  const availabilityReminderProviders = providersNeedingAvailabilityReminder(
     providers,
     availabilityByProviderId,
   );
   const availabilityLoadIsComplete = availabilityByProviderId.size === providers.length;
-  const unsetAvailabilityCount = unsetAvailabilityProviders.length;
+  const availabilityReminderProviderCount = availabilityReminderProviders.length;
   const canPublish =
     publishBlockerCount === 0 && assignedRoomCount > 0 && hasSavedVersion;
+  const hasSelectedTemplate = selectedTemplateId.length > 0;
+  const canLoadTemplate = hasSelectedTemplate && !isLoadingTemplate;
+  const canDeleteTemplate = hasSelectedTemplate && !isDeletingTemplate;
 
   return (
     <div className="space-y-5">
@@ -2281,25 +2618,25 @@ export function ScheduleWorkspace({
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-sm text-slate-600">
                   {availabilityLoadIsComplete
-                    ? `${unsetAvailabilityCount} out of ${providers.length} Providers have unset availability.`
+                    ? `${availabilityReminderProviderCount} out of ${providers.length} Providers need availability follow-up.`
                     : "Checking provider availability..."}
                 </p>
-                {unsetAvailabilityCount > 0 ? (
+                {availabilityReminderProviderCount > 0 ? (
                   <button
                     type="button"
                     onClick={() =>
-                      setShowUnsetAvailabilityProviders((currentValue) => !currentValue)
+                      setShowAvailabilityReminderProviders((currentValue) => !currentValue)
                     }
                     className="text-sm font-semibold text-teal-700 hover:text-teal-900"
                   >
-                    {showUnsetAvailabilityProviders ? "Hide providers" : "Show providers"}
+                    {showAvailabilityReminderProviders ? "Hide providers" : "Show providers"}
                   </button>
                 ) : null}
               </div>
-              {showUnsetAvailabilityProviders && unsetAvailabilityCount > 0 ? (
+              {showAvailabilityReminderProviders && availabilityReminderProviderCount > 0 ? (
                 <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
                   <ul className="flex flex-wrap gap-2">
-                    {unsetAvailabilityProviders.map((provider) => {
+                    {availabilityReminderProviders.map((provider) => {
                       return (
                         <li
                           key={provider.id}
@@ -2314,82 +2651,155 @@ export function ScheduleWorkspace({
               ) : null}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <label className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700">
-              <span>Layout</span>
-              <select
-                value={compactModeEnabled ? "compact" : "full"}
-                onChange={(event) => setCompactModeEnabled(event.target.value === "compact")}
-                className="bg-white text-sm font-semibold text-slate-900 outline-none"
-              >
-                <option value="full">Full mode</option>
-                <option value="compact">Compact mode</option>
-              </select>
-            </label>
-            {versionOptions.length > 0 ? (
+          <div className="flex w-full flex-col gap-3 xl:w-auto xl:items-end">
+            <div className="flex flex-wrap gap-2 xl:justify-end">
               <label className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700">
-                <span>Version</span>
+                <span>Layout</span>
                 <select
-                  value={selectedVersionId}
-                  onChange={(event) => handleVersionSelected(event.target.value)}
-                  disabled={isLoadingVersion}
-                  className="bg-white text-sm font-semibold text-slate-900 outline-none disabled:text-slate-400"
+                  value={compactModeEnabled ? "compact" : "full"}
+                  onChange={(event) => setCompactModeEnabled(event.target.value === "compact")}
+                  className="bg-white text-sm font-semibold text-slate-900 outline-none"
                 >
-                  {selectedVersionId === "" ? (
-                    <option value="">Working version</option>
-                  ) : null}
-                  {versionOptions.map((version) => {
-                    const label = versionOptionLabel(version);
+                  <option value="full">Full mode</option>
+                  <option value="compact">Compact mode</option>
+                </select>
+              </label>
+              {versionOptions.length > 0 ? (
+                <label className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700">
+                  <span>Version</span>
+                  <select
+                    value={selectedVersionId}
+                    onChange={(event) => handleVersionSelected(event.target.value)}
+                    disabled={isLoadingVersion}
+                    className="bg-white text-sm font-semibold text-slate-900 outline-none disabled:text-slate-400"
+                  >
+                    {selectedVersionId === "" ? (
+                      <option value="">Working version</option>
+                    ) : null}
+                    {versionOptions.map((version) => {
+                      const label = versionOptionLabel(version);
+                      return (
+                        <option key={version.id} value={version.id}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+              ) : null}
+              <label className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={showWeekends}
+                  onChange={(event) => setShowWeekends(event.target.checked)}
+                  className="h-4 w-4 accent-teal-700"
+                />
+                Show weekends
+              </label>
+              <button
+                type="button"
+                onClick={handleGenerateSchedule}
+                disabled={isGenerating}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+              >
+                {isGenerating ? "Running solver" : "Run Solver"}
+              </button>
+              <button
+                type="button"
+                onClick={handleClearProviderAssignments}
+                disabled={assignedProviderCount === 0}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-red-300 px-3 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                Clear assignments
+              </button>
+              <button
+                type="button"
+                onClick={handleClearRooms}
+                disabled={assignedRoomCount === 0}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-red-300 px-3 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                Clear rooms
+              </button>
+            </div>
+            <div className="flex w-full flex-wrap gap-2 rounded-md border border-teal-200 bg-teal-50 p-2 xl:w-auto xl:justify-end">
+              <button
+                type="button"
+                onClick={handleSaveDraft}
+                disabled={isSaving}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-teal-300 bg-white px-3 text-sm font-semibold text-teal-800 hover:bg-teal-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                {isSaving ? "Saving" : "Save draft"}
+              </button>
+              <button
+                type="button"
+                onClick={handlePublishSchedule}
+                disabled={!canPublish || isPublishing}
+                className="inline-flex h-9 items-center justify-center rounded-md bg-teal-700 px-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {isPublishing ? "Publishing" : "Publish changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 border-t border-slate-200 pt-4">
+          <h4 className="text-sm font-semibold text-slate-950">
+            Schedule templates
+          </h4>
+          <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+            <div className="flex flex-1 flex-col gap-3 md:flex-row md:items-end">
+              <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm font-medium text-slate-700">
+                <span>Template name</span>
+                <input
+                  type="text"
+                  value={templateName}
+                  onChange={(event) => setTemplateName(event.target.value)}
+                  className="h-9 rounded-md border border-slate-300 px-3 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={handleSaveTemplate}
+                disabled={isSavingTemplate}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+              >
+                {isSavingTemplate ? "Saving template" : "Save template"}
+              </button>
+            </div>
+            <div className="flex flex-1 flex-col gap-3 md:flex-row md:items-end xl:justify-end">
+              <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm font-medium text-slate-700 xl:max-w-sm">
+                <span>Load template</span>
+                <select
+                  value={selectedTemplateId}
+                  onChange={(event) => setSelectedTemplateId(event.target.value)}
+                  className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                >
+                  <option value="">Select template</option>
+                  {templateOptions.map((template) => {
                     return (
-                      <option key={version.id} value={version.id}>
-                        {label}
+                      <option key={template.id} value={template.id}>
+                        {template.name}
                       </option>
                     );
                   })}
                 </select>
               </label>
-            ) : null}
-            <label className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700">
-              <input
-                type="checkbox"
-                checked={showWeekends}
-                onChange={(event) => setShowWeekends(event.target.checked)}
-                className="h-4 w-4 accent-teal-700"
-              />
-              Show weekends
-            </label>
-            <button
-              type="button"
-              onClick={handleGenerateSchedule}
-              disabled={isGenerating}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
-            >
-              {isGenerating ? "Running solver" : "Run Solver"}
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveDraft}
-              disabled={isSaving}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
-            >
-              {isSaving ? "Saving" : "Save draft"}
-            </button>
-            <button
-              type="button"
-              onClick={handleClearAssignments}
-              disabled={assignedRoomCount === 0}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-red-300 px-3 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-            >
-              Clear assignments
-            </button>
-            <button
-              type="button"
-              onClick={handlePublishSchedule}
-              disabled={!canPublish || isPublishing}
-              className="inline-flex h-9 items-center justify-center rounded-md bg-teal-700 px-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              {isPublishing ? "Publishing" : "Publish changes"}
-            </button>
+              <button
+                type="button"
+                onClick={handleLoadTemplate}
+                disabled={!canLoadTemplate}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+              >
+                {isLoadingTemplate ? "Loading" : "Load"}
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteTemplate}
+                disabled={!canDeleteTemplate}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-red-300 px-3 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                {isDeletingTemplate ? "Deleting" : "Delete"}
+              </button>
+            </div>
           </div>
         </div>
       </section>

@@ -7,3 +7,4 @@ For frontend workflow feedback, use the app-wide toast system in apps/web/compon
 Python tooling is managed with uv in this repo. Run Python commands through uv run ....
 Do not invoke bare pytest; always use uv run pytest (or uv run python -m pytest) so PATH does not matter.
 Don't auto deploy to fly.io unless I specifically ask you to, we are often working on features and don't want them deployed all the time right away.
+When starting local dev servers or other long-running debug processes, do not write stdout/stderr log files into the repo root; use the terminal session output or a temp directory outside the repo.

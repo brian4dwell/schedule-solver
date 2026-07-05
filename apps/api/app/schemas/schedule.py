@@ -1,5 +1,7 @@
 from datetime import date
 from datetime import datetime
+from datetime import time
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -9,6 +11,23 @@ from pydantic import Field
 from app.schemas.common import TimestampedSchema
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityViolation
 from app.services.scheduling.solver_contracts import SolverRunMetrics
+
+ScheduleTemplateWeekday = Literal[
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+]
+
+ScheduleShiftType = Literal[
+    "full_shift",
+    "first_half",
+    "second_half",
+    "short_shift",
+]
 
 
 class ProviderEligibilityRequest(BaseModel):
@@ -62,6 +81,68 @@ class SchedulePeriodCreate(BaseModel):
 
 class SchedulePeriodRenameRequest(BaseModel):
     name: str = Field(min_length=1)
+
+
+class ScheduleStructureTemplateSlotWrite(BaseModel):
+    weekday: ScheduleTemplateWeekday
+    room_id: UUID
+    shift_type: ScheduleShiftType
+    start_time: time
+    end_time: time
+    display_order: int = Field(ge=0)
+
+
+class ScheduleStructureTemplateWrite(BaseModel):
+    name: str = Field(min_length=1)
+    slots: list[ScheduleStructureTemplateSlotWrite] = Field(default_factory=list)
+
+
+class ScheduleStructureTemplateSlotRead(TimestampedSchema):
+    template_id: UUID
+    weekday: ScheduleTemplateWeekday
+    room_id: UUID
+    shift_type: ScheduleShiftType
+    start_time: time
+    end_time: time
+    display_order: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ScheduleStructureTemplateRead(TimestampedSchema):
+    name: str
+    slots: list[ScheduleStructureTemplateSlotRead] = Field(default_factory=list)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ScheduleStructureTemplateApplyRequest(BaseModel):
+    schedule_period_id: UUID
+
+
+class ScheduleStructureTemplateAppliedSlot(BaseModel):
+    room_slot_id: UUID
+    weekday: ScheduleTemplateWeekday
+    room_id: UUID
+    center_id: UUID
+    shift_type: ScheduleShiftType
+    schedule_date: date
+    start_time: datetime
+    end_time: datetime
+    display_order: int
+
+
+class ScheduleStructureTemplateSkippedSlot(BaseModel):
+    weekday: ScheduleTemplateWeekday
+    room_id: UUID
+    reason: str
+    message: str
+
+
+class ScheduleStructureTemplateApplyResponse(BaseModel):
+    template: ScheduleStructureTemplateRead
+    applied_slots: list[ScheduleStructureTemplateAppliedSlot] = Field(default_factory=list)
+    skipped_slots: list[ScheduleStructureTemplateSkippedSlot] = Field(default_factory=list)
 
 
 class SchedulePeriodRead(TimestampedSchema):

@@ -1,6 +1,7 @@
 from datetime import UTC
 from datetime import date
 from datetime import datetime
+from datetime import time
 from uuid import uuid4
 
 import pytest
@@ -9,17 +10,27 @@ from fastapi import HTTPException
 from app.db.models import Assignment
 from app.db.models import Provider
 from app.db.models import ProviderScheduleWeekAvailability
+from app.db.models import Room
 from app.db.models import SchedulePeriod
+from app.db.models import ScheduleStructureTemplate
+from app.db.models import ScheduleStructureTemplateSlot
 from app.db.models import ScheduleVersion
+from app.routers.schedules import applied_template_slot
 from app.routers.schedules import clone_schedule_period_name
 from app.routers.schedules import create_assignment_from_request
+from app.routers.schedules import create_template_slot
 from app.routers.schedules import duplicate_assignment_request
 from app.routers.schedules import duplicate_assignment_requests
+from app.routers.schedules import normalized_template_name
 from app.routers.schedules import require_open_schedule_period
+from app.routers.schedules import require_unique_template_name
 from app.routers.schedules import router
+from app.routers.schedules import schedule_date_for_template_weekday
+from app.routers.schedules import skipped_template_slot
 from app.routers.schedules import stable_assignment_request
 from app.routers.schedules import unassigned_provider_violation
 from app.routers.schedules import validate_schedule_period_dates
+from app.schemas.schedule import ScheduleStructureTemplateSlotWrite
 from app.schemas.schedule import ScheduleAssignmentCreate
 from app.schemas.schedule import SchedulePeriodCreate
 from app.services.scheduling.availability_service import create_cloned_weekly_availability_row
@@ -69,6 +80,101 @@ def test_schedule_period_route_accepts_clone() -> None:
     ]
 
     assert len(clone_routes) == 1
+
+
+def test_schedule_structure_template_routes_are_registered() -> None:
+    template_routes = [
+        route
+        for route in router.routes
+        if route.path == "/schedule-structure-templates"
+    ]
+    list_routes = [
+        route
+        for route in template_routes
+        if "GET" in route.methods
+    ]
+    create_routes = [
+        route
+        for route in template_routes
+        if "POST" in route.methods
+    ]
+
+    assert len(list_routes) == 1
+    assert len(create_routes) == 1
+
+
+def test_schedule_structure_template_member_routes_are_registered() -> None:
+    template_routes = [
+        route
+        for route in router.routes
+        if route.path == "/schedule-structure-templates/{template_id}"
+    ]
+    update_routes = [
+        route
+        for route in template_routes
+        if "PUT" in route.methods
+    ]
+    delete_routes = [
+        route
+        for route in template_routes
+        if "DELETE" in route.methods
+    ]
+    apply_routes = [
+        route
+        for route in router.routes
+        if route.path == "/schedule-structure-templates/{template_id}/apply"
+    ]
+
+    assert len(update_routes) == 1
+    assert len(delete_routes) == 1
+    assert len(apply_routes) == 1
+
+
+class TemplateNameSession:
+    def __init__(self, template: ScheduleStructureTemplate | None) -> None:
+        self.template = template
+
+    def scalar(self, _statement) -> ScheduleStructureTemplate | None:
+        return self.template
+
+
+def test_template_name_is_required() -> None:
+    with pytest.raises(HTTPException) as error:
+        normalized_template_name("   ")
+
+    assert error.value.status_code == 400
+
+
+def test_duplicate_template_name_is_rejected() -> None:
+    organization_id = uuid4()
+    template = ScheduleStructureTemplate(
+        id=uuid4(),
+        organization_id=organization_id,
+        name="Standard Week",
+    )
+    session = TemplateNameSession(template)
+
+    with pytest.raises(HTTPException) as error:
+        require_unique_template_name("Standard Week", organization_id, session)
+
+    assert error.value.status_code == 409
+
+
+def test_current_template_name_is_allowed_on_update() -> None:
+    organization_id = uuid4()
+    template = ScheduleStructureTemplate(
+        id=uuid4(),
+        organization_id=organization_id,
+        name="Standard Week",
+    )
+    session = TemplateNameSession(template)
+
+    require_unique_template_name(
+        "Standard Week",
+        organization_id,
+        session,
+        template.id,
+    )
 
 
 def create_provider_for_shift_requests(display_name: str) -> Provider:
@@ -425,6 +531,111 @@ def test_create_cloned_weekly_availability_row_targets_new_period() -> None:
     assert availability.max_shifts_requested == 3
     assert availability.min_shifts_requested_units == 2
     assert availability.max_shifts_requested_units == 6
+
+
+def test_create_template_slot_maps_write_contract() -> None:
+    organization_id = uuid4()
+    template_id = uuid4()
+    room_id = uuid4()
+    request = ScheduleStructureTemplateSlotWrite(
+        weekday="monday",
+        room_id=room_id,
+        shift_type="first_half",
+        start_time=time(7, 0),
+        end_time=time(11, 0),
+        display_order=2,
+    )
+
+    slot = create_template_slot(request, template_id, organization_id)
+
+    assert slot.organization_id == organization_id
+    assert slot.template_id == template_id
+    assert slot.weekday == "monday"
+    assert slot.room_id == room_id
+    assert slot.shift_type == "first_half"
+    assert slot.start_time == time(7, 0)
+    assert slot.end_time == time(11, 0)
+    assert slot.display_order == 2
+
+
+def test_template_weekday_maps_to_target_schedule_period_date() -> None:
+    schedule_period = SchedulePeriod(
+        id=uuid4(),
+        organization_id=uuid4(),
+        name="Week of July 1",
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 7),
+        status="draft",
+    )
+
+    schedule_date = schedule_date_for_template_weekday(schedule_period, "monday")
+
+    assert schedule_date == date(2026, 7, 6)
+
+
+def test_applied_template_slot_maps_room_and_clears_provider_shape() -> None:
+    organization_id = uuid4()
+    center_id = uuid4()
+    room_id = uuid4()
+    template_id = uuid4()
+    schedule_period = SchedulePeriod(
+        id=uuid4(),
+        organization_id=organization_id,
+        name="Week of May 4",
+        start_date=date(2026, 5, 4),
+        end_date=date(2026, 5, 10),
+        status="draft",
+    )
+    room = Room(
+        id=room_id,
+        organization_id=organization_id,
+        center_id=center_id,
+        name="OR 1",
+        display_order=1,
+        md_only=False,
+        is_active=True,
+    )
+    slot = ScheduleStructureTemplateSlot(
+        id=uuid4(),
+        organization_id=organization_id,
+        template_id=template_id,
+        weekday="monday",
+        room_id=room_id,
+        shift_type="full_shift",
+        start_time=time(7, 0),
+        end_time=time(15, 0),
+        display_order=0,
+    )
+
+    applied_slot = applied_template_slot(slot, room, schedule_period)
+
+    assert applied_slot.room_id == room_id
+    assert applied_slot.center_id == center_id
+    assert applied_slot.schedule_date == date(2026, 5, 4)
+    assert applied_slot.start_time == datetime(2026, 5, 4, 7, 0, tzinfo=UTC)
+    assert applied_slot.end_time == datetime(2026, 5, 4, 15, 0, tzinfo=UTC)
+    assert not hasattr(applied_slot, "provider_id")
+
+
+def test_skipped_template_slot_reports_unavailable_room() -> None:
+    room_id = uuid4()
+    slot = ScheduleStructureTemplateSlot(
+        id=uuid4(),
+        organization_id=uuid4(),
+        template_id=uuid4(),
+        weekday="friday",
+        room_id=room_id,
+        shift_type="full_shift",
+        start_time=time(7, 0),
+        end_time=time(15, 0),
+        display_order=0,
+    )
+
+    skipped_slot = skipped_template_slot(slot)
+
+    assert skipped_slot.room_id == room_id
+    assert skipped_slot.weekday == "friday"
+    assert skipped_slot.reason == "room_unavailable"
 
 
 def test_stable_assignment_request_preserves_parent_slot_date() -> None:

@@ -66,8 +66,8 @@ Rules:
 - `unset` means incomplete availability for completion checks.
 - `none` means explicitly unavailable and counts as complete input.
 - `none` and `unset` are exclusive.
-- Provider Portal saves must not convert `unset` to `none`.
-- Any `unset` to `none` save normalization is admin-interface-only behavior.
+- Provider Portal saves convert remaining `unset` weekdays to `none` so a saved week records that the Provider reviewed the week.
+- Providers who have not saved an open required week remain identifiable by `unset` weekday availability.
 - Published schedule weeks are read-only.
 - Draft schedule weeks are editable.
 
@@ -133,7 +133,7 @@ Backend:
 - Use explicit service-layer typed models for account state and availability completion inputs and outputs.
 - Use Provider Portal `me` routes for Provider self-service APIs.
 - Use admin-only route dependencies for admin APIs.
-- Keep Provider Portal availability persistence truthful by preserving or rejecting `unset`, not normalizing it to `none`.
+- Normalize remaining `unset` weekdays to `none` when a Provider saves weekly availability so reminders target Providers who have not tried to submit the week.
 
 Suggested contract shapes:
 

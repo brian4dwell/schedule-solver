@@ -1,6 +1,9 @@
+from datetime import UTC
 from datetime import date
 from datetime import datetime
+from datetime import time
 from uuid import UUID
+from uuid import uuid4
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -20,8 +23,12 @@ from app.db.models import ProviderFairnessEvent
 from app.db.models import ProviderFairnessSnapshot
 from app.db.models import ProviderFairnessState
 from app.db.models import ProviderScheduleWeekAvailability
+from app.db.models import Room
+from app.db.models import Center
 from app.db.models import ScheduleJob
 from app.db.models import SchedulePeriod
+from app.db.models import ScheduleStructureTemplate
+from app.db.models import ScheduleStructureTemplateSlot
 from app.db.models import ScheduleVersion
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
@@ -41,6 +48,15 @@ from app.schemas.schedule import SchedulePeriodCreate
 from app.schemas.schedule import SchedulePeriodRead
 from app.schemas.schedule import SchedulePeriodRenameRequest
 from app.schemas.schedule import SchedulePublishResponse
+from app.schemas.schedule import ScheduleStructureTemplateAppliedSlot
+from app.schemas.schedule import ScheduleStructureTemplateApplyRequest
+from app.schemas.schedule import ScheduleStructureTemplateApplyResponse
+from app.schemas.schedule import ScheduleStructureTemplateRead
+from app.schemas.schedule import ScheduleStructureTemplateSkippedSlot
+from app.schemas.schedule import ScheduleStructureTemplateSlotRead
+from app.schemas.schedule import ScheduleStructureTemplateSlotWrite
+from app.schemas.schedule import ScheduleStructureTemplateWrite
+from app.schemas.schedule import ScheduleTemplateWeekday
 from app.schemas.schedule import ScheduleVersionDetailRead
 from app.schemas.schedule import ScheduleVersionRead
 from app.db.models.scheduling import current_utc_time
@@ -454,6 +470,225 @@ def validate_schedule_period_dates(request: SchedulePeriodCreate) -> None:
         raise HTTPException(status_code=400, detail="End date must be on or after start date")
 
 
+def normalized_template_name(name: str) -> str:
+    normalized_name = name.strip()
+    has_name = len(normalized_name) > 0
+
+    if not has_name:
+        raise HTTPException(status_code=400, detail="Template name is required")
+
+    return normalized_name
+
+
+def require_schedule_structure_template(
+    template_id: UUID,
+    organization_id: UUID,
+    session: Session,
+) -> ScheduleStructureTemplate:
+    statement = select(ScheduleStructureTemplate)
+    statement = statement.where(ScheduleStructureTemplate.id == template_id)
+    statement = statement.where(ScheduleStructureTemplate.organization_id == organization_id)
+    template = session.scalar(statement)
+
+    if template is None:
+        raise HTTPException(status_code=404, detail="Schedule structure template not found")
+
+    return template
+
+
+def template_with_name(
+    name: str,
+    organization_id: UUID,
+    session: Session,
+) -> ScheduleStructureTemplate | None:
+    statement = select(ScheduleStructureTemplate)
+    statement = statement.where(ScheduleStructureTemplate.organization_id == organization_id)
+    statement = statement.where(ScheduleStructureTemplate.name == name)
+    template = session.scalar(statement)
+    return template
+
+
+def require_unique_template_name(
+    name: str,
+    organization_id: UUID,
+    session: Session,
+    current_template_id: UUID | None = None,
+) -> None:
+    template = template_with_name(name, organization_id, session)
+
+    if template is None:
+        return
+
+    same_template = template.id == current_template_id
+
+    if same_template:
+        return
+
+    raise HTTPException(status_code=409, detail="A schedule structure template with this name already exists")
+
+
+def slots_for_template(
+    template_id: UUID,
+    organization_id: UUID,
+    session: Session,
+) -> list[ScheduleStructureTemplateSlot]:
+    statement = select(ScheduleStructureTemplateSlot)
+    statement = statement.where(ScheduleStructureTemplateSlot.template_id == template_id)
+    statement = statement.where(ScheduleStructureTemplateSlot.organization_id == organization_id)
+    statement = statement.order_by(
+        ScheduleStructureTemplateSlot.weekday,
+        ScheduleStructureTemplateSlot.display_order,
+        ScheduleStructureTemplateSlot.id,
+    )
+    slots = list(session.scalars(statement))
+    return slots
+
+
+def read_model_for_template(
+    template: ScheduleStructureTemplate,
+    slots: list[ScheduleStructureTemplateSlot],
+) -> ScheduleStructureTemplateRead:
+    slot_reads = [
+        ScheduleStructureTemplateSlotRead.model_validate(slot)
+        for slot in slots
+    ]
+    template_read = ScheduleStructureTemplateRead.model_validate(template)
+    template_read.slots = slot_reads
+    return template_read
+
+
+def create_template_slot(
+    request: ScheduleStructureTemplateSlotWrite,
+    template_id: UUID,
+    organization_id: UUID,
+) -> ScheduleStructureTemplateSlot:
+    slot = ScheduleStructureTemplateSlot(
+        organization_id=organization_id,
+        template_id=template_id,
+        weekday=request.weekday,
+        room_id=request.room_id,
+        shift_type=request.shift_type,
+        start_time=request.start_time,
+        end_time=request.end_time,
+        display_order=request.display_order,
+    )
+    return slot
+
+
+def replace_template_slots(
+    template_id: UUID,
+    slots: list[ScheduleStructureTemplateSlotWrite],
+    organization_id: UUID,
+    session: Session,
+) -> list[ScheduleStructureTemplateSlot]:
+    statement = sqlalchemy_delete(ScheduleStructureTemplateSlot)
+    statement = statement.where(ScheduleStructureTemplateSlot.template_id == template_id)
+    statement = statement.where(ScheduleStructureTemplateSlot.organization_id == organization_id)
+    session.execute(statement)
+    template_slots: list[ScheduleStructureTemplateSlot] = []
+
+    for slot_request in slots:
+        slot = create_template_slot(slot_request, template_id, organization_id)
+        session.add(slot)
+        template_slots.append(slot)
+
+    return template_slots
+
+
+def weekday_index(weekday: ScheduleTemplateWeekday) -> int:
+    if weekday == "monday":
+        return 0
+
+    if weekday == "tuesday":
+        return 1
+
+    if weekday == "wednesday":
+        return 2
+
+    if weekday == "thursday":
+        return 3
+
+    if weekday == "friday":
+        return 4
+
+    if weekday == "saturday":
+        return 5
+
+    return 6
+
+
+def schedule_date_for_template_weekday(
+    schedule_period: SchedulePeriod,
+    weekday: ScheduleTemplateWeekday,
+) -> date:
+    period_start_weekday = schedule_period.start_date.weekday()
+    target_weekday = weekday_index(weekday)
+    weekday_offset = (target_weekday - period_start_weekday + 7) % 7
+    schedule_date = schedule_period.start_date.toordinal() + weekday_offset
+    date_value = date.fromordinal(schedule_date)
+    return date_value
+
+
+def datetime_for_template_slot(
+    schedule_date: date,
+    slot_time: time,
+) -> datetime:
+    date_time = datetime.combine(schedule_date, slot_time, tzinfo=UTC)
+    return date_time
+
+
+def active_room_for_template_slot(
+    slot: ScheduleStructureTemplateSlot,
+    organization_id: UUID,
+    session: Session,
+) -> Room | None:
+    statement = select(Room)
+    statement = statement.join(Center, Center.id == Room.center_id)
+    statement = statement.where(Room.id == slot.room_id)
+    statement = statement.where(Room.organization_id == organization_id)
+    statement = statement.where(Room.is_active.is_(True))
+    statement = statement.where(Center.organization_id == organization_id)
+    statement = statement.where(Center.is_active.is_(True))
+    room = session.scalar(statement)
+    return room
+
+
+def skipped_template_slot(
+    slot: ScheduleStructureTemplateSlot,
+) -> ScheduleStructureTemplateSkippedSlot:
+    message = "Room is inactive or unavailable."
+    skipped_slot = ScheduleStructureTemplateSkippedSlot(
+        weekday=slot.weekday,
+        room_id=slot.room_id,
+        reason="room_unavailable",
+        message=message,
+    )
+    return skipped_slot
+
+
+def applied_template_slot(
+    slot: ScheduleStructureTemplateSlot,
+    room: Room,
+    schedule_period: SchedulePeriod,
+) -> ScheduleStructureTemplateAppliedSlot:
+    schedule_date = schedule_date_for_template_weekday(schedule_period, slot.weekday)
+    start_time = datetime_for_template_slot(schedule_date, slot.start_time)
+    end_time = datetime_for_template_slot(schedule_date, slot.end_time)
+    room_slot_id = uuid4()
+    applied_slot = ScheduleStructureTemplateAppliedSlot(
+        room_slot_id=room_slot_id,
+        weekday=slot.weekday,
+        room_id=room.id,
+        center_id=room.center_id,
+        shift_type=slot.shift_type,
+        schedule_date=schedule_date,
+        start_time=start_time,
+        end_time=end_time,
+        display_order=slot.display_order,
+    )
+    return applied_slot
+
+
 def create_assignment_from_request(
     requested_assignment: ScheduleAssignmentCreate,
     schedule_period_id: UUID,
@@ -750,6 +985,152 @@ def save_schedule_version(
         version=schedule_version,
         assignments=assignments,
         violations=violations,
+    )
+    return response
+
+
+@router.get("/schedule-structure-templates", response_model=list[ScheduleStructureTemplateRead])
+def list_schedule_structure_templates(
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> list[ScheduleStructureTemplateRead]:
+    statement = select(ScheduleStructureTemplate)
+    statement = statement.where(ScheduleStructureTemplate.organization_id == organization_id)
+    statement = statement.order_by(ScheduleStructureTemplate.name, ScheduleStructureTemplate.id)
+    templates = list(session.scalars(statement))
+    template_reads: list[ScheduleStructureTemplateRead] = []
+
+    for template in templates:
+        slots = slots_for_template(template.id, organization_id, session)
+        template_read = read_model_for_template(template, slots)
+        template_reads.append(template_read)
+
+    return template_reads
+
+
+@router.post(
+    "/schedule-structure-templates",
+    response_model=ScheduleStructureTemplateRead,
+    status_code=201,
+)
+def create_schedule_structure_template(
+    request: ScheduleStructureTemplateWrite,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> ScheduleStructureTemplateRead:
+    name = normalized_template_name(request.name)
+    require_unique_template_name(name, organization_id, session)
+    template = ScheduleStructureTemplate(
+        organization_id=organization_id,
+        name=name,
+    )
+    session.add(template)
+    session.flush()
+    slots = replace_template_slots(
+        template.id,
+        request.slots,
+        organization_id,
+        session,
+    )
+    session.flush()
+    session.commit()
+    session.refresh(template)
+
+    for slot in slots:
+        session.refresh(slot)
+
+    response = read_model_for_template(template, slots)
+    return response
+
+
+@router.put(
+    "/schedule-structure-templates/{template_id}",
+    response_model=ScheduleStructureTemplateRead,
+)
+def update_schedule_structure_template(
+    template_id: UUID,
+    request: ScheduleStructureTemplateWrite,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> ScheduleStructureTemplateRead:
+    template = require_schedule_structure_template(template_id, organization_id, session)
+    name = normalized_template_name(request.name)
+    require_unique_template_name(name, organization_id, session, template.id)
+    template.name = name
+    slots = replace_template_slots(
+        template.id,
+        request.slots,
+        organization_id,
+        session,
+    )
+    session.flush()
+    session.commit()
+    session.refresh(template)
+
+    for slot in slots:
+        session.refresh(slot)
+
+    response = read_model_for_template(template, slots)
+    return response
+
+
+@router.delete(
+    "/schedule-structure-templates/{template_id}",
+    response_model=ScheduleStructureTemplateRead,
+)
+def delete_schedule_structure_template(
+    template_id: UUID,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> ScheduleStructureTemplateRead:
+    template = require_schedule_structure_template(template_id, organization_id, session)
+    slots = slots_for_template(template.id, organization_id, session)
+    response = read_model_for_template(template, slots)
+    statement = sqlalchemy_delete(ScheduleStructureTemplateSlot)
+    statement = statement.where(ScheduleStructureTemplateSlot.template_id == template.id)
+    statement = statement.where(ScheduleStructureTemplateSlot.organization_id == organization_id)
+    session.execute(statement)
+    session.delete(template)
+    session.commit()
+    return response
+
+
+@router.post(
+    "/schedule-structure-templates/{template_id}/apply",
+    response_model=ScheduleStructureTemplateApplyResponse,
+)
+def apply_schedule_structure_template(
+    template_id: UUID,
+    request: ScheduleStructureTemplateApplyRequest,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> ScheduleStructureTemplateApplyResponse:
+    template = require_schedule_structure_template(template_id, organization_id, session)
+    schedule_period = require_schedule_period(
+        request.schedule_period_id,
+        organization_id,
+        session,
+    )
+    slots = slots_for_template(template.id, organization_id, session)
+    applied_slots: list[ScheduleStructureTemplateAppliedSlot] = []
+    skipped_slots: list[ScheduleStructureTemplateSkippedSlot] = []
+
+    for slot in slots:
+        room = active_room_for_template_slot(slot, organization_id, session)
+
+        if room is None:
+            skipped_slot = skipped_template_slot(slot)
+            skipped_slots.append(skipped_slot)
+            continue
+
+        applied_slot = applied_template_slot(slot, room, schedule_period)
+        applied_slots.append(applied_slot)
+
+    template_read = read_model_for_template(template, slots)
+    response = ScheduleStructureTemplateApplyResponse(
+        template=template_read,
+        applied_slots=applied_slots,
+        skipped_slots=skipped_slots,
     )
     return response
 

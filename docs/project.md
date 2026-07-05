@@ -1,6 +1,6 @@
 # Schedule Solver Living Document
 
-Updated: 2026-05-02
+Updated: 2026-07-05
 
 ## Purpose
 
@@ -22,6 +22,7 @@ The scheduler should be able to:
 - Track Provider weekly availability for each schedule period.
 - Track Provider min/max requested shifts as soft scheduling preferences.
 - Build a schedule manually by placing Rooms into dated slots and assigning Providers.
+- Save and load reusable schedule room/day structure templates.
 - See why a Provider is or is not eligible for a slot.
 - Save schedule drafts without losing invalid or warning-level assignments.
 - Review hard blockers and warnings before publishing.
@@ -59,6 +60,7 @@ Use these terms consistently:
 - **Provider Center Credential**: Whether a Provider may work at a Center.
 - **Provider Room Type Skill**: Whether a Provider can cover a Room Type.
 - **Schedule Period**: The schedule window being planned. The current UI treats these as schedule weeks.
+- **Schedule Structure Template**: Named reusable Room/day slot layout for pre-populating a Schedule Period.
 - **Schedule Version**: Immutable saved draft or published version for a Schedule Period.
 - **Assignment**: Provider coverage for one room slot in one Schedule Version.
 - **Constraint Violation**: Persisted explanation for a schedule issue.
@@ -191,6 +193,7 @@ Implemented in `apps/api`:
 - Docker Compose support for Postgres and Redis.
 - Local organization dependency through `get_current_organization_id`.
 - Schedule period, version, assignment, publish, and generation routes.
+- Schedule structure template routes for reusable room/day layouts.
 - Provider eligibility service with typed contracts.
 - In-process solver service skeleton using typed solver contracts.
 
@@ -238,6 +241,12 @@ POST   /schedule-versions/draft
 
 POST   /schedule-provider-eligibility
 
+GET    /schedule-structure-templates
+POST   /schedule-structure-templates
+PUT    /schedule-structure-templates/{template_id}
+DELETE /schedule-structure-templates/{template_id}
+POST   /schedule-structure-templates/{template_id}/apply
+
 GET    /schedule-weeks/{schedule_week_id}/providers/{provider_id}/availability
 PUT    /schedule-weeks/{schedule_week_id}/providers/{provider_id}/availability
 DELETE /schedule-weeks/{schedule_week_id}/providers/{provider_id}/availability
@@ -260,6 +269,8 @@ Core tables:
 - `provider_schedule_week_availability`
 - `shift_requirements`
 - `schedule_periods`
+- `schedule_structure_templates`
+- `schedule_structure_template_slots`
 - `schedule_jobs`
 - `schedule_versions`
 - `assignments`
@@ -301,6 +312,7 @@ The UI currently uses real API data for:
 - Provider Center Credentials.
 - Provider Room Type Skills.
 - Schedule Periods.
+- Schedule Structure Templates.
 - Schedule Versions.
 - Assignments.
 - Provider schedule-week availability.
@@ -313,6 +325,7 @@ The schedule workspace currently supports:
 - Ineligible Provider visibility with reason text.
 - Backend eligibility verification on Provider selection.
 - Draft save through persisted Schedule Versions.
+- Schedule template save, load, and delete for reusable Room/day structures.
 - Publish through the API.
 - Header summary for unset Provider availability.
 - Toggle to reveal Providers with unset availability.

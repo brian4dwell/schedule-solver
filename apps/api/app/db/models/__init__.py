@@ -20,6 +20,8 @@ from app.db.models.scheduling import RoomRoomType
 from app.db.models.scheduling import RoomType
 from app.db.models.scheduling import ScheduleJob
 from app.db.models.scheduling import SchedulePeriod
+from app.db.models.scheduling import ScheduleStructureTemplate
+from app.db.models.scheduling import ScheduleStructureTemplateSlot
 from app.db.models.scheduling import ScheduleVersion
 from app.db.models.scheduling import ShiftRequirement
 from app.db.models.scheduling import ManagerProviderCenterPreference
@@ -48,6 +50,8 @@ __all__ = [
     "RoomType",
     "ScheduleJob",
     "SchedulePeriod",
+    "ScheduleStructureTemplate",
+    "ScheduleStructureTemplateSlot",
     "ScheduleVersion",
     "ShiftRequirement",
     "ManagerProviderCenterPreference",

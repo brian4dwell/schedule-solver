@@ -27,12 +27,46 @@ function providerPortalHref(section: ProviderPortalSection, weekId: string | nul
 
 function providerPortalTopBarLinkClass(isActive: boolean) {
   const baseClass =
-    "inline-flex h-9 items-center whitespace-nowrap rounded-md px-3 text-sm font-medium";
-  const activeClass = "bg-slate-950 text-white";
-  const inactiveClass = "text-slate-700 hover:bg-slate-100 hover:text-slate-950";
-  const stateClass = isActive ? activeClass : inactiveClass;
-  const linkClass = `${baseClass} ${stateClass}`;
+    "inline-flex h-9 items-center whitespace-nowrap rounded-md px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2";
+
+  if (isActive) {
+    const activeClass = "bg-teal-700 text-white shadow-sm";
+    const linkClass = `${baseClass} ${activeClass}`;
+    return linkClass;
+  }
+
+  const inactiveClass = "text-slate-700 hover:bg-white hover:text-teal-950";
+  const linkClass = `${baseClass} ${inactiveClass}`;
+
   return linkClass;
+}
+
+function providerPortalTopBarNavigationClass() {
+  const baseClass = "inline-flex flex-wrap gap-1 rounded-md border p-1 shadow-sm";
+  const colorClass = "border-teal-200 bg-teal-50";
+  const navigationClass = `${baseClass} ${colorClass}`;
+
+  return navigationClass;
+}
+
+function selectedProviderPortalWeekId(
+  requestedWeekExists: boolean,
+  requestedWeekId: string | null,
+  firstWeekId: string | null,
+) {
+  if (requestedWeekExists) {
+    return requestedWeekId;
+  }
+
+  return firstWeekId;
+}
+
+function providerPortalTopBarNavItemCurrent(isActive: boolean) {
+  if (isActive) {
+    return "page";
+  }
+
+  return undefined;
 }
 
 export function ProviderPortalTopBarNavigation({
@@ -47,21 +81,32 @@ export function ProviderPortalTopBarNavigation({
     const matchesWeek = record.scheduleWeekId === requestedWeekId;
     return matchesWeek;
   });
-  const selectedWeekId = requestedWeekExists ? requestedWeekId : firstWeekId;
+  const selectedWeekId = selectedProviderPortalWeekId(
+    requestedWeekExists,
+    requestedWeekId,
+    firstWeekId,
+  );
+  const navigationClass = providerPortalTopBarNavigationClass();
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <nav aria-label="Provider portal sections" className={navigationClass}>
       {providerPortalNavigationItems.map((item) => {
         const itemIsActive = item.id === activeSection;
         const linkClass = providerPortalTopBarLinkClass(itemIsActive);
         const href = providerPortalHref(item.id, selectedWeekId);
+        const ariaCurrent = providerPortalTopBarNavItemCurrent(itemIsActive);
 
         return (
-          <Link key={item.id} href={href} className={linkClass}>
+          <Link
+            key={item.id}
+            aria-current={ariaCurrent}
+            href={href}
+            className={linkClass}
+          >
             {item.label}
           </Link>
         );
       })}
-    </div>
+    </nav>
   );
 }
