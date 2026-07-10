@@ -274,7 +274,9 @@ def test_solver_best_effort_returns_partial_schedule_for_overlapping_shifts() ->
     result = solve_schedule(solver_input, "best_effort")
 
     assert result.is_feasible is False
-    assert len(result.assignments) == 1
+    assert len(result.assignments) == 2
+    assert result.assignments[0].provider_id == provider.id
+    assert result.assignments[1].provider_id is None
     assert len(result.violations) == 1
     assert result.violations[0].constraint_type == "unfilled_shift_requirement"
     assert "best effort assigned 0 and left 1 unfilled" in result.violations[0].message
@@ -305,7 +307,9 @@ def test_solver_best_effort_reports_unfillable_shift_without_assignments() -> No
     result = solve_schedule(solver_input, "best_effort")
 
     assert result.is_feasible is False
-    assert result.assignments == []
+    assert len(result.assignments) == 1
+    assert result.assignments[0].provider_id is None
+    assert result.assignments[0].room_slot_id == shift.room_slot_id
     assert len(result.violations) == 1
     assert result.violations[0].constraint_type == "unfillable_shift_requirement"
     assert "provider_unavailable (1)" in result.violations[0].message

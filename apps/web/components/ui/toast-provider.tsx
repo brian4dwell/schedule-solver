@@ -10,11 +10,20 @@ import {
 
 export type ToastTone = "success" | "error" | "warning" | "info";
 
+export type ToastActionTone = "primary" | "secondary" | "danger";
+
+export type ToastAction = {
+  label: string;
+  tone: ToastActionTone;
+  onClick: () => void | Promise<void>;
+};
+
 export type ToastInput = {
   title: string;
   description?: string;
   tone: ToastTone;
-  durationMs?: number;
+  durationMs?: number | null;
+  actions?: ToastAction[];
 };
 
 type ToastRecord = {
@@ -22,10 +31,11 @@ type ToastRecord = {
   title: string;
   description?: string;
   tone: ToastTone;
+  actions?: ToastAction[];
 };
 
 type ToastContextValue = {
-  showToast: (toast: ToastInput) => void;
+  showToast: (toast: ToastInput) => string;
   dismissToast: (toastId: string) => void;
 };
 
@@ -91,6 +101,18 @@ function toastRole(tone: ToastTone) {
   return "status";
 }
 
+function toastActionClasses(tone: ToastActionTone) {
+  if (tone === "primary") {
+    return "border-teal-700 bg-teal-700 text-white hover:bg-teal-800";
+  }
+
+  if (tone === "danger") {
+    return "border-red-200 bg-red-50 text-red-700 hover:bg-red-100";
+  }
+
+  return "border-slate-200 bg-white text-slate-700 hover:bg-slate-50";
+}
+
 export function ToastProvider({ children }: ToastProviderProps) {
   const [toasts, setToasts] = useState<ToastRecord[]>([]);
 
@@ -113,6 +135,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
         title: toast.title,
         description: toast.description,
         tone: toast.tone,
+        actions: toast.actions,
       };
 
       setToasts((currentToasts) => {
@@ -121,12 +144,26 @@ export function ToastProvider({ children }: ToastProviderProps) {
         return nextToasts;
       });
 
-      window.setTimeout(() => {
-        dismissToast(toastId);
-      }, durationMs);
+      if (durationMs !== null) {
+        window.setTimeout(() => {
+          dismissToast(toastId);
+        }, durationMs);
+      }
+
+      return toastId;
     },
     [dismissToast],
   );
+
+  function handleToastActionClick(toast: ToastRecord, action: ToastAction) {
+    dismissToast(toast.id);
+
+    const actionResult = action.onClick();
+    const actionPromise = Promise.resolve(actionResult);
+    actionPromise.catch(() => {
+      return undefined;
+    });
+  }
 
   const contextValue = useMemo(() => {
     const value = {
@@ -159,6 +196,24 @@ export function ToastProvider({ children }: ToastProviderProps) {
                     <p className="mt-1 text-sm leading-5 opacity-80">
                       {toast.description}
                     </p>
+                  ) : null}
+                  {toast.actions !== undefined ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {toast.actions.map((action) => {
+                        const actionClass = toastActionClasses(action.tone);
+
+                        return (
+                          <button
+                            key={action.label}
+                            type="button"
+                            className={`inline-flex h-8 items-center justify-center rounded-md border px-3 text-xs font-semibold ${actionClass}`}
+                            onClick={() => handleToastActionClick(toast, action)}
+                          >
+                            {action.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   ) : null}
                 </div>
                 <button

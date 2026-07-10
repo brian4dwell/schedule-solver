@@ -198,8 +198,12 @@ export type ProviderSlotEligibilityPayload = {
   end_time: string;
 };
 
-const apiErrorResponseSchema = z.object({
+const apiStringErrorResponseSchema = z.object({
   detail: z.string().min(1),
+});
+
+const apiScheduleGenerateErrorResponseSchema = z.object({
+  detail: scheduleGenerateResponseApiSchema,
 });
 
 async function serverAuthorizationHeaders(): Promise<Record<string, string>> {
@@ -252,14 +256,64 @@ function apiErrorMessageFromText(responseText: string): string {
     return responseText;
   }
 
-  const parsedErrorResult = apiErrorResponseSchema.safeParse(parsedJson);
-  const detailIsMissing = !parsedErrorResult.success;
+  const parsedGenerateErrorResult =
+    apiScheduleGenerateErrorResponseSchema.safeParse(parsedJson);
+
+  if (parsedGenerateErrorResult.success) {
+    const message = scheduleGenerateErrorMessage(
+      parsedGenerateErrorResult.data.detail,
+    );
+    return message;
+  }
+
+  const parsedStringErrorResult = apiStringErrorResponseSchema.safeParse(parsedJson);
+  const detailIsMissing = !parsedStringErrorResult.success;
 
   if (detailIsMissing) {
     return responseText;
   }
 
-  const message = parsedErrorResult.data.detail;
+  const message = parsedStringErrorResult.data.detail;
+  return message;
+}
+
+function meaningfulGenerateViolations(
+  detail: ScheduleGenerateResponseApi,
+) {
+  const meaningfulViolations = detail.violations.filter((violation) => {
+    const isGenericSolverFailure =
+      violation.constraint_type === "infeasible_solver_model";
+    return !isGenericSolverFailure;
+  });
+
+  if (meaningfulViolations.length > 0) {
+    return meaningfulViolations;
+  }
+
+  return detail.violations;
+}
+
+function scheduleGenerateErrorMessage(detail: ScheduleGenerateResponseApi): string {
+  const meaningfulViolations = meaningfulGenerateViolations(detail);
+  const violationMessages = meaningfulViolations.map((violation) => {
+    return violation.message;
+  });
+  const hasViolationMessages = violationMessages.length > 0;
+
+  if (!hasViolationMessages) {
+    return "Schedule generation could not satisfy all constraints.";
+  }
+
+  const visibleMessages = violationMessages.slice(0, 3);
+  const visibleMessageText = visibleMessages.join("\n");
+  const remainingCount = violationMessages.length - visibleMessages.length;
+  const hasRemainingMessages = remainingCount > 0;
+
+  if (!hasRemainingMessages) {
+    return visibleMessageText;
+  }
+
+  const message = `${visibleMessageText}\n${remainingCount} more generation blockers.`;
   return message;
 }
 

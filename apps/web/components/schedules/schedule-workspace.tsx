@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   applyScheduleStructureTemplate,
@@ -121,6 +122,28 @@ type ConstraintRow = {
   subject: string;
   constraint: string;
   message: string;
+};
+
+type ScheduleDraftAssignmentSnapshot = {
+  id: string;
+  slotDate: string;
+  centerId: string;
+  roomId: string;
+  shiftType: ScheduleRoomAssignment["shiftType"];
+  providerId: string | null;
+  startTime: string;
+  endTime: string;
+  sortOrder: number;
+};
+
+type ScheduleDraftSnapshot = {
+  notes: string;
+  assignments: ScheduleDraftAssignmentSnapshot[];
+};
+
+const emptyScheduleDraftSnapshot: ScheduleDraftSnapshot = {
+  notes: "",
+  assignments: [],
 };
 
 const dayColumns: DayColumn[] = [
@@ -322,6 +345,47 @@ function versionFromDetail(
   return parsedVersion;
 }
 
+function preservedBestEffortAssignment(
+  assignment: ScheduleRoomAssignment,
+): ScheduleRoomAssignment {
+  const preservedAssignment = {
+    ...assignment,
+    providerId: null,
+    validationStatus: "invalid" as const,
+    validationMessages: ["Best-effort solve left this slot unassigned."],
+  };
+  return preservedAssignment;
+}
+
+function versionWithPreservedBestEffortSlots(
+  previousVersion: ScheduleVersion,
+  generatedVersion: ScheduleVersion,
+): ScheduleVersion {
+  const generatedAssignmentIds = new Set(
+    generatedVersion.assignments.map((assignment) => {
+      return assignment.id;
+    }),
+  );
+  const missingAssignments = previousVersion.assignments.filter((assignment) => {
+    const assignmentWasGenerated = generatedAssignmentIds.has(assignment.id);
+    return !assignmentWasGenerated;
+  });
+  const preservedAssignments = missingAssignments.map((assignment) => {
+    return preservedBestEffortAssignment(assignment);
+  });
+  const assignments = [
+    ...generatedVersion.assignments,
+    ...preservedAssignments,
+  ];
+  const reorderedAssignments = reorderAssignments(assignments);
+  const version = {
+    ...generatedVersion,
+    assignments: reorderedAssignments,
+  };
+  const parsedVersion = scheduleVersionSchema.parse(version);
+  return parsedVersion;
+}
+
 function publishEventsFromDetail(
   detail: ScheduleVersionDetail | null,
 ): SchedulePublishEvent[] {
@@ -343,6 +407,101 @@ function publishEventsFromDetail(
   };
   const parsedPublishEvent = schedulePublishEventSchema.parse(publishEvent);
   return [parsedPublishEvent];
+}
+
+function scheduleDraftAssignmentSnapshot(
+  assignment: ScheduleRoomAssignment,
+): ScheduleDraftAssignmentSnapshot {
+  const snapshot = {
+    id: assignment.id,
+    slotDate: assignment.slotDate,
+    centerId: assignment.centerId,
+    roomId: assignment.roomId,
+    shiftType: assignment.shiftType,
+    providerId: assignment.providerId,
+    startTime: assignment.startTime,
+    endTime: assignment.endTime,
+    sortOrder: assignment.sortOrder,
+  };
+  return snapshot;
+}
+
+function scheduleDraftSnapshot(version: ScheduleVersion): ScheduleDraftSnapshot {
+  const orderedAssignments = reorderAssignments(version.assignments);
+  const assignmentSnapshots = orderedAssignments.map((assignment) => {
+    const snapshot = scheduleDraftAssignmentSnapshot(assignment);
+    return snapshot;
+  });
+  const snapshot = {
+    notes: version.notes,
+    assignments: assignmentSnapshots,
+  };
+  return snapshot;
+}
+
+function scheduleDraftSnapshotsMatch(
+  currentSnapshot: ScheduleDraftSnapshot,
+  savedSnapshot: ScheduleDraftSnapshot,
+) {
+  const currentText = JSON.stringify(currentSnapshot);
+  const savedText = JSON.stringify(savedSnapshot);
+  const snapshotsMatch = currentText === savedText;
+  return snapshotsMatch;
+}
+
+function navigationHrefFromClickEvent(event: MouseEvent) {
+  if (event.defaultPrevented) {
+    return null;
+  }
+
+  if (event.button !== 0) {
+    return null;
+  }
+
+  const usesModifiedClick =
+    event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
+
+  if (usesModifiedClick) {
+    return null;
+  }
+
+  const target = event.target;
+
+  if (!(target instanceof Element)) {
+    return null;
+  }
+
+  const anchor = target.closest("a");
+
+  if (!(anchor instanceof HTMLAnchorElement)) {
+    return null;
+  }
+
+  const targetOpensElsewhere = anchor.target !== "";
+
+  if (targetOpensElsewhere) {
+    return null;
+  }
+
+  const destinationUrl = new URL(anchor.href);
+  const currentUrl = new URL(window.location.href);
+  const originMatches = destinationUrl.origin === currentUrl.origin;
+
+  if (!originMatches) {
+    return null;
+  }
+
+  const destinationHref =
+    destinationUrl.pathname + destinationUrl.search + destinationUrl.hash;
+  const currentHref =
+    currentUrl.pathname + currentUrl.search + currentUrl.hash;
+  const staysOnCurrentHref = destinationHref === currentHref;
+
+  if (staysOnCurrentHref) {
+    return null;
+  }
+
+  return destinationHref;
 }
 
 function versionOptionLabel(version: PersistedScheduleVersion) {
@@ -1466,7 +1625,12 @@ export function ScheduleWorkspace({
   schedulePeriod,
   scheduleId,
 }: ScheduleWorkspaceProps) {
-  const { showToast } = useToast();
+  const { dismissToast, showToast } = useToast();
+  const router = useRouter();
+  const pendingNavigationToastId = useRef<string | null>(null);
+  const saveWorkingDraftRef = useRef<() => Promise<boolean>>(async () => {
+    return false;
+  });
   const availableRooms = useMemo(() => {
     return availableRoomsFromRows(rooms);
   }, [rooms]);
@@ -1907,7 +2071,7 @@ export function ScheduleWorkspace({
     }
   }
 
-  async function handleSaveDraft() {
+  async function saveWorkingDraft() {
     const nextAssignments = workingVersion.assignments.map((assignment) => {
       const room = roomForAssignment(assignment);
 
@@ -1950,6 +2114,7 @@ export function ScheduleWorkspace({
     setIsSaving(true);
     setActionMessage(null);
     updateWorkingVersion(validatedVersion);
+    let draftWasSaved = false;
 
     try {
       const detail = await saveDraftScheduleVersion(payload);
@@ -1972,6 +2137,7 @@ export function ScheduleWorkspace({
         description: "Your schedule changes were saved.",
         tone: "success",
       });
+      draftWasSaved = true;
     } catch (error) {
       captureScheduleWorkflowException({
         workflowName: "save_schedule_draft",
@@ -1987,7 +2153,17 @@ export function ScheduleWorkspace({
     } finally {
       setIsSaving(false);
     }
+
+    return draftWasSaved;
   }
+
+  async function handleSaveDraft() {
+    await saveWorkingDraft();
+  }
+
+  useEffect(() => {
+    saveWorkingDraftRef.current = saveWorkingDraft;
+  });
 
   async function handleGenerateSchedule(generationMode: "strict" | "best_effort") {
     const parentVersionId =
@@ -2030,7 +2206,11 @@ export function ScheduleWorkspace({
         return;
       }
 
-      const nextVersion = versionFromDetail(schedulePeriod, detail);
+      const generatedVersion = versionFromDetail(schedulePeriod, detail);
+      const nextVersion =
+        generationMode === "best_effort"
+          ? versionWithPreservedBestEffortSlots(workingVersion, generatedVersion)
+          : generatedVersion;
       const duration = detail.metrics.solve_duration_ms;
       setSavedVersionDetail(detail);
       setSelectedVersionId(detail.version.id);
@@ -2596,11 +2776,138 @@ export function ScheduleWorkspace({
   );
   const availabilityLoadIsComplete = availabilityByProviderId.size === providers.length;
   const availabilityReminderProviderCount = availabilityReminderProviders.length;
+  const currentDraftSnapshot = useMemo(() => {
+    const snapshot = scheduleDraftSnapshot(workingVersion);
+    return snapshot;
+  }, [workingVersion]);
+  const savedDraftSnapshot = useMemo(() => {
+    if (savedVersionDetail === null) {
+      return emptyScheduleDraftSnapshot;
+    }
+
+    const savedVersion = versionFromDetail(schedulePeriod, savedVersionDetail);
+    const snapshot = scheduleDraftSnapshot(savedVersion);
+    return snapshot;
+  }, [savedVersionDetail, schedulePeriod]);
+  const scheduleDraftIsSaved = scheduleDraftSnapshotsMatch(
+    currentDraftSnapshot,
+    savedDraftSnapshot,
+  );
+  const hasUnsavedScheduleChanges = !scheduleDraftIsSaved;
   const canPublish =
     publishBlockerCount === 0 && assignedRoomCount > 0 && hasSavedVersion;
   const hasSelectedTemplate = selectedTemplateId.length > 0;
   const canLoadTemplate = hasSelectedTemplate && !isLoadingTemplate;
   const canDeleteTemplate = hasSelectedTemplate && !isDeletingTemplate;
+
+  useEffect(() => {
+    if (!hasUnsavedScheduleChanges) {
+      const toastId = pendingNavigationToastId.current;
+
+      if (toastId !== null) {
+        dismissToast(toastId);
+        pendingNavigationToastId.current = null;
+      }
+
+      return;
+    }
+
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [dismissToast, hasUnsavedScheduleChanges]);
+
+  useEffect(() => {
+    if (!hasUnsavedScheduleChanges) {
+      return;
+    }
+
+    function clearPendingNavigationToast() {
+      const toastId = pendingNavigationToastId.current;
+
+      if (toastId === null) {
+        return;
+      }
+
+      dismissToast(toastId);
+      pendingNavigationToastId.current = null;
+    }
+
+    function keepEditingSchedule() {
+      pendingNavigationToastId.current = null;
+    }
+
+    function discardDraftAndNavigateToHref(href: string) {
+      pendingNavigationToastId.current = null;
+      router.push(href);
+    }
+
+    async function saveDraftAndNavigateToHref(href: string) {
+      pendingNavigationToastId.current = null;
+
+      const draftWasSaved = await saveWorkingDraftRef.current();
+
+      if (!draftWasSaved) {
+        return;
+      }
+
+      router.push(href);
+    }
+
+    function showUnsavedNavigationPrompt(href: string) {
+      clearPendingNavigationToast();
+
+      const toastId = showToast({
+        title: "Unsaved schedule changes",
+        description: "Save this draft before leaving, or discard the working changes.",
+        tone: "warning",
+        durationMs: null,
+        actions: [
+          {
+            label: "Save",
+            tone: "primary",
+            onClick: () => saveDraftAndNavigateToHref(href),
+          },
+          {
+            label: "Discard",
+            tone: "danger",
+            onClick: () => discardDraftAndNavigateToHref(href),
+          },
+          {
+            label: "Keep editing",
+            tone: "secondary",
+            onClick: keepEditingSchedule,
+          },
+        ],
+      });
+      pendingNavigationToastId.current = toastId;
+    }
+
+    function handleDocumentClick(event: MouseEvent) {
+      const href = navigationHrefFromClickEvent(event);
+
+      if (href === null) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      showUnsavedNavigationPrompt(href);
+    }
+
+    document.addEventListener("click", handleDocumentClick, true);
+
+    return () => {
+      document.removeEventListener("click", handleDocumentClick, true);
+    };
+  }, [dismissToast, hasUnsavedScheduleChanges, router, showToast]);
 
   return (
     <div className="space-y-5">

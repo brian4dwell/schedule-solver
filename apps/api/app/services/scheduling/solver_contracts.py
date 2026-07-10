@@ -115,7 +115,7 @@ class SolverInput(BaseModel):
 
 class SolverAssignment(BaseModel):
     room_slot_id: UUID
-    provider_id: UUID
+    provider_id: UUID | None
     shift_requirement_id: UUID | None
     center_id: UUID
     room_id: UUID | None

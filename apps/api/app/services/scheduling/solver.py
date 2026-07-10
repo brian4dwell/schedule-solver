@@ -1056,6 +1056,24 @@ def assignment_from_decision(
     return assignment
 
 
+def unassigned_assignment_from_shift(
+    shift_requirement: SolverShiftRequirement,
+    room_slot_id: UUID,
+) -> SolverAssignment:
+    assignment = SolverAssignment(
+        room_slot_id=room_slot_id,
+        provider_id=None,
+        shift_requirement_id=shift_requirement.source_shift_requirement_id,
+        center_id=shift_requirement.center_id,
+        room_id=shift_requirement.room_id,
+        required_provider_type=shift_requirement.required_provider_type,
+        shift_type=shift_requirement.shift_type,
+        start_time=shift_requirement.start_time,
+        end_time=shift_requirement.end_time,
+    )
+    return assignment
+
+
 def assignment_units_for_provider(
     provider: SolverProvider,
     assignments: list[SolverAssignment],
@@ -1248,6 +1266,11 @@ def selected_assignment_count_for_shift(
     assignment_count = 0
 
     for assignment in assignments:
+        assignment_has_provider = assignment.provider_id is not None
+
+        if not assignment_has_provider:
+            continue
+
         source_shift_requirement_id = shift_requirement.source_shift_requirement_id
         shift_matches = assignment.shift_requirement_id == source_shift_requirement_id
         slot_matches = assignment.room_slot_id == shift_requirement.room_slot_id
@@ -1259,6 +1282,39 @@ def selected_assignment_count_for_shift(
         assignment_count = assignment_count + 1
 
     return assignment_count
+
+
+def best_effort_unassigned_assignments(
+    solver_input: SolverInput,
+    provider_assignments: list[SolverAssignment],
+    assignment_counts: list[ShiftAssignmentCount],
+) -> list[SolverAssignment]:
+    assignments: list[SolverAssignment] = []
+
+    for shift_requirement in solver_input.shift_requirements:
+        assigned_count = selected_assignment_count_for_shift(
+            shift_requirement,
+            provider_assignments,
+        )
+        required_count = shift_requirement.required_provider_count
+        unfilled_count = required_count - assigned_count
+
+        for _index in range(unfilled_count):
+            assignment_index = next_assignment_index_for_shift(
+                shift_requirement,
+                assignment_counts,
+            )
+            room_slot_id = room_slot_id_for_assignment(
+                shift_requirement,
+                assignment_index,
+            )
+            assignment = unassigned_assignment_from_shift(
+                shift_requirement,
+                room_slot_id,
+            )
+            assignments.append(assignment)
+
+    return assignments
 
 
 def best_effort_violations(
@@ -1325,7 +1381,7 @@ def solver_result_from_solution(
     generation_mode: SolverGenerationMode,
     candidate_violations: list[SolverViolation],
 ) -> SolverResult:
-    assignments: list[SolverAssignment] = []
+    provider_assignments: list[SolverAssignment] = []
     selected_decisions: list[CandidateDecision] = []
 
     for decision in decisions:
@@ -1353,18 +1409,25 @@ def solver_result_from_solution(
             decision,
             room_slot_id,
         )
-        assignments.append(assignment)
+        provider_assignments.append(assignment)
 
     objective_value = solver.ObjectiveValue()
-    warnings = solver_warnings(solver_input, assignments)
+    warnings = solver_warnings(solver_input, provider_assignments)
     hard_violations: list[SolverViolation] = []
+    assignments = provider_assignments
 
     if generation_mode == "best_effort":
         hard_violations = best_effort_violations(
             solver_input,
-            assignments,
+            provider_assignments,
             candidate_violations,
         )
+        unassigned_assignments = best_effort_unassigned_assignments(
+            solver_input,
+            provider_assignments,
+            assignment_counts,
+        )
+        assignments = [*provider_assignments, *unassigned_assignments]
 
     all_violations = [*hard_violations, *warnings]
     is_feasible = len(hard_violations) == 0
