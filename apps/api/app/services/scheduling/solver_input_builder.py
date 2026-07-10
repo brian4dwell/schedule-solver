@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
+from app.db.models import Center
 from app.db.models import ManagerProviderCenterPreference
 from app.db.models import Provider
 from app.db.models import ProviderCenterCredential
@@ -74,8 +75,38 @@ def required_room_type_skills_for_room(
     return required_skills
 
 
+def center_for_id(
+    center_id: UUID,
+    centers: list[Center],
+) -> Center:
+    for center in centers:
+        center_matches = center.id == center_id
+
+        if center_matches:
+            return center
+
+    raise ValueError("Center not found for solver input.")
+
+
+def room_for_id(
+    room_id: UUID | None,
+    rooms: list[Room],
+) -> Room | None:
+    if room_id is None:
+        return None
+
+    for room in rooms:
+        room_matches = room.id == room_id
+
+        if room_matches:
+            return room
+
+    raise ValueError("Room not found for solver input.")
+
+
 def solver_room_from_model(
     room: Room,
+    center: Center,
     room_type_assignments: list[RoomRoomType],
 ) -> SolverRoom:
     required_room_type_skills = required_room_type_skills_for_room(
@@ -84,7 +115,9 @@ def solver_room_from_model(
     )
     solver_room = SolverRoom(
         id=room.id,
+        name=room.name,
         center_id=room.center_id,
+        center_name=center.name,
         md_only=room.md_only,
         is_active=room.is_active,
         required_room_type_skills=required_room_type_skills,
@@ -269,6 +302,7 @@ def solver_provider_from_model(
 
     solver_provider = SolverProvider(
         id=provider.id,
+        display_name=provider.display_name,
         is_active=provider.is_active,
         provider_type=provider.provider_type,
         fairness_debt=fairness_debt,
@@ -296,7 +330,16 @@ def solver_credential_from_model(
     return solver_credential
 
 
-def solver_shift_from_model(shift_requirement: ShiftRequirement) -> SolverShiftRequirement:
+def solver_shift_from_model(
+    shift_requirement: ShiftRequirement,
+    center: Center,
+    room: Room | None,
+) -> SolverShiftRequirement:
+    room_name = None
+
+    if room is not None:
+        room_name = room.name
+
     solver_shift = SolverShiftRequirement(
         id=shift_requirement.id,
         room_slot_id=shift_requirement.id,
@@ -304,7 +347,9 @@ def solver_shift_from_model(shift_requirement: ShiftRequirement) -> SolverShiftR
         source_shift_requirement_id=shift_requirement.id,
         locked_provider_id=None,
         center_id=shift_requirement.center_id,
+        center_name=center.name,
         room_id=shift_requirement.room_id,
+        room_name=room_name,
         shift_type="full_shift",
         start_time=shift_requirement.start_time,
         end_time=shift_requirement.end_time,
@@ -316,8 +361,15 @@ def solver_shift_from_model(shift_requirement: ShiftRequirement) -> SolverShiftR
 
 def solver_shift_from_assignment(
     assignment: ScheduleAssignmentCreate,
+    center: Center,
+    room: Room | None,
 ) -> SolverShiftRequirement:
     shift_id = uuid4()
+    room_name = None
+
+    if room is not None:
+        room_name = room.name
+
     solver_shift = SolverShiftRequirement(
         id=shift_id,
         room_slot_id=assignment.room_slot_id,
@@ -325,7 +377,9 @@ def solver_shift_from_assignment(
         source_shift_requirement_id=assignment.shift_requirement_id,
         locked_provider_id=assignment.provider_id,
         center_id=assignment.center_id,
+        center_name=center.name,
         room_id=assignment.room_id,
+        room_name=room_name,
         shift_type=assignment.shift_type,
         start_time=assignment.start_time,
         end_time=assignment.end_time,
@@ -359,6 +413,16 @@ def load_rooms(
     statement = statement.order_by(Room.center_id, Room.display_order, Room.name)
     rooms = list(session.scalars(statement))
     return rooms
+
+
+def load_centers(
+    organization_id: UUID,
+    session: Session,
+) -> list[Center]:
+    statement = select(Center).where(Center.organization_id == organization_id)
+    statement = statement.order_by(Center.name, Center.id)
+    centers = list(session.scalars(statement))
+    return centers
 
 
 def load_room_type_assignments(
@@ -444,6 +508,7 @@ def build_solver_input(
     session: Session,
     requested_assignments: list[ScheduleAssignmentCreate] | None = None,
 ) -> SolverInput:
+    centers = load_centers(organization_id, session)
     rooms = load_rooms(organization_id, session)
     room_type_assignments = load_room_type_assignments(organization_id, session)
     providers = load_providers(organization_id, session)
@@ -468,23 +533,41 @@ def build_solver_input(
     has_requested_assignments = requested_assignments is not None
 
     if has_requested_assignments:
-        solver_shift_requirements = [
-            solver_shift_from_assignment(requested_assignment)
-            for requested_assignment in requested_assignments
-        ]
+        solver_shift_requirements: list[SolverShiftRequirement] = []
+
+        for requested_assignment in requested_assignments:
+            center = center_for_id(requested_assignment.center_id, centers)
+            room = room_for_id(requested_assignment.room_id, rooms)
+            solver_shift_requirement = solver_shift_from_assignment(
+                requested_assignment,
+                center,
+                room,
+            )
+            solver_shift_requirements.append(solver_shift_requirement)
     else:
         shift_requirements = load_shift_requirements(
             schedule_period,
             organization_id,
             session,
         )
-        solver_shift_requirements = [
-            solver_shift_from_model(shift_requirement)
-            for shift_requirement in shift_requirements
-        ]
+        solver_shift_requirements = []
+
+        for shift_requirement in shift_requirements:
+            center = center_for_id(shift_requirement.center_id, centers)
+            room = room_for_id(shift_requirement.room_id, rooms)
+            solver_shift_requirement = solver_shift_from_model(
+                shift_requirement,
+                center,
+                room,
+            )
+            solver_shift_requirements.append(solver_shift_requirement)
 
     solver_rooms = [
-        solver_room_from_model(room, room_type_assignments)
+        solver_room_from_model(
+            room,
+            center_for_id(room.center_id, centers),
+            room_type_assignments,
+        )
         for room in rooms
     ]
     solver_providers = [

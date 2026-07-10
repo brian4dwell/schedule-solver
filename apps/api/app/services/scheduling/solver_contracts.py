@@ -26,7 +26,9 @@ class SolverRequiredRoomTypeSkill(BaseModel):
 
 class SolverRoom(BaseModel):
     id: UUID
+    name: str
     center_id: UUID
+    center_name: str
     md_only: bool
     is_active: bool
     required_room_type_skills: list[SolverRequiredRoomTypeSkill] = Field(default_factory=list)
@@ -39,7 +41,9 @@ class SolverShiftRequirement(BaseModel):
     source_shift_requirement_id: UUID | None = None
     locked_provider_id: UUID | None = None
     center_id: UUID
+    center_name: str
     room_id: UUID | None
+    room_name: str | None
     shift_type: str = "full_shift"
     start_time: datetime
     end_time: datetime
@@ -75,6 +79,7 @@ class SolverPreferenceWeights(BaseModel):
 
 class SolverProvider(BaseModel):
     id: UUID
+    display_name: str
     is_active: bool
     provider_type: str
     fairness_debt: float = 0.0
@@ -121,6 +126,7 @@ class SolverViolation(BaseModel):
     severity: str
     constraint_type: str
     message: str
+    metadata_json: dict[str, object] | None = None
 
 
 class SolverResult(BaseModel):

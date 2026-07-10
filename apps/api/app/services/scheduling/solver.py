@@ -41,6 +41,20 @@ class SolverCandidate:
 
 
 @dataclass
+class ProviderCandidateRejection:
+    provider_id: UUID
+    provider_display_name: str
+    constraint_types: list[str]
+    messages: list[str]
+
+
+@dataclass
+class ShiftCandidateAnalysis:
+    candidates: list[SolverCandidate]
+    rejections: list[ProviderCandidateRejection]
+
+
+@dataclass
 class CandidateDecision:
     candidate: SolverCandidate
     variable: cp_model.IntVar
@@ -256,24 +270,36 @@ def room_is_available_for_shift(room: SolverRoom | None) -> bool:
     return room_is_active
 
 
-def provider_is_candidate(
+def provider_candidate_rejection(
     solver_input: SolverInput,
     provider: SolverProvider,
     shift_requirement: SolverShiftRequirement,
     room: SolverRoom | None,
-) -> bool:
+) -> ProviderCandidateRejection | None:
     locked_provider_id = shift_requirement.locked_provider_id
 
     if locked_provider_id is not None:
         provider_matches_locked_assignment = provider.id == locked_provider_id
 
         if not provider_matches_locked_assignment:
-            return False
+            rejection = ProviderCandidateRejection(
+                provider_id=provider.id,
+                provider_display_name=provider.display_name,
+                constraint_types=["locked_provider_mismatch"],
+                messages=["Provider does not match the locked assignment provider."],
+            )
+            return rejection
 
     room_is_available = room_is_available_for_shift(room)
 
     if not room_is_available:
-        return False
+        rejection = ProviderCandidateRejection(
+            provider_id=provider.id,
+            provider_display_name=provider.display_name,
+            constraint_types=["room_inactive"],
+            messages=["Room is inactive."],
+        )
+        return rejection
 
     request = provider_eligibility_request(
         solver_input,
@@ -287,31 +313,73 @@ def provider_is_candidate(
         room,
     )
     result = evaluate_provider_slot_eligibility(request, context)
-    is_candidate = result.is_eligible
-    return is_candidate
+    hard_violations = [
+        violation
+        for violation in result.violations
+        if violation.severity == "hard_violation"
+    ]
+    is_candidate = len(hard_violations) == 0
+
+    if is_candidate:
+        return None
+
+    constraint_types = [
+        violation.constraint_type
+        for violation in hard_violations
+    ]
+    messages = [
+        violation.message
+        for violation in hard_violations
+    ]
+    rejection = ProviderCandidateRejection(
+        provider_id=provider.id,
+        provider_display_name=provider.display_name,
+        constraint_types=constraint_types,
+        messages=messages,
+    )
+    return rejection
 
 
-def candidates_for_shift(
+def candidate_analysis_for_shift(
     shift_requirement: SolverShiftRequirement,
     solver_input: SolverInput,
-) -> list[SolverCandidate]:
+) -> ShiftCandidateAnalysis:
     room = room_for_shift(shift_requirement, solver_input.rooms)
     candidates: list[SolverCandidate] = []
+    rejections: list[ProviderCandidateRejection] = []
     requires_known_room = shift_requirement.room_id is not None
     room_is_missing = room is None
 
     if requires_known_room and room_is_missing:
-        return candidates
+        for provider in solver_input.providers:
+            rejection = ProviderCandidateRejection(
+                provider_id=provider.id,
+                provider_display_name=provider.display_name,
+                constraint_types=["room_not_found"],
+                messages=["Shift requirement room was not found in the solver input."],
+            )
+            rejections.append(rejection)
+
+        analysis = ShiftCandidateAnalysis(
+            candidates=candidates,
+            rejections=rejections,
+        )
+        return analysis
 
     for provider in solver_input.providers:
-        is_candidate = provider_is_candidate(
+        rejection = provider_candidate_rejection(
             solver_input,
             provider,
             shift_requirement,
             room,
         )
+        is_candidate = rejection is None
 
         if not is_candidate:
+            if rejection is None:
+                continue
+
+            rejections.append(rejection)
             continue
 
         candidate = SolverCandidate(
@@ -320,22 +388,190 @@ def candidates_for_shift(
         )
         candidates.append(candidate)
 
-    return candidates
+    analysis = ShiftCandidateAnalysis(
+        candidates=candidates,
+        rejections=rejections,
+    )
+    return analysis
+
+
+def rejection_constraint_counts(
+    rejections: list[ProviderCandidateRejection],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+
+    for rejection in rejections:
+        for constraint_type in rejection.constraint_types:
+            current_count = counts.get(constraint_type, 0)
+            next_count = current_count + 1
+            counts[constraint_type] = next_count
+
+    return counts
+
+
+def sorted_rejection_constraint_counts(
+    counts: dict[str, int],
+) -> list[tuple[str, int]]:
+    sorted_counts = sorted(
+        counts.items(),
+        key=lambda count: (-count[1], count[0]),
+    )
+    return sorted_counts
+
+
+def formatted_time_text(value: datetime) -> str:
+    time_text = value.strftime("%I:%M %p")
+    formatted_text = time_text.lstrip("0")
+    return formatted_text
+
+
+def formatted_shift_type(shift_type: str) -> str:
+    formatted_text = shift_type.replace("_", " ")
+    return formatted_text
+
+
+def formatted_shift_date_time(
+    shift_requirement: SolverShiftRequirement,
+) -> str:
+    date_text = shift_requirement.start_time.strftime("%A, %B %d, %Y")
+    start_text = formatted_time_text(shift_requirement.start_time)
+    end_text = formatted_time_text(shift_requirement.end_time)
+    formatted_text = f"{date_text} from {start_text} to {end_text}"
+    return formatted_text
+
+
+def formatted_shift_location(
+    shift_requirement: SolverShiftRequirement,
+) -> str:
+    center_name = shift_requirement.center_name
+    room_name = shift_requirement.room_name
+
+    if room_name is None:
+        return center_name
+
+    location = f"{center_name} / {room_name}"
+    return location
+
+
+def formatted_required_provider_type(
+    shift_requirement: SolverShiftRequirement,
+) -> str:
+    if shift_requirement.required_provider_type is None:
+        return "provider"
+
+    provider_type = shift_requirement.required_provider_type
+    return provider_type
+
+
+def formatted_required_assignment_text(
+    shift_requirement: SolverShiftRequirement,
+) -> str:
+    required_count = shift_requirement.required_provider_count
+    required_provider_type = formatted_required_provider_type(shift_requirement)
+    formatted_text = f"{required_count} {required_provider_type}"
+    return formatted_text
+
+
+def formatted_shift_requirement_summary(
+    shift_requirement: SolverShiftRequirement,
+) -> str:
+    shift_type = formatted_shift_type(shift_requirement.shift_type)
+    date_time = formatted_shift_date_time(shift_requirement)
+    location = formatted_shift_location(shift_requirement)
+    summary = f"{shift_type} on {date_time} at {location}"
+    return summary
+
+
+def formatted_rejection_summary(
+    counts: dict[str, int],
+) -> str:
+    sorted_counts = sorted_rejection_constraint_counts(counts)
+    top_counts = sorted_counts[:5]
+    formatted_counts = [
+        f"{constraint_type} ({count})"
+        for constraint_type, count in top_counts
+    ]
+    summary = ", ".join(formatted_counts)
+    return summary
+
+
+def unfillable_shift_metadata(
+    shift_requirement: SolverShiftRequirement,
+    candidate_count: int,
+    rejections: list[ProviderCandidateRejection],
+) -> dict[str, object]:
+    counts = rejection_constraint_counts(rejections)
+    source_shift_requirement_id: str | None = None
+
+    if shift_requirement.source_shift_requirement_id is not None:
+        source_id = shift_requirement.source_shift_requirement_id
+        source_shift_requirement_id = str(source_id)
+
+    room_id: str | None = None
+
+    if shift_requirement.room_id is not None:
+        room_id = str(shift_requirement.room_id)
+
+    provider_rejections = [
+        {
+            "provider_id": str(rejection.provider_id),
+            "provider_display_name": rejection.provider_display_name,
+            "constraint_types": rejection.constraint_types,
+            "messages": rejection.messages,
+        }
+        for rejection in rejections
+    ]
+    metadata = {
+        "shift_requirement_id": str(shift_requirement.id),
+        "room_slot_id": str(shift_requirement.room_slot_id),
+        "source_shift_requirement_id": source_shift_requirement_id,
+        "center_id": str(shift_requirement.center_id),
+        "center_name": shift_requirement.center_name,
+        "room_id": room_id,
+        "room_name": shift_requirement.room_name,
+        "shift_type": shift_requirement.shift_type,
+        "start_time": shift_requirement.start_time.isoformat(),
+        "end_time": shift_requirement.end_time.isoformat(),
+        "required_provider_count": shift_requirement.required_provider_count,
+        "required_provider_type": shift_requirement.required_provider_type,
+        "candidate_count": candidate_count,
+        "evaluated_provider_count": len(rejections) + candidate_count,
+        "rejection_constraint_counts": counts,
+        "provider_rejections": provider_rejections,
+    }
+    return metadata
 
 
 def unfillable_shift_violation(
     shift_requirement: SolverShiftRequirement,
     candidate_count: int,
+    rejections: list[ProviderCandidateRejection],
 ) -> SolverViolation:
-    message = f"Shift requirement {shift_requirement.id} has fewer valid candidates than required assignments."
+    shift_summary = formatted_shift_requirement_summary(shift_requirement)
+    required_assignment_text = formatted_required_assignment_text(shift_requirement)
+    counts = rejection_constraint_counts(rejections)
+    rejection_summary = formatted_rejection_summary(counts)
+    metadata = unfillable_shift_metadata(
+        shift_requirement,
+        candidate_count,
+        rejections,
+    )
+    message = (
+        f"The {shift_summary} has {candidate_count} valid provider candidates, "
+        f"but needs {required_assignment_text}."
+    )
 
     if candidate_count == 0:
-        message = f"Shift requirement {shift_requirement.id} has no valid provider candidates."
+        message = f"The {shift_summary} needs {required_assignment_text} and has no valid provider candidates."
+
+    if rejection_summary != "":
+        message = f"{message} Top blockers: {rejection_summary}."
 
     violation = SolverViolation(
         severity="hard_violation",
         constraint_type="unfillable_shift_requirement",
         message=message,
+        metadata_json=metadata,
     )
     return violation
 
@@ -347,12 +583,17 @@ def build_solver_candidates(
     violations: list[SolverViolation] = []
 
     for shift_requirement in solver_input.shift_requirements:
-        shift_candidates = candidates_for_shift(shift_requirement, solver_input)
+        analysis = candidate_analysis_for_shift(shift_requirement, solver_input)
+        shift_candidates = analysis.candidates
         candidate_count = len(shift_candidates)
         has_enough_candidates = candidate_count >= shift_requirement.required_provider_count
 
         if not has_enough_candidates:
-            violation = unfillable_shift_violation(shift_requirement, candidate_count)
+            violation = unfillable_shift_violation(
+                shift_requirement,
+                candidate_count,
+                analysis.rejections,
+            )
             violations.append(violation)
 
         candidates.extend(shift_candidates)

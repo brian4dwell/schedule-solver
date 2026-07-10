@@ -4,6 +4,8 @@ from datetime import datetime
 from uuid import UUID
 from uuid import uuid4
 
+from app.db.models import Center
+from app.db.models import Room
 from app.schemas.schedule import ScheduleAssignmentCreate
 from app.services.scheduling.solver import solve_schedule
 from app.services.scheduling.solver_contracts import SolverCenterCredential
@@ -36,7 +38,9 @@ def create_shift(
         room_slot_id=shift_id,
         source_shift_requirement_id=shift_id,
         center_id=center_id,
+        center_name="Main Center",
         room_id=room_id,
+        room_name="Room A",
         shift_type=shift_type,
         start_time=start_time,
         end_time=end_time,
@@ -72,6 +76,7 @@ def create_provider(
     )
     provider = SolverProvider(
         id=week_availability.provider_id,
+        display_name="Avery Provider",
         is_active=True,
         provider_type="doctor",
         provider_room_type_skills=[room_type_skill],
@@ -102,7 +107,9 @@ def create_room(
     )
     room = SolverRoom(
         id=uuid4(),
+        name="Room A",
         center_id=center_id,
+        center_name="Main Center",
         md_only=True,
         is_active=True,
         required_room_type_skills=[required_skill],
@@ -200,6 +207,23 @@ def test_solver_reports_unfillable_shift_without_fake_assignment() -> None:
     assert result.is_feasible is False
     assert result.assignments == []
     assert result.violations[0].constraint_type == "unfillable_shift_requirement"
+    assert str(shift.id) not in result.violations[0].message
+    assert "full shift on Monday, May 04, 2026 from 7:00 AM to 3:00 PM" in result.violations[0].message
+    assert "Main Center / Room A" in result.violations[0].message
+    assert "provider_unavailable (1)" in result.violations[0].message
+    assert result.violations[0].metadata_json is not None
+    assert result.violations[0].metadata_json["shift_requirement_id"] == str(shift.id)
+    assert result.violations[0].metadata_json["center_name"] == "Main Center"
+    assert result.violations[0].metadata_json["room_name"] == "Room A"
+    assert result.violations[0].metadata_json["candidate_count"] == 0
+    assert result.violations[0].metadata_json["evaluated_provider_count"] == 1
+    assert result.violations[0].metadata_json["rejection_constraint_counts"] == {"provider_unavailable": 1}
+    provider_rejections = result.violations[0].metadata_json["provider_rejections"]
+    provider_rejection = provider_rejections[0]
+
+    assert provider_rejection["provider_id"] == str(provider.id)
+    assert provider_rejection["provider_display_name"] == "Avery Provider"
+    assert provider_rejection["constraint_types"] == ["provider_unavailable"]
 
 
 def test_solver_rejects_overlapping_shifts_for_same_provider() -> None:
@@ -316,7 +340,9 @@ def test_solver_assigns_provider_to_board_slot_without_stored_shift() -> None:
         room_slot_id=shift_id,
         source_shift_requirement_id=None,
         center_id=center_id,
+        center_name="Main Center",
         room_id=room.id,
+        room_name=room.name,
         shift_type="first_half",
         start_time=datetime(2026, 5, 4, 7, 0, tzinfo=UTC),
         end_time=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
@@ -344,9 +370,26 @@ def test_solver_assigns_provider_to_board_slot_without_stored_shift() -> None:
 
 
 def test_solver_shift_from_assignment_preserves_room_slot_id() -> None:
+    organization_id = uuid4()
     room_slot_id = uuid4()
     center_id = uuid4()
     room_id = uuid4()
+    center = Center(
+        id=center_id,
+        organization_id=organization_id,
+        name="Main Center",
+        timezone="UTC",
+        is_active=True,
+    )
+    room = Room(
+        id=room_id,
+        organization_id=organization_id,
+        center_id=center_id,
+        name="Room A",
+        display_order=0,
+        md_only=False,
+        is_active=True,
+    )
     requested_assignment = ScheduleAssignmentCreate(
         room_slot_id=room_slot_id,
         provider_id=None,
@@ -362,9 +405,11 @@ def test_solver_shift_from_assignment_preserves_room_slot_id() -> None:
         notes=None,
     )
 
-    shift = solver_shift_from_assignment(requested_assignment)
+    shift = solver_shift_from_assignment(requested_assignment, center, room)
 
     assert shift.room_slot_id == room_slot_id
+    assert shift.center_name == "Main Center"
+    assert shift.room_name == "Room A"
 
 
 def test_solver_rejects_provider_without_matching_shift_type_availability() -> None:
@@ -394,6 +439,7 @@ def test_solver_rejects_provider_without_matching_shift_type_availability() -> N
     assert result.is_feasible is False
     assert result.assignments == []
     assert result.violations[0].constraint_type == "unfillable_shift_requirement"
+    assert "provider_shift_type_unavailable (1)" in result.violations[0].message
 
 
 def test_solver_allows_full_shift_availability_for_shorter_shift_with_warning() -> None:
@@ -449,6 +495,7 @@ def test_solver_rejects_provider_without_active_center_credential() -> None:
     assert result.is_feasible is False
     assert result.assignments == []
     assert result.violations[0].constraint_type == "unfillable_shift_requirement"
+    assert "missing_center_credential (1)" in result.violations[0].message
 
 
 def test_solver_records_max_shift_request_warning_without_blocking_assignment() -> None:

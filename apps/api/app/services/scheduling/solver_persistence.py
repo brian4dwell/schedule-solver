@@ -100,7 +100,7 @@ def create_constraint_violation(
         severity=solver_violation.severity,
         constraint_type=solver_violation.constraint_type,
         message=solver_violation.message,
-        metadata_json=None,
+        metadata_json=solver_violation.metadata_json,
     )
     return constraint_violation
 
