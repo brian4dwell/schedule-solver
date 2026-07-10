@@ -12,6 +12,7 @@ from app.db.models import SchedulePeriod
 from app.db.models import ScheduleVersion
 from app.schemas.schedule import ScheduleAssignmentCreate
 from app.services.scheduling.solver import solve_schedule
+from app.services.scheduling.solver_contracts import SolverGenerationMode
 from app.services.scheduling.solver_contracts import SolverRunMetrics
 from app.services.scheduling.solver_input_builder import build_solver_input
 from app.services.scheduling.solver_persistence import persist_solver_result
@@ -44,6 +45,7 @@ def generate_schedule_draft(
     organization_id: UUID,
     session: Session,
     requested_assignments: list[ScheduleAssignmentCreate] | None = None,
+    generation_mode: SolverGenerationMode = "strict",
 ) -> GeneratedScheduleDraft:
     solver_input = build_solver_input(
         schedule_period,
@@ -53,7 +55,7 @@ def generate_schedule_draft(
     )
     input_size_bytes = payload_size_bytes(solver_input)
     started_at = perf_counter()
-    solver_result = solve_schedule(solver_input)
+    solver_result = solve_schedule(solver_input, generation_mode)
     finished_at = perf_counter()
     duration_seconds = finished_at - started_at
     solve_duration_ms = int(duration_seconds * 1000)

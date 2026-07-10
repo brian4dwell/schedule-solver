@@ -17,6 +17,7 @@ from app.services.scheduling.provider_eligibility_contracts import ProviderWeekl
 from app.services.scheduling.provider_eligibility_contracts import RequiredRoomTypeSkill
 from app.services.scheduling.solver_contracts import SolverAssignment
 from app.services.scheduling.solver_contracts import SolverCenterCredential
+from app.services.scheduling.solver_contracts import SolverGenerationMode
 from app.services.scheduling.solver_contracts import SolverInput
 from app.services.scheduling.solver_contracts import SolverPreferenceWeights
 from app.services.scheduling.solver_contracts import SolverProvider
@@ -32,6 +33,7 @@ ABOVE_MAX_SHIFT_REQUEST_UNIT_PENALTY = 15
 ASSIGNMENT_IMBALANCE_PENALTY = 3
 FAIRNESS_PRESSURE_SCALE = 10
 MAX_SOLVE_SECONDS = 30.0
+UNFILLED_SHIFT_ASSIGNMENT_PENALTY = 100_000
 
 
 @dataclass
@@ -82,6 +84,12 @@ class CandidatePreferenceScore:
 class ShiftAssignmentCount:
     shift_requirement_id: UUID
     assignment_count: int
+
+
+@dataclass
+class ShiftUnfilledCount:
+    shift_requirement: SolverShiftRequirement
+    variable: cp_model.IntVar
 
 
 def time_ranges_overlap(
@@ -666,6 +674,32 @@ def add_shift_coverage_constraints(
         model.Add(sum(shift_variables) == required_provider_count)
 
 
+def add_best_effort_shift_coverage_constraints(
+    model: cp_model.CpModel,
+    solver_input: SolverInput,
+    decisions: list[CandidateDecision],
+) -> list[ShiftUnfilledCount]:
+    unfilled_counts: list[ShiftUnfilledCount] = []
+
+    for shift_requirement in solver_input.shift_requirements:
+        shift_decisions = decisions_for_shift(shift_requirement, decisions)
+        shift_variables = [
+            decision.variable
+            for decision in shift_decisions
+        ]
+        required_provider_count = shift_requirement.required_provider_count
+        variable_name = f"unfilled_{shift_requirement.id}"
+        unfilled_count = model.NewIntVar(0, required_provider_count, variable_name)
+        model.Add(sum(shift_variables) + unfilled_count == required_provider_count)
+        coverage_count = ShiftUnfilledCount(
+            shift_requirement=shift_requirement,
+            variable=unfilled_count,
+        )
+        unfilled_counts.append(coverage_count)
+
+    return unfilled_counts
+
+
 def add_provider_overlap_constraints(
     model: cp_model.CpModel,
     solver_input: SolverInput,
@@ -904,12 +938,23 @@ def add_preference_objective_terms(
         objective_terms.append(objective_term)
 
 
+def add_unfilled_shift_objective_terms(
+    unfilled_counts: list[ShiftUnfilledCount],
+    objective_terms: list[cp_model.LinearExpr],
+) -> None:
+    for unfilled_count in unfilled_counts:
+        objective_term = unfilled_count.variable * -UNFILLED_SHIFT_ASSIGNMENT_PENALTY
+        objective_terms.append(objective_term)
+
+
 def add_objective(
     model: cp_model.CpModel,
     solver_input: SolverInput,
     decisions: list[CandidateDecision],
+    unfilled_counts: list[ShiftUnfilledCount] | None = None,
 ) -> None:
     objective_terms: list[cp_model.LinearExpr] = []
+    active_unfilled_counts = unfilled_counts or []
     provider_assignment_totals = create_provider_assignment_totals(
         model,
         solver_input,
@@ -935,6 +980,10 @@ def add_objective(
     add_preference_objective_terms(
         solver_input,
         decisions,
+        objective_terms,
+    )
+    add_unfilled_shift_objective_terms(
+        active_unfilled_counts,
         objective_terms,
     )
 
@@ -1133,10 +1182,148 @@ def solver_warnings(
     return warnings
 
 
+def best_effort_unfilled_shift_metadata(
+    shift_requirement: SolverShiftRequirement,
+    assigned_count: int,
+    unfilled_count: int,
+) -> dict[str, object]:
+    room_id: str | None = None
+
+    if shift_requirement.room_id is not None:
+        room_id = str(shift_requirement.room_id)
+
+    source_shift_requirement_id: str | None = None
+
+    if shift_requirement.source_shift_requirement_id is not None:
+        source_shift_requirement_id = str(shift_requirement.source_shift_requirement_id)
+
+    metadata = {
+        "shift_requirement_id": str(shift_requirement.id),
+        "room_slot_id": str(shift_requirement.room_slot_id),
+        "source_shift_requirement_id": source_shift_requirement_id,
+        "center_id": str(shift_requirement.center_id),
+        "center_name": shift_requirement.center_name,
+        "room_id": room_id,
+        "room_name": shift_requirement.room_name,
+        "shift_type": shift_requirement.shift_type,
+        "start_time": shift_requirement.start_time.isoformat(),
+        "end_time": shift_requirement.end_time.isoformat(),
+        "required_provider_count": shift_requirement.required_provider_count,
+        "required_provider_type": shift_requirement.required_provider_type,
+        "assigned_provider_count": assigned_count,
+        "unfilled_provider_count": unfilled_count,
+    }
+    return metadata
+
+
+def best_effort_unfilled_shift_violation(
+    shift_requirement: SolverShiftRequirement,
+    assigned_count: int,
+    unfilled_count: int,
+) -> SolverViolation:
+    shift_summary = formatted_shift_requirement_summary(shift_requirement)
+    required_assignment_text = formatted_required_assignment_text(shift_requirement)
+    metadata = best_effort_unfilled_shift_metadata(
+        shift_requirement,
+        assigned_count,
+        unfilled_count,
+    )
+    message = (
+        f"The {shift_summary} needs {required_assignment_text}; "
+        f"best effort assigned {assigned_count} and left {unfilled_count} unfilled."
+    )
+    violation = SolverViolation(
+        severity="hard_violation",
+        constraint_type="unfilled_shift_requirement",
+        message=message,
+        metadata_json=metadata,
+    )
+    return violation
+
+
+def selected_assignment_count_for_shift(
+    shift_requirement: SolverShiftRequirement,
+    assignments: list[SolverAssignment],
+) -> int:
+    assignment_count = 0
+
+    for assignment in assignments:
+        source_shift_requirement_id = shift_requirement.source_shift_requirement_id
+        shift_matches = assignment.shift_requirement_id == source_shift_requirement_id
+        slot_matches = assignment.room_slot_id == shift_requirement.room_slot_id
+        assignment_matches_shift = shift_matches or slot_matches
+
+        if not assignment_matches_shift:
+            continue
+
+        assignment_count = assignment_count + 1
+
+    return assignment_count
+
+
+def best_effort_violations(
+    solver_input: SolverInput,
+    assignments: list[SolverAssignment],
+    candidate_violations: list[SolverViolation],
+) -> list[SolverViolation]:
+    violations: list[SolverViolation] = []
+
+    for shift_requirement in solver_input.shift_requirements:
+        assigned_count = selected_assignment_count_for_shift(
+            shift_requirement,
+            assignments,
+        )
+        required_count = shift_requirement.required_provider_count
+        unfilled_count = required_count - assigned_count
+        shift_is_fully_assigned = unfilled_count == 0
+
+        if shift_is_fully_assigned:
+            continue
+
+        candidate_violation = unfillable_violation_for_shift(
+            shift_requirement,
+            candidate_violations,
+        )
+
+        if candidate_violation is not None:
+            violations.append(candidate_violation)
+            continue
+
+        violation = best_effort_unfilled_shift_violation(
+            shift_requirement,
+            assigned_count,
+            unfilled_count,
+        )
+        violations.append(violation)
+
+    return violations
+
+
+def unfillable_violation_for_shift(
+    shift_requirement: SolverShiftRequirement,
+    candidate_violations: list[SolverViolation],
+) -> SolverViolation | None:
+    for violation in candidate_violations:
+        metadata = violation.metadata_json
+
+        if metadata is None:
+            continue
+
+        metadata_shift_id = metadata.get("shift_requirement_id")
+        shift_matches = metadata_shift_id == str(shift_requirement.id)
+
+        if shift_matches:
+            return violation
+
+    return None
+
+
 def solver_result_from_solution(
     solver: cp_model.CpSolver,
     solver_input: SolverInput,
     decisions: list[CandidateDecision],
+    generation_mode: SolverGenerationMode,
+    candidate_violations: list[SolverViolation],
 ) -> SolverResult:
     assignments: list[SolverAssignment] = []
     selected_decisions: list[CandidateDecision] = []
@@ -1170,11 +1357,22 @@ def solver_result_from_solution(
 
     objective_value = solver.ObjectiveValue()
     warnings = solver_warnings(solver_input, assignments)
+    hard_violations: list[SolverViolation] = []
+
+    if generation_mode == "best_effort":
+        hard_violations = best_effort_violations(
+            solver_input,
+            assignments,
+            candidate_violations,
+        )
+
+    all_violations = [*hard_violations, *warnings]
+    is_feasible = len(hard_violations) == 0
     result = SolverResult(
         assignments=assignments,
-        violations=warnings,
+        violations=all_violations,
         solver_score=objective_value,
-        is_feasible=True,
+        is_feasible=is_feasible,
     )
     return result
 
@@ -1207,7 +1405,10 @@ def no_shift_requirements_result() -> SolverResult:
     return result
 
 
-def solve_schedule(solver_input: SolverInput) -> SolverResult:
+def solve_schedule(
+    solver_input: SolverInput,
+    generation_mode: SolverGenerationMode = "strict",
+) -> SolverResult:
     has_shift_requirements = len(solver_input.shift_requirements) > 0
 
     if not has_shift_requirements:
@@ -1215,16 +1416,27 @@ def solve_schedule(solver_input: SolverInput) -> SolverResult:
         return result
 
     candidates, candidate_violations = build_solver_candidates(solver_input)
+    uses_strict_generation = generation_mode == "strict"
 
-    if len(candidate_violations) > 0:
+    if uses_strict_generation and len(candidate_violations) > 0:
         result = infeasible_solver_result(candidate_violations)
         return result
 
     model = cp_model.CpModel()
     decisions = create_candidate_decisions(model, candidates)
-    add_shift_coverage_constraints(model, solver_input, decisions)
+    unfilled_counts: list[ShiftUnfilledCount] = []
+
+    if uses_strict_generation:
+        add_shift_coverage_constraints(model, solver_input, decisions)
+    else:
+        unfilled_counts = add_best_effort_shift_coverage_constraints(
+            model,
+            solver_input,
+            decisions,
+        )
+
     add_provider_overlap_constraints(model, solver_input, decisions)
-    add_objective(model, solver_input, decisions)
+    add_objective(model, solver_input, decisions, unfilled_counts)
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = MAX_SOLVE_SECONDS
     status = solver.Solve(model)
@@ -1233,7 +1445,13 @@ def solve_schedule(solver_input: SolverInput) -> SolverResult:
     has_solution = solved_optimally or solved_feasibly
 
     if has_solution:
-        result = solver_result_from_solution(solver, solver_input, decisions)
+        result = solver_result_from_solution(
+            solver,
+            solver_input,
+            decisions,
+            generation_mode,
+            candidate_violations,
+        )
         return result
 
     result = infeasible_solver_result(candidate_violations)

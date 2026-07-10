@@ -1374,6 +1374,7 @@ def generate_schedule_period(
         organization_id,
         session,
         requested_assignments,
+        generate_request.generation_mode,
     )
     response = ScheduleGenerateResponse(
         version=generated_draft.version,
@@ -1383,7 +1384,9 @@ def generate_schedule_period(
         is_feasible=generated_draft.is_feasible,
     )
 
-    if not generated_draft.is_feasible:
+    request_uses_strict_generation = generate_request.generation_mode == "strict"
+
+    if request_uses_strict_generation and not generated_draft.is_feasible:
         detail = response.model_dump(mode="json")
         raise HTTPException(status_code=409, detail=detail)
 

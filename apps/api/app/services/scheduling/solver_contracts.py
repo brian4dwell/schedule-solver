@@ -1,8 +1,11 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import Field
+
+SolverGenerationMode = Literal["strict", "best_effort"]
 
 
 class SolverWeeklyAvailabilityDay(BaseModel):

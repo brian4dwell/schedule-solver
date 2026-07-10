@@ -1989,20 +1989,27 @@ export function ScheduleWorkspace({
     }
   }
 
-  async function handleGenerateSchedule() {
+  async function handleGenerateSchedule(generationMode: "strict" | "best_effort") {
     const parentVersionId =
       savedVersionDetail === null ? null : savedVersionDetail.version.id;
     const payload = {
       parent_schedule_version_id: parentVersionId,
       notes: scheduleNotesPayload(workingVersion.notes),
       assignments: savePayloadFromAssignments(workingVersion.assignments),
+      generation_mode: generationMode,
     };
+    const generationTitle =
+      generationMode === "strict" ? "Strict generation started" : "Best-effort generation started";
+    const generationDescription =
+      generationMode === "strict"
+        ? "The solver is building a complete draft schedule."
+        : "The solver is building the most complete valid draft schedule it can.";
 
     setIsGenerating(true);
     setActionMessage(null);
     showToast({
-      title: "Generation started",
-      description: "The solver is building a draft schedule.",
+      title: generationTitle,
+      description: generationDescription,
       tone: "info",
     });
 
@@ -2038,12 +2045,23 @@ export function ScheduleWorkspace({
         assignmentCount: detail.assignments.length,
         solveDurationMs: duration,
       });
-      setActionMessage(`Generated draft in ${duration} ms.`);
-      showToast({
-        title: "Draft generated",
-        description: `Generated draft in ${duration} ms.`,
-        tone: "success",
-      });
+      const generatedWithViolations = !detail.is_feasible;
+
+      if (generatedWithViolations) {
+        setActionMessage(`Generated best-effort draft in ${duration} ms with violations.`);
+        showToast({
+          title: "Best-effort draft generated",
+          description: `Generated partial draft in ${duration} ms with ${detail.violations.length} violations.`,
+          tone: "warning",
+        });
+      } else {
+        setActionMessage(`Generated draft in ${duration} ms.`);
+        showToast({
+          title: "Draft generated",
+          description: `Generated draft in ${duration} ms.`,
+          tone: "success",
+        });
+      }
     } catch (error) {
       captureScheduleWorkflowException({
         workflowName: "generate_schedule_version",
@@ -2698,11 +2716,19 @@ export function ScheduleWorkspace({
               </label>
               <button
                 type="button"
-                onClick={handleGenerateSchedule}
+                onClick={() => handleGenerateSchedule("strict")}
                 disabled={isGenerating}
                 className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
               >
-                {isGenerating ? "Running solver" : "Run Solver"}
+                {isGenerating ? "Running solver" : "Solve - Strict"}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleGenerateSchedule("best_effort")}
+                disabled={isGenerating}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-teal-300 px-3 text-sm font-semibold text-teal-800 hover:bg-teal-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                {isGenerating ? "Running solver" : "Solve - Best Effort"}
               </button>
               <button
                 type="button"

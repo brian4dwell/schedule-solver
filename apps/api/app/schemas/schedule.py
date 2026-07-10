@@ -10,6 +10,7 @@ from pydantic import Field
 
 from app.schemas.common import TimestampedSchema
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityViolation
+from app.services.scheduling.solver_contracts import SolverGenerationMode
 from app.services.scheduling.solver_contracts import SolverRunMetrics
 
 ScheduleTemplateWeekday = Literal[
@@ -70,6 +71,7 @@ class ScheduleGenerateRequest(BaseModel):
     parent_schedule_version_id: UUID | None = None
     notes: str | None = None
     assignments: list[ScheduleAssignmentCreate] | None = None
+    generation_mode: SolverGenerationMode = "strict"
 
 
 class SchedulePeriodCreate(BaseModel):

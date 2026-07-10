@@ -182,6 +182,7 @@ export type ScheduleGeneratePayload = {
   parent_schedule_version_id: string | null;
   notes: string | null;
   assignments: ScheduleAssignmentSavePayload[];
+  generation_mode: "strict" | "best_effort";
 };
 
 export type ProviderSlotEligibilityPayload = {
