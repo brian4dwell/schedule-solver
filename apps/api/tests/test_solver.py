@@ -315,7 +315,33 @@ def test_solver_best_effort_reports_unfillable_shift_without_assignments() -> No
     assert "provider_unavailable (1)" in result.violations[0].message
 
 
-def test_solver_allows_split_day_overlap_for_same_center() -> None:
+def test_solver_allows_adjacent_split_day_for_same_provider() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    center_id = uuid4()
+    room_type_id = uuid4()
+    room = create_room(center_id, room_type_id)
+    provider = create_provider(center_id, room_type_id)
+    credential = create_credential(provider.id, center_id)
+    first_shift = create_shift(center_id, room.id, 7, 11, shift_type="first_half")
+    second_shift = create_shift(center_id, room.id, 11, 15, shift_type="second_half")
+    provider.week_availability.days[0].options = ["first_half", "second_half"]
+    solver_input = SolverInput(
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        rooms=[room],
+        providers=[provider],
+        center_credentials=[credential],
+        shift_requirements=[first_shift, second_shift],
+    )
+
+    result = solve_schedule(solver_input)
+
+    assert result.is_feasible is True
+    assert len(result.assignments) == 2
+
+
+def test_solver_rejects_split_day_time_overlap_for_same_provider() -> None:
     organization_id = uuid4()
     schedule_period_id = uuid4()
     center_id = uuid4()
@@ -337,8 +363,9 @@ def test_solver_allows_split_day_overlap_for_same_center() -> None:
 
     result = solve_schedule(solver_input)
 
-    assert result.is_feasible is True
-    assert len(result.assignments) == 2
+    assert result.is_feasible is False
+    assert result.assignments == []
+    assert result.violations[0].constraint_type == "infeasible_solver_model"
 
 
 def test_solver_rejects_split_day_overlap_for_different_centers() -> None:

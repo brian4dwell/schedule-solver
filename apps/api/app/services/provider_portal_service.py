@@ -92,6 +92,18 @@ def user_identity_link(
     return identity_link
 
 
+def provider_for_identity_link(
+    identity_link: ProviderIdentityLink,
+    organization_id: UUID,
+    session: Session,
+) -> Provider | None:
+    statement = select(Provider)
+    statement = statement.where(Provider.id == identity_link.provider_id)
+    statement = statement.where(Provider.organization_id == organization_id)
+    provider = session.scalar(statement)
+    return provider
+
+
 def require_provider_is_unlinked(
     provider_id: UUID,
     organization_id: UUID,
@@ -163,24 +175,31 @@ def accept_provider_invite_request(
         existing_provider_link is not None
         and existing_provider_link.clerk_user_id != current_user.user_id
     )
-    user_link_conflicts = (
-        existing_user_link is not None
-        and existing_user_link.provider_id != provider.id
-    )
 
     if provider_link_conflicts:
         raise HTTPException(status_code=409, detail="Provider is already linked to another user")
 
-    if user_link_conflicts:
-        raise HTTPException(status_code=409, detail="User is already linked to another Provider")
-
-    if existing_provider_link is None:
+    if existing_user_link is None:
         identity_link = ProviderIdentityLink(
             organization_id=organization_id,
             provider_id=provider.id,
             clerk_user_id=current_user.user_id,
         )
         session.add(identity_link)
+    else:
+        user_is_linked_to_invited_provider = existing_user_link.provider_id == provider.id
+
+        if not user_is_linked_to_invited_provider:
+            linked_provider = provider_for_identity_link(existing_user_link, organization_id, session)
+            inactive_provider_link_can_move = (
+                linked_provider is not None
+                and not linked_provider.is_active
+            )
+
+            if not inactive_provider_link_can_move:
+                raise HTTPException(status_code=409, detail="User is already linked to another Provider")
+
+            existing_user_link.provider_id = provider.id
 
     invite.status = INVITE_STATUS_ACCEPTED
     invite.accepted_by_clerk_user_id = current_user.user_id

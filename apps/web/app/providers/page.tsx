@@ -5,7 +5,7 @@ import { listCenters, listProviders, listRoomTypes } from "@/lib/api";
 
 export default async function ProvidersPage() {
   const centers = await listCenters();
-  const providers = await listProviders();
+  const providers = await listProviders({ includeInactive: true });
   const roomTypes = await listRoomTypes();
 
   return (

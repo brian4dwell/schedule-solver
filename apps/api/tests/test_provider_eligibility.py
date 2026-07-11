@@ -11,7 +11,6 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from app.services.scheduling.provider_eligibility import credential_is_active_for_slot
 from app.services.scheduling.provider_eligibility import evaluate_provider_slot_eligibility
 from app.services.scheduling.provider_eligibility import full_shift_availability_accommodates_shift_type
-from app.services.scheduling.provider_eligibility import overlapping_assignment_is_allowed
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityContext
 from app.services.scheduling.provider_eligibility_contracts import ProviderRoomTypeSkillSummary
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityInput
@@ -284,6 +283,20 @@ def test_max_shift_request_uses_half_shift_units() -> None:
     assert max_shift_warnings == []
 
 
+def test_double_booking_creates_hard_violation() -> None:
+    provider_id = uuid4()
+    request = create_request(provider_id)
+    context = create_context(provider_id)
+    context.has_double_booking = True
+
+    result = evaluate_provider_slot_eligibility(request, context)
+
+    assert result.is_eligible is False
+    assert result.violations[0].severity == "hard_violation"
+    assert result.violations[0].constraint_type == "provider_double_booked"
+    assert result.violations[0].category == "other_hard_constraint"
+
+
 def test_credential_date_range_must_cover_slot() -> None:
     start_time = datetime(2026, 5, 4, 7, 0, tzinfo=UTC)
     end_time = datetime(2026, 5, 4, 15, 0, tzinfo=UTC)
@@ -297,30 +310,3 @@ def test_credential_date_range_must_cover_slot() -> None:
     is_active = credential_is_active_for_slot(credential, start_time, end_time)
 
     assert is_active is False
-
-
-def test_overlapping_assignment_is_allowed_for_split_day_same_center() -> None:
-    center_id = uuid4()
-
-    overlap_is_allowed = overlapping_assignment_is_allowed(
-        center_id,
-        "first_half",
-        center_id,
-        "second_half",
-    )
-
-    assert overlap_is_allowed is True
-
-
-def test_overlapping_assignment_is_blocked_for_split_day_different_center() -> None:
-    first_center_id = uuid4()
-    second_center_id = uuid4()
-
-    overlap_is_allowed = overlapping_assignment_is_allowed(
-        first_center_id,
-        "first_half",
-        second_center_id,
-        "second_half",
-    )
-
-    assert overlap_is_allowed is False

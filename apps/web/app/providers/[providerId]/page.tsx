@@ -8,6 +8,8 @@ import {
   getProviderPreferences,
   listCenters,
   listRoomTypes,
+  type ManagerProviderPreferences,
+  type ProviderPreferences,
 } from "@/lib/api";
 
 type ProviderDetailPageProps = {
@@ -21,8 +23,14 @@ export default async function ProviderDetailPage({ params }: ProviderDetailPageP
   const provider = await getProvider(resolvedParams.providerId);
   const centers = await listCenters();
   const roomTypes = await listRoomTypes();
-  const preferences = await getProviderPreferences(resolvedParams.providerId);
-  const managerPreferences = await getManagerProviderPreferences(resolvedParams.providerId);
+  const providerIsActive = provider.is_active;
+  let preferences: ProviderPreferences | null = null;
+  let managerPreferences: ManagerProviderPreferences | null = null;
+
+  if (providerIsActive) {
+    preferences = await getProviderPreferences(resolvedParams.providerId);
+    managerPreferences = await getManagerProviderPreferences(resolvedParams.providerId);
+  }
 
   return (
     <AppShell>
@@ -31,12 +39,14 @@ export default async function ProviderDetailPage({ params }: ProviderDetailPageP
         description="Edit provider details used for scheduling coverage."
       />
       <ProviderForm centers={centers} provider={provider} roomTypes={roomTypes} />
-      <ProviderPreferencesEditor
-        centers={centers}
-        managerPreferences={managerPreferences}
-        preferences={preferences}
-        provider={provider}
-      />
+      {preferences !== null && managerPreferences !== null ? (
+        <ProviderPreferencesEditor
+          centers={centers}
+          managerPreferences={managerPreferences}
+          preferences={preferences}
+          provider={provider}
+        />
+      ) : null}
     </AppShell>
   );
 }

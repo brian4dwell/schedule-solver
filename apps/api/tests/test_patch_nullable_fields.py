@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 from app.routers.centers import update_center
+from app.routers.providers import reactivate_provider
 from app.routers.providers import update_provider
 from app.schemas.center import CenterUpdate
 from app.schemas.provider import ProviderUpdate
@@ -72,3 +73,20 @@ def test_provider_nullable_fields_can_be_cleared_with_patch(monkeypatch) -> None
     assert provider.email is None
     assert provider.phone is None
     assert provider.notes is None
+
+
+def test_provider_can_be_reactivated(monkeypatch) -> None:
+    provider = SimpleNamespace(
+        is_active=False,
+    )
+
+    def fake_find_provider(_provider_id, _organization_id, _session):
+        return provider
+
+    monkeypatch.setattr("app.routers.providers.find_provider", fake_find_provider)
+
+    session = DummySession()
+
+    reactivate_provider(uuid4(), session, uuid4())
+
+    assert provider.is_active is True

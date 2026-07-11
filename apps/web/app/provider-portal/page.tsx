@@ -8,7 +8,7 @@ import {
   getCurrentProviderProfile,
 } from "@/lib/api";
 
-type ProviderPortalAccessIssue = "missingLink" | "inactiveLink";
+type ProviderPortalAccessIssue = "missingLink" | "inactiveProvider";
 
 function valueIsRecord(value: unknown): value is Record<string, unknown> {
   const valueIsObject = typeof value === "object";
@@ -19,6 +19,18 @@ function valueIsRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function apiErrorDetailFromMessage(message: string) {
+  const messageIsProviderLinkRequired = message === "Provider account link required";
+
+  if (messageIsProviderLinkRequired) {
+    return message;
+  }
+
+  const messageIsProviderInactive = message === "Provider profile is inactive";
+
+  if (messageIsProviderInactive) {
+    return message;
+  }
+
   try {
     const parsedMessage = JSON.parse(message);
     const parsedMessageIsRecord = valueIsRecord(parsedMessage);
@@ -54,34 +66,36 @@ function providerPortalAccessIssueFromError(error: unknown): ProviderPortalAcces
     return "missingLink";
   }
 
-  const accountLinkIsInactive = detail === "Provider account link is inactive";
+  const providerIsInactive = detail === "Provider profile is inactive";
+  const legacyAccountLinkIsInactive = detail === "Provider account link is inactive";
+  const inactiveProviderIssue = providerIsInactive || legacyAccountLinkIsInactive;
 
-  if (accountLinkIsInactive) {
-    return "inactiveLink";
+  if (inactiveProviderIssue) {
+    return "inactiveProvider";
   }
 
   return null;
 }
 
 function accessIssueTitle(issue: ProviderPortalAccessIssue) {
-  if (issue === "inactiveLink") {
-    return "Provider profile link inactive";
+  if (issue === "inactiveProvider") {
+    return "Provider profile inactive";
   }
 
   return "Provider profile not linked";
 }
 
 function accessIssueDescription(issue: ProviderPortalAccessIssue) {
-  if (issue === "inactiveLink") {
-    return "This signed-in account is linked to a Provider profile that is no longer active.";
+  if (issue === "inactiveProvider") {
+    return "This signed-in account is still linked, but the Provider profile is no longer active.";
   }
 
   return "This signed-in account is not connected to a Provider profile yet.";
 }
 
 function accessIssueNextStep(issue: ProviderPortalAccessIssue) {
-  if (issue === "inactiveLink") {
-    return "Ask an administrator to reactivate the Provider profile or send a new Provider Portal invite.";
+  if (issue === "inactiveProvider") {
+    return "Ask an administrator to reactivate the Provider profile.";
   }
 
   return "Use the Provider Portal invite link from your email, or ask an administrator to create a Provider link for this account.";

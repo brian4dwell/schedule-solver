@@ -106,11 +106,13 @@ def require_current_provider(
     provider_statement = select(Provider)
     provider_statement = provider_statement.where(Provider.organization_id == organization_id)
     provider_statement = provider_statement.where(Provider.id == identity_link.provider_id)
-    provider_statement = provider_statement.where(Provider.is_active.is_(True))
     provider = session.scalar(provider_statement)
 
     if provider is None:
-        raise HTTPException(status_code=403, detail="Provider account link is inactive")
+        raise HTTPException(status_code=403, detail="Provider profile not found")
+
+    if not provider.is_active:
+        raise HTTPException(status_code=403, detail="Provider profile is inactive")
 
     current_provider = CurrentProvider(user=current_user, provider=provider)
     return current_provider

@@ -497,8 +497,23 @@ export async function deleteRoom(roomId: string): Promise<Room> {
   return room;
 }
 
-export async function listProviders(): Promise<Provider[]> {
-  const responseJson = await requestJson<unknown[]>("/providers", { cache: "no-store" });
+type ListProvidersOptions = {
+  includeInactive?: boolean;
+};
+
+function providersPath(options?: ListProvidersOptions): string {
+  const includeInactive = options?.includeInactive === true;
+
+  if (!includeInactive) {
+    return "/providers";
+  }
+
+  return "/providers?include_inactive=true";
+}
+
+export async function listProviders(options?: ListProvidersOptions): Promise<Provider[]> {
+  const path = providersPath(options);
+  const responseJson = await requestJson<unknown[]>(path, { cache: "no-store" });
   const providers = providersApiSchema.parse(responseJson);
   return providers;
 }
@@ -533,6 +548,15 @@ export async function updateProvider(
 export async function deactivateProvider(providerId: string): Promise<Provider> {
   const responseJson = await requestJson<unknown>(`/providers/${providerId}`, {
     method: "DELETE",
+    cache: "no-store",
+  });
+  const provider = providerApiSchema.parse(responseJson);
+  return provider;
+}
+
+export async function reactivateProvider(providerId: string): Promise<Provider> {
+  const responseJson = await requestJson<unknown>(`/providers/${providerId}/reactivate`, {
+    method: "POST",
     cache: "no-store",
   });
   const provider = providerApiSchema.parse(responseJson);

@@ -1,5 +1,12 @@
+from pathlib import Path
+import sys
+from types import SimpleNamespace
+from uuid import uuid4
+
 import pytest
 from fastapi import HTTPException
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from app.core.auth import AuthenticatedUser
 from app.core.auth import ClerkSessionClaims
@@ -12,6 +19,16 @@ from app.core.auth import validate_authorized_party
 from app.core.auth import user_has_admin_role
 from app.core.config import Settings
 from app.dependencies import require_admin_user
+from app.dependencies import require_current_provider
+
+
+class ScalarSession:
+    def __init__(self, values: list[object | None]) -> None:
+        self.values = values
+
+    def scalar(self, _statement: object) -> object | None:
+        value = self.values.pop(0)
+        return value
 
 
 def test_authorization_header_token_reads_bearer_token() -> None:
@@ -134,3 +151,18 @@ def test_require_admin_user_rejects_non_admin() -> None:
         require_admin_user(user)
 
     assert error.value.status_code == 403
+
+
+def test_require_current_provider_reports_inactive_provider_profile() -> None:
+    provider_id = uuid4()
+    organization_id = uuid4()
+    current_user = AuthenticatedUser(user_id="user_123")
+    identity_link = SimpleNamespace(provider_id=provider_id)
+    provider = SimpleNamespace(is_active=False)
+    session = ScalarSession([identity_link, provider])
+
+    with pytest.raises(HTTPException) as error:
+        require_current_provider(current_user, organization_id, session)
+
+    assert error.value.status_code == 403
+    assert error.value.detail == "Provider profile is inactive"

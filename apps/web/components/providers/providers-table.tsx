@@ -1,10 +1,17 @@
 "use client";
 
+import type { ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { deactivateProvider, type Center, type Provider, type RoomType } from "@/lib/api";
+import {
+  deactivateProvider,
+  reactivateProvider,
+  type Center,
+  type Provider,
+  type RoomType,
+} from "@/lib/api";
 import { useToast } from "@/components/ui/toast-provider";
 
 type ProvidersTableProps = {
@@ -49,6 +56,19 @@ export function ProvidersTable({ centers, providers, roomTypes }: ProvidersTable
   const { showToast } = useToast();
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showInactiveProviders, setShowInactiveProviders] = useState(false);
+  const visibleProviders = providers.filter((provider) => {
+    if (showInactiveProviders) {
+      return true;
+    }
+
+    return provider.is_active;
+  });
+
+  function handleShowInactiveChange(event: ChangeEvent<HTMLInputElement>) {
+    const nextValue = event.target.checked;
+    setShowInactiveProviders(nextValue);
+  }
 
   async function handleDeactivate(providerId: string) {
     setErrorMessage(null);
@@ -72,8 +92,47 @@ export function ProvidersTable({ centers, providers, roomTypes }: ProvidersTable
     }
   }
 
+  async function handleReactivate(providerId: string) {
+    setErrorMessage(null);
+
+    try {
+      await reactivateProvider(providerId);
+      showToast({
+        title: "Provider reactivated",
+        description: "The provider is active again.",
+        tone: "success",
+      });
+      router.refresh();
+    } catch (error) {
+      const nextErrorMessage = error instanceof Error ? error.message : "Provider reactivation failed.";
+      setErrorMessage(nextErrorMessage);
+      showToast({
+        title: "Provider reactivation failed",
+        description: nextErrorMessage,
+        tone: "error",
+      });
+    }
+  }
+
   return (
     <div className="rounded-md border border-slate-200 bg-white">
+      <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">{visibleProviders.length} providers</p>
+          <p className="text-xs text-slate-500">
+            {showInactiveProviders ? "Showing active and inactive providers." : "Showing active providers."}
+          </p>
+        </div>
+        <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
+          <input
+            checked={showInactiveProviders}
+            onChange={handleShowInactiveChange}
+            type="checkbox"
+            className="h-4 w-4 rounded border-slate-300 text-teal-700"
+          />
+          <span>Show inactive</span>
+        </label>
+      </div>
       {errorMessage ? (
         <div className="border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {errorMessage}
@@ -93,8 +152,11 @@ export function ProvidersTable({ centers, providers, roomTypes }: ProvidersTable
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {providers.map((provider) => {
+            {visibleProviders.map((provider) => {
               const status = provider.is_active ? "Active" : "Inactive";
+              const statusClass = provider.is_active
+                ? "rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700"
+                : "rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600";
               const centerNames = credentialedCenterNames(provider, centers);
               const credentialedCenters = centerNames.join(", ");
               const credentialedCenterLabel = credentialedCenters || "None";
@@ -117,19 +179,38 @@ export function ProvidersTable({ centers, providers, roomTypes }: ProvidersTable
                   <td className="px-4 py-3 text-slate-600">{provider.employment_type}</td>
                   <td className="px-4 py-3 text-slate-600">{credentialedCenterLabel}</td>
                   <td className="px-4 py-3 text-slate-600">{skillLabel}</td>
-                  <td className="px-4 py-3 text-slate-600">{status}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    <span className={statusClass}>{status}</span>
+                  </td>
                   <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => handleDeactivate(provider.id)}
-                      className="text-sm font-medium text-slate-600 hover:text-red-700"
-                    >
-                      Deactivate
-                    </button>
+                    {provider.is_active ? (
+                      <button
+                        type="button"
+                        onClick={() => handleDeactivate(provider.id)}
+                        className="text-sm font-medium text-slate-600 hover:text-red-700"
+                      >
+                        Deactivate
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleReactivate(provider.id)}
+                        className="text-sm font-medium text-teal-700 hover:text-teal-900"
+                      >
+                        Reactivate
+                      </button>
+                    )}
                   </td>
                 </tr>
               );
             })}
+            {visibleProviders.length === 0 ? (
+              <tr>
+                <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={7}>
+                  No providers match the current filter.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>

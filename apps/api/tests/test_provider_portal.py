@@ -20,8 +20,11 @@ from app.schemas.provider_availability_week import ProviderAvailabilityDayInput
 from app.schemas.provider_availability_week import ProviderAvailabilityDayRead
 from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityReplaceRequest
 from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityRead
+from app.schemas.provider_portal import ProviderInviteAcceptanceRequest
 from app.schemas.provider_portal import ProviderInviteCreate
 from app.schemas.provider_portal import ProviderPortalWeekAvailabilityRead
+from app.services.provider_portal_service import INVITE_STATUS_ACCEPTED
+from app.services.provider_portal_service import accept_provider_invite_request
 from app.services.provider_portal_service import provider_invite_email
 
 
@@ -40,6 +43,18 @@ class FakeProviderPortalSession:
 
     def commit(self) -> None:
         return None
+
+
+class FakeInviteAcceptanceSession:
+    def __init__(self) -> None:
+        self.added_links: list[ProviderIdentityLink] = []
+        self.committed = False
+
+    def add(self, row: ProviderIdentityLink) -> None:
+        self.added_links.append(row)
+
+    def commit(self) -> None:
+        self.committed = True
 
 
 def create_provider(email: str | None = "provider@example.com") -> Provider:
@@ -346,3 +361,197 @@ def test_provider_invite_email_message_builds_accept_link() -> None:
     assert "Accept Provider Portal invite" in message.html_body
     assert "submit availability for open schedule weeks" in message.html_body
     assert "Schedule Solver Team" in message.html_body
+
+
+def test_accept_provider_invite_moves_user_link_from_inactive_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    organization_id = uuid4()
+    current_user = local_development_user()
+    provider = create_provider()
+    provider.organization_id = organization_id
+    inactive_provider = create_provider()
+    inactive_provider.organization_id = organization_id
+    inactive_provider.is_active = False
+    invite = ProviderInvite(
+        id=uuid4(),
+        organization_id=organization_id,
+        provider_id=provider.id,
+        email="provider@example.com",
+        invite_token="token-123",
+        status="invited",
+    )
+    existing_user_link = ProviderIdentityLink(
+        id=uuid4(),
+        organization_id=organization_id,
+        provider_id=inactive_provider.id,
+        clerk_user_id=current_user.user_id,
+    )
+    session = FakeInviteAcceptanceSession()
+    request = ProviderInviteAcceptanceRequest(invite_token=invite.invite_token)
+
+    def fake_invite_for_acceptance(
+        invite_token: str,
+        scoped_organization_id: object,
+        scoped_session: object,
+    ) -> ProviderInvite:
+        return invite
+
+    def fake_require_active_provider(
+        provider_id: object,
+        scoped_organization_id: object,
+        scoped_session: object,
+    ) -> Provider:
+        return provider
+
+    def fake_provider_identity_link(
+        provider_id: object,
+        scoped_organization_id: object,
+        scoped_session: object,
+    ) -> ProviderIdentityLink | None:
+        return None
+
+    def fake_user_identity_link(
+        clerk_user_id: str,
+        scoped_organization_id: object,
+        scoped_session: object,
+    ) -> ProviderIdentityLink | None:
+        return existing_user_link
+
+    def fake_provider_for_identity_link(
+        identity_link: ProviderIdentityLink,
+        scoped_organization_id: object,
+        scoped_session: object,
+    ) -> Provider | None:
+        return inactive_provider
+
+    monkeypatch.setattr(
+        "app.services.provider_portal_service.invite_for_acceptance",
+        fake_invite_for_acceptance,
+    )
+    monkeypatch.setattr(
+        "app.services.provider_portal_service.require_active_provider",
+        fake_require_active_provider,
+    )
+    monkeypatch.setattr(
+        "app.services.provider_portal_service.provider_identity_link",
+        fake_provider_identity_link,
+    )
+    monkeypatch.setattr(
+        "app.services.provider_portal_service.user_identity_link",
+        fake_user_identity_link,
+    )
+    monkeypatch.setattr(
+        "app.services.provider_portal_service.provider_for_identity_link",
+        fake_provider_for_identity_link,
+    )
+
+    response = accept_provider_invite_request(
+        request,
+        current_user,
+        organization_id,
+        session,
+    )
+
+    assert existing_user_link.provider_id == provider.id
+    assert invite.status == INVITE_STATUS_ACCEPTED
+    assert invite.accepted_by_clerk_user_id == current_user.user_id
+    assert session.added_links == []
+    assert session.committed is True
+    assert response.provider.provider_id == provider.id
+
+
+def test_accept_provider_invite_keeps_active_user_link_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    organization_id = uuid4()
+    current_user = local_development_user()
+    provider = create_provider()
+    provider.organization_id = organization_id
+    linked_provider = create_provider()
+    linked_provider.organization_id = organization_id
+    invite = ProviderInvite(
+        id=uuid4(),
+        organization_id=organization_id,
+        provider_id=provider.id,
+        email="provider@example.com",
+        invite_token="token-123",
+        status="invited",
+    )
+    existing_user_link = ProviderIdentityLink(
+        id=uuid4(),
+        organization_id=organization_id,
+        provider_id=linked_provider.id,
+        clerk_user_id=current_user.user_id,
+    )
+    session = FakeInviteAcceptanceSession()
+    request = ProviderInviteAcceptanceRequest(invite_token=invite.invite_token)
+
+    def fake_invite_for_acceptance(
+        invite_token: str,
+        scoped_organization_id: object,
+        scoped_session: object,
+    ) -> ProviderInvite:
+        return invite
+
+    def fake_require_active_provider(
+        provider_id: object,
+        scoped_organization_id: object,
+        scoped_session: object,
+    ) -> Provider:
+        return provider
+
+    def fake_provider_identity_link(
+        provider_id: object,
+        scoped_organization_id: object,
+        scoped_session: object,
+    ) -> ProviderIdentityLink | None:
+        return None
+
+    def fake_user_identity_link(
+        clerk_user_id: str,
+        scoped_organization_id: object,
+        scoped_session: object,
+    ) -> ProviderIdentityLink | None:
+        return existing_user_link
+
+    def fake_provider_for_identity_link(
+        identity_link: ProviderIdentityLink,
+        scoped_organization_id: object,
+        scoped_session: object,
+    ) -> Provider | None:
+        return linked_provider
+
+    monkeypatch.setattr(
+        "app.services.provider_portal_service.invite_for_acceptance",
+        fake_invite_for_acceptance,
+    )
+    monkeypatch.setattr(
+        "app.services.provider_portal_service.require_active_provider",
+        fake_require_active_provider,
+    )
+    monkeypatch.setattr(
+        "app.services.provider_portal_service.provider_identity_link",
+        fake_provider_identity_link,
+    )
+    monkeypatch.setattr(
+        "app.services.provider_portal_service.user_identity_link",
+        fake_user_identity_link,
+    )
+    monkeypatch.setattr(
+        "app.services.provider_portal_service.provider_for_identity_link",
+        fake_provider_for_identity_link,
+    )
+
+    with pytest.raises(HTTPException) as error:
+        accept_provider_invite_request(
+            request,
+            current_user,
+            organization_id,
+            session,
+        )
+
+    assert error.value.status_code == 409
+    assert error.value.detail == "User is already linked to another Provider"
+    assert existing_user_link.provider_id == linked_provider.id
+    assert session.committed is False

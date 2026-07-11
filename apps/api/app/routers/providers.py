@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
@@ -29,7 +30,6 @@ def find_provider(
 ) -> Provider:
     statement = select(Provider).where(Provider.id == provider_id)
     statement = statement.where(Provider.organization_id == organization_id)
-    statement = statement.where(Provider.is_active.is_(True))
     statement = statement.options(selectinload(Provider.center_credentials))
     statement = statement.options(selectinload(Provider.room_type_skills))
     provider = session.scalar(statement)
@@ -169,9 +169,13 @@ def replace_provider_room_type_skills(
 def list_providers(
     session: Session = Depends(get_db),
     organization_id: UUID = Depends(get_current_organization_id),
+    include_inactive: bool = Query(default=False),
 ) -> list[Provider]:
     statement = select(Provider).where(Provider.organization_id == organization_id)
-    statement = statement.where(Provider.is_active.is_(True))
+
+    if not include_inactive:
+        statement = statement.where(Provider.is_active.is_(True))
+
     statement = statement.order_by(Provider.display_name)
     statement = statement.options(selectinload(Provider.center_credentials))
     statement = statement.options(selectinload(Provider.room_type_skills))
@@ -287,6 +291,19 @@ def deactivate_provider(
 ) -> Provider:
     provider = find_provider(provider_id, organization_id, session)
     provider.is_active = False
+    session.commit()
+    session.refresh(provider)
+    return provider
+
+
+@router.post("/{provider_id}/reactivate", response_model=ProviderRead)
+def reactivate_provider(
+    provider_id: UUID,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+) -> Provider:
+    provider = find_provider(provider_id, organization_id, session)
+    provider.is_active = True
     session.commit()
     session.refresh(provider)
     return provider
