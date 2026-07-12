@@ -264,7 +264,7 @@ function dateForDayKey(schedulePeriod: SchedulePeriod, dayKey: ScheduleDayKey) {
 function dateTimeForAssignment(
   slotDate: string,
   timeValue: string,
-) {
+): string {
   const timeParts = timeValue.split(":");
   const hour = Number(timeParts[0]);
   const minute = Number(timeParts[1]);
@@ -272,6 +272,24 @@ function dateTimeForAssignment(
   date.setUTCHours(hour, minute, 0, 0);
   const value = date.toISOString();
   return value;
+}
+
+function assignmentDateTimeRange(
+  assignment: ScheduleRoomAssignment,
+): { startDateTime: string; endDateTime: string } {
+  const startDateTime = dateTimeForAssignment(
+    assignment.slotDate,
+    assignment.startTime,
+  );
+  const rawEndDateTime = dateTimeForAssignment(
+    assignment.slotDate,
+    assignment.endTime,
+  );
+  const range = {
+    startDateTime,
+    endDateTime: rawEndDateTime,
+  };
+  return range;
 }
 
 function slotDateForDayKey(
@@ -689,37 +707,16 @@ function overlappingAssignmentIsAllowed(
   return splitDayPair;
 }
 
-function assignmentDateTimeValue(
-  assignment: ScheduleRoomAssignment,
-  timeValue: string,
-) {
-  const dateTime = dateTimeForAssignment(
-    assignment.slotDate,
-    timeValue,
-  );
-  return dateTime;
-}
-
 function assignmentsOverlap(
   firstAssignment: ScheduleRoomAssignment,
   secondAssignment: ScheduleRoomAssignment,
 ) {
-  const firstStartTime = assignmentDateTimeValue(
-    firstAssignment,
-    firstAssignment.startTime,
-  );
-  const firstEndTime = assignmentDateTimeValue(
-    firstAssignment,
-    firstAssignment.endTime,
-  );
-  const secondStartTime = assignmentDateTimeValue(
-    secondAssignment,
-    secondAssignment.startTime,
-  );
-  const secondEndTime = assignmentDateTimeValue(
-    secondAssignment,
-    secondAssignment.endTime,
-  );
+  const firstRange = assignmentDateTimeRange(firstAssignment);
+  const secondRange = assignmentDateTimeRange(secondAssignment);
+  const firstStartTime = firstRange.startDateTime;
+  const firstEndTime = firstRange.endDateTime;
+  const secondStartTime = secondRange.startDateTime;
+  const secondEndTime = secondRange.endDateTime;
   const startsBeforeSecondEnds = firstStartTime < secondEndTime;
   const endsAfterSecondStarts = firstEndTime > secondStartTime;
   const overlaps = startsBeforeSecondEnds && endsAfterSecondStarts;
@@ -1943,14 +1940,9 @@ export function ScheduleWorkspace({
     assignments: ScheduleRoomAssignment[],
   ): ScheduleAssignmentSavePayload[] {
     const payload = assignments.map((assignment) => {
-      const startTime = dateTimeForAssignment(
-        assignment.slotDate,
-        assignment.startTime,
-      );
-      const endTime = dateTimeForAssignment(
-        assignment.slotDate,
-        assignment.endTime,
-      );
+      const dateTimeRange = assignmentDateTimeRange(assignment);
+      const startTime = dateTimeRange.startDateTime;
+      const endTime = dateTimeRange.endDateTime;
       const assignmentPayload = {
         room_slot_id: assignment.id,
         allow_slot_date_change: assignment.slotDateChanged,

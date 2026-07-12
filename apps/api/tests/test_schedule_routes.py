@@ -558,6 +558,22 @@ def test_create_template_slot_maps_write_contract() -> None:
     assert slot.display_order == 2
 
 
+def test_create_template_slot_rejects_end_before_start() -> None:
+    request = ScheduleStructureTemplateSlotWrite(
+        weekday="monday",
+        room_id=uuid4(),
+        shift_type="full_shift",
+        start_time=time(15, 0),
+        end_time=time(7, 0),
+        display_order=2,
+    )
+
+    with pytest.raises(HTTPException) as error:
+        create_template_slot(request, uuid4(), uuid4())
+
+    assert error.value.status_code == 400
+
+
 def test_template_weekday_maps_to_target_schedule_period_date() -> None:
     schedule_period = SchedulePeriod(
         id=uuid4(),
@@ -687,6 +703,56 @@ def test_stable_assignment_request_preserves_parent_slot_date() -> None:
     assert stable_assignment.start_time == datetime(2026, 5, 4, 8, 30, tzinfo=UTC)
     assert stable_assignment.end_time == datetime(2026, 5, 4, 16, 30, tzinfo=UTC)
     assert stable_assignment.schedule_date == date(2026, 5, 4)
+
+
+def test_stable_assignment_request_rejects_end_before_start() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    schedule_version_id = uuid4()
+    provider_id = uuid4()
+    center_id = uuid4()
+    room_id = uuid4()
+    room_slot_id = uuid4()
+    parent_assignment = Assignment(
+        room_slot_id=room_slot_id,
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        schedule_version_id=schedule_version_id,
+        provider_id=provider_id,
+        center_id=center_id,
+        room_id=room_id,
+        shift_requirement_id=None,
+        required_provider_type=None,
+        shift_type="full_shift",
+        schedule_date=date(2026, 5, 4),
+        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=UTC),
+        end_time=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
+        assignment_status="draft",
+        source="manual",
+        notes=None,
+    )
+    requested_assignment = ScheduleAssignmentCreate(
+        room_slot_id=room_slot_id,
+        provider_id=provider_id,
+        center_id=center_id,
+        room_id=room_id,
+        shift_requirement_id=None,
+        required_provider_type=None,
+        shift_type="full_shift",
+        schedule_date=date(2026, 5, 4),
+        start_time=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
+        end_time=datetime(2026, 5, 4, 7, 0, tzinfo=UTC),
+        source="manual",
+        notes=None,
+    )
+
+    with pytest.raises(HTTPException) as error:
+        stable_assignment_request(
+            requested_assignment,
+            [parent_assignment],
+        )
+
+    assert error.value.status_code == 400
 
 
 def test_stable_assignment_request_allows_explicit_slot_date_change() -> None:

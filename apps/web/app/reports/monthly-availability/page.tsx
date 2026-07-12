@@ -17,10 +17,12 @@ export default async function MonthlyAvailabilityPage() {
 
   return (
     <AppShell>
-      <PageHeader
-        title="Monthly Availability"
-        description="Review Provider availability selections in a calendar view."
-      />
+      <div className="monthly-availability-screen-only">
+        <PageHeader
+          title="Monthly Availability"
+          description="Review Provider availability selections in a calendar view."
+        />
+      </div>
       <MonthlyAvailabilityReport initialReport={report} />
     </AppShell>
   );

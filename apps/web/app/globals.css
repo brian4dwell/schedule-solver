@@ -17,3 +17,85 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+.monthly-availability-print-only {
+  display: none;
+}
+
+@page monthly-availability-calendar {
+  size: landscape;
+  margin: 0.35in;
+}
+
+@media print {
+  body:has(.monthly-availability-report) {
+    background: #ffffff;
+  }
+
+  body:has(.monthly-availability-report) .min-h-screen {
+    background: #ffffff !important;
+    min-height: 0 !important;
+  }
+
+  body:has(.monthly-availability-report) .min-h-screen > header {
+    display: none !important;
+  }
+
+  body:has(.monthly-availability-report) main {
+    padding: 0 !important;
+  }
+
+  body:has(.monthly-availability-report) .monthly-availability-screen-only {
+    display: none !important;
+  }
+
+  body:has(.monthly-availability-report) .monthly-availability-print-only {
+    display: block !important;
+  }
+
+  body:has(.monthly-availability-report) .monthly-availability-report {
+    color: #0f172a;
+    page: monthly-availability-calendar;
+  }
+
+  body:has(.monthly-availability-report) .monthly-availability-print-calendar {
+    overflow: visible !important;
+  }
+
+  body:has(.monthly-availability-report) .monthly-availability-print-calendar > div {
+    min-width: 0 !important;
+  }
+
+  body:has(.monthly-availability-report) .monthly-availability-calendar-grid {
+    gap: 0.06in !important;
+  }
+
+  body:has(.monthly-availability-report) .monthly-availability-weekday-header {
+    color: #475569 !important;
+    padding: 0.03in 0.04in !important;
+  }
+
+  body:has(.monthly-availability-report) .monthly-availability-empty-cell {
+    background: #f8fafc !important;
+    min-height: 1in !important;
+  }
+
+  body:has(.monthly-availability-report) .monthly-availability-day-cell {
+    break-inside: avoid;
+    box-shadow: none !important;
+    min-height: 1in !important;
+    padding: 0.05in !important;
+  }
+
+  body:has(.monthly-availability-report) .monthly-availability-day-cell > div:last-child {
+    max-height: none !important;
+    overflow: visible !important;
+    padding-right: 0 !important;
+  }
+
+  body:has(.monthly-availability-report) .monthly-availability-print-text {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+  }
+}

@@ -562,6 +562,10 @@ def create_template_slot(
     template_id: UUID,
     organization_id: UUID,
 ) -> ScheduleStructureTemplateSlot:
+    require_template_slot_end_after_start(
+        request.start_time,
+        request.end_time,
+    )
     slot = ScheduleStructureTemplateSlot(
         organization_id=organization_id,
         template_id=template_id,
@@ -637,6 +641,30 @@ def datetime_for_template_slot(
     return date_time
 
 
+def require_slot_end_after_start(
+    start_time: datetime,
+    end_time: datetime,
+) -> datetime:
+    end_is_after_start = end_time > start_time
+
+    if end_is_after_start:
+        return end_time
+
+    raise HTTPException(status_code=400, detail="Slot end time must be after start time")
+
+
+def require_template_slot_end_after_start(
+    start_time: time,
+    end_time: time,
+) -> None:
+    end_is_after_start = end_time > start_time
+
+    if end_is_after_start:
+        return
+
+    raise HTTPException(status_code=400, detail="Template slot end time must be after start time")
+
+
 def active_room_for_template_slot(
     slot: ScheduleStructureTemplateSlot,
     organization_id: UUID,
@@ -674,6 +702,7 @@ def applied_template_slot(
     schedule_date = schedule_date_for_template_weekday(schedule_period, slot.weekday)
     start_time = datetime_for_template_slot(schedule_date, slot.start_time)
     end_time = datetime_for_template_slot(schedule_date, slot.end_time)
+    valid_end_time = require_slot_end_after_start(start_time, end_time)
     room_slot_id = uuid4()
     applied_slot = ScheduleStructureTemplateAppliedSlot(
         room_slot_id=room_slot_id,
@@ -683,7 +712,7 @@ def applied_template_slot(
         shift_type=slot.shift_type,
         schedule_date=schedule_date,
         start_time=start_time,
-        end_time=end_time,
+        end_time=valid_end_time,
         display_order=slot.display_order,
     )
     return applied_slot
@@ -722,15 +751,27 @@ def datetime_with_date(source_datetime: datetime, target_date: date) -> datetime
     return updated_datetime
 
 
-def assignment_request_with_schedule_date_times(
+def assignment_datetimes_for_schedule_date(
     requested_assignment: ScheduleAssignmentCreate,
-) -> ScheduleAssignmentCreate:
+    schedule_date: date,
+) -> tuple[datetime, datetime]:
     start_time = datetime_with_date(
         requested_assignment.start_time,
-        requested_assignment.schedule_date,
+        schedule_date,
     )
     end_time = datetime_with_date(
         requested_assignment.end_time,
+        schedule_date,
+    )
+    valid_end_time = require_slot_end_after_start(start_time, end_time)
+    return start_time, valid_end_time
+
+
+def assignment_request_with_schedule_date_times(
+    requested_assignment: ScheduleAssignmentCreate,
+) -> ScheduleAssignmentCreate:
+    start_time, end_time = assignment_datetimes_for_schedule_date(
+        requested_assignment,
         requested_assignment.schedule_date,
     )
     updated_assignment = requested_assignment.model_copy(
@@ -762,10 +803,10 @@ def preserve_parent_assignment_dates(
     requested_assignment: ScheduleAssignmentCreate,
     parent_assignment: Assignment,
 ) -> ScheduleAssignmentCreate:
-    start_date = parent_assignment.schedule_date
-    end_date = parent_assignment.schedule_date
-    start_time = datetime_with_date(requested_assignment.start_time, start_date)
-    end_time = datetime_with_date(requested_assignment.end_time, end_date)
+    start_time, end_time = assignment_datetimes_for_schedule_date(
+        requested_assignment,
+        parent_assignment.schedule_date,
+    )
     updated_assignment = requested_assignment.model_copy(
         update={
             "schedule_date": parent_assignment.schedule_date,

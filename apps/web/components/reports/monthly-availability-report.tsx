@@ -261,6 +261,17 @@ function candidateLabel(candidate: MonthlyScheduleCandidateApi): string {
   return label;
 }
 
+function selectedScheduleCandidate(
+  group: MonthlyScheduleCandidateGroupApi,
+): MonthlyScheduleCandidateApi | undefined {
+  const candidate = group.candidates.find((currentCandidate) => {
+    const candidateMatches =
+      currentCandidate.schedule_period_id === group.selected_schedule_period_id;
+    return candidateMatches;
+  });
+  return candidate;
+}
+
 function totalProviderSelections(days: MonthlyAvailabilityDayApi[]): number {
   const total = days.reduce((currentTotal, day) => {
     const nextTotal = currentTotal + day.providers.length;
@@ -351,14 +362,14 @@ function assignmentDetail(assignment: MonthlyScheduleAssignmentApi) {
 
 function providerOptionMarkers(provider: MonthlyAvailabilityProviderApi) {
   return (
-    <span className="flex flex-wrap gap-1">
+    <span className="monthly-availability-option-markers flex flex-wrap gap-1">
       {provider.options.map((option) => {
         const label = optionLabel(option);
         const toneClassName = optionToneClassName(option);
         return (
           <span
             key={option}
-            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${toneClassName}`}
+            className={`rounded px-1 py-0.5 text-[10px] font-semibold leading-3 ${toneClassName}`}
           >
             {label}
           </span>
@@ -377,7 +388,7 @@ function calendarDayCell(day: MonthlyAvailabilityDayApi) {
     return !isScheduled;
   });
   const backgroundClassName = hasProviders ? "bg-white" : "bg-slate-50";
-  const cellClassName = `min-h-72 rounded-md border border-slate-200 p-2 ${backgroundClassName}`;
+  const cellClassName = `monthly-availability-day-cell min-h-72 rounded-md border border-slate-200 p-1.5 ${backgroundClassName}`;
 
   return (
     <div className={cellClassName}>
@@ -387,29 +398,29 @@ function calendarDayCell(day: MonthlyAvailabilityDayApi) {
           {day.providers.length}
         </span>
       </div>
-      <div className="mt-2 max-h-64 space-y-2 overflow-y-auto pr-1">
+      <div className="mt-1.5 space-y-1.5">
         {scheduledProviders.map((provider) => {
           return (
             <div
               key={`${provider.provider_id}-${provider.schedule_period_id}`}
-              className="rounded-md border border-teal-200 bg-teal-50 px-2 py-1 shadow-sm"
+              className="rounded-md border border-teal-200 bg-teal-50 px-1.5 py-1 shadow-sm"
             >
               <div className="flex items-center justify-between gap-2">
-                <p className="truncate text-xs font-semibold text-slate-950">
-                  {provider.provider_display_name}
-                </p>
-                <span className="rounded bg-teal-700 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                  <p className="monthly-availability-print-text truncate text-xs font-semibold text-slate-950">
+                    {provider.provider_display_name}
+                  </p>
+                  {providerOptionMarkers(provider)}
+                </div>
+                <span className="rounded bg-teal-700 px-1 py-0.5 text-[9px] font-semibold leading-3 text-white">
                   Scheduled
                 </span>
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-1">
-                {providerOptionMarkers(provider)}
               </div>
               {provider.scheduled_assignments.map((assignment) => {
                 return (
                   <p
                     key={assignment.assignment_id}
-                    className="mt-1 truncate text-[11px] font-medium text-teal-950"
+                    className="monthly-availability-print-text mt-0.5 truncate text-[11px] font-medium leading-4 text-teal-950"
                   >
                     {assignmentDetail(assignment)}
                   </p>
@@ -422,17 +433,19 @@ function calendarDayCell(day: MonthlyAvailabilityDayApi) {
           return (
             <div
               key={`${provider.provider_id}-${provider.schedule_period_id}`}
-              className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 shadow-sm"
+              className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-1 shadow-sm"
             >
               <div className="flex items-center justify-between gap-2">
-                <p className="truncate text-xs font-semibold text-slate-950">
-                  {provider.provider_display_name}
-                </p>
-                <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                  <p className="monthly-availability-print-text truncate text-xs font-semibold text-slate-950">
+                    {provider.provider_display_name}
+                  </p>
+                  {providerOptionMarkers(provider)}
+                </div>
+                <span className="rounded bg-amber-200 px-1 py-0.5 text-[9px] font-semibold leading-3 text-amber-950">
                   Available
                 </span>
               </div>
-              <div className="mt-1">{providerOptionMarkers(provider)}</div>
             </div>
           );
         })}
@@ -593,9 +606,81 @@ export function MonthlyAvailabilityReport({
     setSelectedSchedulePeriodIds(nextIds);
   }
 
+  function handlePrintButtonClick() {
+    window.print();
+  }
+
   return (
-    <div className="space-y-5">
-      <section className="rounded-md border border-slate-200 bg-white p-4">
+    <div className="monthly-availability-report space-y-5">
+      <section className="monthly-availability-print-only">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-semibold text-slate-950">
+              Monthly Availability
+            </h1>
+            <p className="mt-1 text-sm font-medium text-slate-600">
+              {formatSelectedMonth(report)}
+            </p>
+          </div>
+          <div className="text-right text-xs font-medium text-slate-600">
+            <p>{providerSelectionCount} selections</p>
+            <p>{providerCount} providers</p>
+          </div>
+        </div>
+        <div className="mt-3 grid gap-2 text-xs sm:grid-cols-5">
+          <div>
+            <p className="font-semibold uppercase text-slate-500">Days</p>
+            <p className="mt-0.5 font-semibold text-slate-950">{dayCount}</p>
+          </div>
+          <div>
+            <p className="font-semibold uppercase text-slate-500">Selections</p>
+            <p className="mt-0.5 font-semibold text-slate-950">
+              {providerSelectionCount}
+            </p>
+          </div>
+          <div>
+            <p className="font-semibold uppercase text-slate-500">Scheduled</p>
+            <p className="mt-0.5 font-semibold text-teal-800">
+              {scheduledProviderCount}
+            </p>
+          </div>
+          <div>
+            <p className="font-semibold uppercase text-slate-500">Available</p>
+            <p className="mt-0.5 font-semibold text-amber-800">
+              {unscheduledProviderCount}
+            </p>
+          </div>
+          <div>
+            <p className="font-semibold uppercase text-slate-500">View</p>
+            <p className="mt-0.5 font-semibold text-slate-950">
+              {showWeekends ? "Weekends shown" : "Weekdays only"}
+            </p>
+          </div>
+        </div>
+        {report.schedule_candidate_groups.length > 0 ? (
+          <div className="mt-3 grid gap-1 text-xs sm:grid-cols-2">
+            {report.schedule_candidate_groups.map((group) => {
+              const candidate = selectedScheduleCandidate(group);
+
+              return (
+                <div key={group.group_key}>
+                  <span className="font-semibold text-slate-950">
+                    {formatScheduleGroupRange(group)}
+                  </span>
+                  {candidate !== undefined ? (
+                    <span className="text-slate-600">
+                      {" "}
+                      {candidateLabel(candidate)}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </section>
+
+      <section className="monthly-availability-screen-only rounded-md border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-950">
@@ -605,7 +690,7 @@ export function MonthlyAvailabilityReport({
               {providerSelectionCount} availability selections across {dayCount} days.
             </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-[minmax(160px,1fr)_120px]">
+          <div className="grid gap-3 sm:grid-cols-[minmax(160px,1fr)_120px_auto]">
             <label className="flex flex-col gap-2 text-sm text-slate-700">
               <span className="font-semibold text-slate-950">Month</span>
               <select
@@ -633,6 +718,14 @@ export function MonthlyAvailabilityReport({
                 onChange={(event) => updateSelectedYear(event.target.value)}
               />
             </label>
+            <button
+              type="button"
+              className="inline-flex h-10 items-center justify-center self-end rounded-md bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              disabled={isLoading}
+              onClick={handlePrintButtonClick}
+            >
+              Print / PDF
+            </button>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -721,14 +814,14 @@ export function MonthlyAvailabilityReport({
         ) : null}
       </section>
 
-      <section className="overflow-x-auto">
+      <section className="monthly-availability-print-calendar overflow-x-auto">
         <div className="min-w-[960px]">
-          <div className={`grid gap-2 ${calendarGridClassName}`}>
+          <div className={`monthly-availability-calendar-grid grid gap-2 ${calendarGridClassName}`}>
             {visibleColumns.map((column) => {
               return (
                 <div
                   key={column.label}
-                  className="px-2 py-1 text-xs font-semibold uppercase text-slate-500"
+                  className="monthly-availability-weekday-header px-2 py-1 text-xs font-semibold uppercase text-slate-500"
                 >
                   {column.label}
                 </div>
@@ -739,7 +832,7 @@ export function MonthlyAvailabilityReport({
                 return (
                   <div
                     key={cell.key}
-                    className="min-h-72 rounded-md border border-dashed border-slate-200 bg-slate-100/60"
+                    className="monthly-availability-empty-cell min-h-72 rounded-md border border-dashed border-slate-200 bg-slate-100/60"
                   />
                 );
               }

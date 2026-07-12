@@ -252,6 +252,57 @@ def test_solver_rejects_overlapping_shifts_for_same_provider() -> None:
     assert result.violations[0].constraint_type == "infeasible_solver_model"
 
 
+def test_solver_rejects_invalid_shift_time_range() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    center_id = uuid4()
+    room_type_id = uuid4()
+    room = create_room(center_id, room_type_id)
+    provider = create_provider(center_id, room_type_id)
+    credential = create_credential(provider.id, center_id)
+    shift = create_shift(center_id, room.id, 15, 7)
+    solver_input = SolverInput(
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        rooms=[room],
+        providers=[provider],
+        center_credentials=[credential],
+        shift_requirements=[shift],
+    )
+
+    result = solve_schedule(solver_input)
+
+    assert result.is_feasible is False
+    assert result.assignments == []
+    assert result.violations[0].constraint_type == "invalid_shift_time_range"
+
+
+def test_solver_rejects_two_full_shifts_for_same_provider_on_same_day() -> None:
+    organization_id = uuid4()
+    schedule_period_id = uuid4()
+    center_id = uuid4()
+    room_type_id = uuid4()
+    room = create_room(center_id, room_type_id)
+    provider = create_provider(center_id, room_type_id)
+    credential = create_credential(provider.id, center_id)
+    first_shift = create_shift(center_id, room.id, 7, 11)
+    second_shift = create_shift(center_id, room.id, 11, 15)
+    solver_input = SolverInput(
+        organization_id=organization_id,
+        schedule_period_id=schedule_period_id,
+        rooms=[room],
+        providers=[provider],
+        center_credentials=[credential],
+        shift_requirements=[first_shift, second_shift],
+    )
+
+    result = solve_schedule(solver_input)
+
+    assert result.is_feasible is False
+    assert result.assignments == []
+    assert result.violations[0].constraint_type == "infeasible_solver_model"
+
+
 def test_solver_best_effort_returns_partial_schedule_for_overlapping_shifts() -> None:
     organization_id = uuid4()
     schedule_period_id = uuid4()
@@ -634,6 +685,13 @@ def test_solver_uses_half_shift_units_for_max_shift_warning() -> None:
     credential = create_credential(provider.id, center_id)
     full_shift = create_shift(center_id, room.id, 7, 15)
     half_shift = create_shift(center_id, room.id, 15, 19, shift_type="first_half")
+    half_shift.start_time = datetime(2026, 5, 5, 15, 0, tzinfo=UTC)
+    half_shift.end_time = datetime(2026, 5, 5, 19, 0, tzinfo=UTC)
+    tuesday_availability = SolverWeeklyAvailabilityDay(
+        weekday="tuesday",
+        options=["first_half"],
+    )
+    provider.week_availability.days.append(tuesday_availability)
     solver_input = SolverInput(
         organization_id=organization_id,
         schedule_period_id=schedule_period_id,

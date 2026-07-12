@@ -33,6 +33,10 @@ ASSIGNMENT_IMBALANCE_PENALTY = 3
 FAIRNESS_PRESSURE_SCALE = 10
 MAX_SOLVE_SECONDS = 30.0
 UNFILLED_SHIFT_ASSIGNMENT_PENALTY = 100_000
+SPLIT_DAY_SHIFT_TYPES = {
+    "first_half",
+    "second_half",
+}
 
 
 @dataclass
@@ -101,6 +105,104 @@ def time_ranges_overlap(
     ends_after_second_starts = first_end > second_start
     overlaps = starts_before_second_ends and ends_after_second_starts
     return overlaps
+
+
+def shift_requirement_time_is_valid(
+    shift_requirement: SolverShiftRequirement,
+) -> bool:
+    time_is_valid = shift_requirement.end_time > shift_requirement.start_time
+    return time_is_valid
+
+
+def invalid_shift_time_metadata(
+    shift_requirement: SolverShiftRequirement,
+) -> dict[str, object]:
+    room_id: str | None = None
+
+    if shift_requirement.room_id is not None:
+        room_id = str(shift_requirement.room_id)
+
+    metadata = {
+        "shift_requirement_id": str(shift_requirement.id),
+        "room_slot_id": str(shift_requirement.room_slot_id),
+        "center_id": str(shift_requirement.center_id),
+        "center_name": shift_requirement.center_name,
+        "room_id": room_id,
+        "room_name": shift_requirement.room_name,
+        "shift_type": shift_requirement.shift_type,
+        "start_time": shift_requirement.start_time.isoformat(),
+        "end_time": shift_requirement.end_time.isoformat(),
+    }
+    return metadata
+
+
+def invalid_shift_time_violation(
+    shift_requirement: SolverShiftRequirement,
+) -> SolverViolation:
+    metadata = invalid_shift_time_metadata(shift_requirement)
+    message = "Shift requirement end time must be after start time."
+    violation = SolverViolation(
+        severity="hard_violation",
+        constraint_type="invalid_shift_time_range",
+        message=message,
+        metadata_json=metadata,
+    )
+    return violation
+
+
+def invalid_shift_time_violations(
+    solver_input: SolverInput,
+) -> list[SolverViolation]:
+    violations: list[SolverViolation] = []
+
+    for shift_requirement in solver_input.shift_requirements:
+        time_is_valid = shift_requirement_time_is_valid(shift_requirement)
+
+        if time_is_valid:
+            continue
+
+        violation = invalid_shift_time_violation(shift_requirement)
+        violations.append(violation)
+
+    return violations
+
+
+def shift_requirements_share_schedule_date(
+    first_shift: SolverShiftRequirement,
+    second_shift: SolverShiftRequirement,
+) -> bool:
+    first_date = first_shift.start_time.date()
+    second_date = second_shift.start_time.date()
+    dates_match = first_date == second_date
+    return dates_match
+
+
+def shift_type_pair_is_split_day(
+    first_shift_type: str,
+    second_shift_type: str,
+) -> bool:
+    shift_types = {
+        first_shift_type,
+        second_shift_type,
+    }
+    split_day_pair = shift_types == SPLIT_DAY_SHIFT_TYPES
+    return split_day_pair
+
+
+def same_day_assignment_pair_is_allowed(
+    first_shift: SolverShiftRequirement,
+    second_shift: SolverShiftRequirement,
+) -> bool:
+    centers_match = first_shift.center_id == second_shift.center_id
+
+    if not centers_match:
+        return False
+
+    split_day_pair = shift_type_pair_is_split_day(
+        first_shift.shift_type,
+        second_shift.shift_type,
+    )
+    return split_day_pair
 
 
 def room_for_shift(
@@ -721,6 +823,39 @@ def add_provider_overlap_constraints(
                 )
 
                 if not shifts_overlap:
+                    continue
+
+                model.Add(first_decision.variable + second_decision.variable <= 1)
+
+
+def add_provider_same_day_constraints(
+    model: cp_model.CpModel,
+    solver_input: SolverInput,
+    decisions: list[CandidateDecision],
+) -> None:
+    for provider in solver_input.providers:
+        provider_decisions = decisions_for_provider(provider, decisions)
+
+        for first_index, first_decision in enumerate(provider_decisions):
+            remaining_decisions = provider_decisions[first_index + 1 :]
+
+            for second_decision in remaining_decisions:
+                first_shift = first_decision.candidate.shift_requirement
+                second_shift = second_decision.candidate.shift_requirement
+                shifts_share_schedule_date = shift_requirements_share_schedule_date(
+                    first_shift,
+                    second_shift,
+                )
+
+                if not shifts_share_schedule_date:
+                    continue
+
+                same_day_pair_is_allowed = same_day_assignment_pair_is_allowed(
+                    first_shift,
+                    second_shift,
+                )
+
+                if same_day_pair_is_allowed:
                     continue
 
                 model.Add(first_decision.variable + second_decision.variable <= 1)
@@ -1467,6 +1602,12 @@ def solve_schedule(
         result = no_shift_requirements_result()
         return result
 
+    time_violations = invalid_shift_time_violations(solver_input)
+
+    if len(time_violations) > 0:
+        result = infeasible_solver_result(time_violations)
+        return result
+
     candidates, candidate_violations = build_solver_candidates(solver_input)
     uses_strict_generation = generation_mode == "strict"
 
@@ -1488,6 +1629,7 @@ def solve_schedule(
         )
 
     add_provider_overlap_constraints(model, solver_input, decisions)
+    add_provider_same_day_constraints(model, solver_input, decisions)
     add_objective(model, solver_input, decisions, unfilled_counts)
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = MAX_SOLVE_SECONDS
