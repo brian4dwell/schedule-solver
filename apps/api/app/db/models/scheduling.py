@@ -171,6 +171,7 @@ class ProviderInvite(Base, TimestampMixin):
     provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     invite_token: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     accepted_by_clerk_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

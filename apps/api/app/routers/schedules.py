@@ -69,6 +69,7 @@ from app.services.scheduling.availability_service import clone_weekly_availabili
 from app.services.scheduling.fairness import rebuild_published_fairness_state
 from app.services.scheduling.fairness import record_fairness_for_schedule_version
 from app.services.scheduling.provider_eligibility import check_provider_slot_eligibility
+from app.services.scheduling.publish_validation import schedule_publish_violations
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityViolation
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityInput
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityResult
@@ -1527,7 +1528,7 @@ def publish_schedule_version(
 ) -> SchedulePublishResponse:
     schedule_version = require_schedule_version(schedule_version_id, organization_id, session)
     assignments = assignments_for_version(schedule_version_id, organization_id, session)
-    violations: list[ProviderEligibilityViolation] = []
+    violations = schedule_publish_violations(schedule_version, assignments, organization_id, session)
 
     for assignment in assignments:
         assignment_has_provider = assignment.provider_id is not None
@@ -1586,6 +1587,7 @@ def publish_schedule_version(
     schedule_version.status = "published"
     schedule_version.published_at = published_at
     schedule_period.status = "published"
+    session.flush()
     rebuild_published_fairness_state(
         organization_id,
         session,

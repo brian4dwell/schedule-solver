@@ -85,6 +85,22 @@ def get_current_organization_id(
     current_user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_db),
 ) -> UUID:
+    external_id = current_user.organization_external_id
+
+    if external_id is not None:
+        statement = select(Organization)
+        statement = statement.where(Organization.id == LOCAL_ORGANIZATION_ID)
+        statement = statement.where(Organization.clerk_org_id == external_id)
+        organization = session.scalar(statement)
+
+        if organization is None:
+            raise HTTPException(status_code=403, detail="Organization access denied")
+
+        return organization.id
+
+    if current_user.organization_role is not None:
+        raise HTTPException(status_code=403, detail="Organization identity required")
+
     organization = get_default_organization(session)
     organization_id = organization.id
     return organization_id

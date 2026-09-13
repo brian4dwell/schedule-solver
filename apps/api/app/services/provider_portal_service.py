@@ -1,4 +1,6 @@
 from secrets import token_urlsafe
+from datetime import UTC
+from datetime import timedelta
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -14,10 +16,12 @@ from app.schemas.provider_portal import ProviderInviteAcceptanceRequest
 from app.schemas.provider_portal import ProviderInviteCreate
 from app.schemas.provider_portal import ProviderPortalInviteAcceptanceRead
 from app.schemas.provider_portal import ProviderPortalProfileRead
+from app.services.clerk_identity import require_verified_invite_email
 
 INVITE_TOKEN_BYTE_COUNT = 32
 INVITE_STATUS_INVITED = "invited"
 INVITE_STATUS_ACCEPTED = "accepted"
+INVITE_LIFETIME = timedelta(days=7)
 
 
 def provider_profile(provider: Provider) -> ProviderPortalProfileRead:
@@ -64,6 +68,8 @@ def existing_provider_invite(
     statement = select(ProviderInvite)
     statement = statement.where(ProviderInvite.provider_id == provider_id)
     statement = statement.where(ProviderInvite.organization_id == organization_id)
+    statement = statement.with_for_update()
+    statement = statement.execution_options(populate_existing=True)
     invite = session.scalar(statement)
     return invite
 
@@ -123,26 +129,41 @@ def create_or_reset_provider_invite(
 ) -> ProviderInvite:
     invite_email = provider_invite_email(provider, request)
     invite = existing_provider_invite(provider.id, organization_id, session)
+    require_provider_is_unlinked(provider.id, organization_id, session)
+    invite_token = token_urlsafe(INVITE_TOKEN_BYTE_COUNT)
+    expires_at = current_utc_time() + INVITE_LIFETIME
 
     if invite is None:
-        invite_token = token_urlsafe(INVITE_TOKEN_BYTE_COUNT)
         invite = ProviderInvite(
             organization_id=organization_id,
             provider_id=provider.id,
             email=invite_email,
             invite_token=invite_token,
+            expires_at=expires_at,
             status=INVITE_STATUS_INVITED,
             accepted_by_clerk_user_id=None,
             accepted_at=None,
         )
         session.add(invite)
     else:
+        invite.invite_token = invite_token
+        invite.expires_at = expires_at
         invite.email = invite_email
         invite.status = INVITE_STATUS_INVITED
         invite.accepted_by_clerk_user_id = None
         invite.accepted_at = None
 
     return invite
+
+
+def provider_invite_has_expired(invite: ProviderInvite) -> bool:
+    expires_at = invite.expires_at
+
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+
+    invite_has_expired = expires_at <= current_utc_time()
+    return invite_has_expired
 
 
 def invite_for_acceptance(
@@ -153,10 +174,20 @@ def invite_for_acceptance(
     statement = select(ProviderInvite)
     statement = statement.where(ProviderInvite.organization_id == organization_id)
     statement = statement.where(ProviderInvite.invite_token == invite_token)
+    statement = statement.with_for_update()
+    statement = statement.execution_options(populate_existing=True)
     invite = session.scalar(statement)
 
     if invite is None:
         raise HTTPException(status_code=404, detail="Provider invite not found")
+
+    if invite.status != INVITE_STATUS_INVITED:
+        raise HTTPException(status_code=409, detail="Provider invite has already been used")
+
+    invite_has_expired = provider_invite_has_expired(invite)
+
+    if invite_has_expired:
+        raise HTTPException(status_code=410, detail="Provider invite has expired; request a new invite")
 
     return invite
 
@@ -168,6 +199,7 @@ def accept_provider_invite_request(
     session: Session,
 ) -> ProviderPortalInviteAcceptanceRead:
     invite = invite_for_acceptance(request.invite_token, organization_id, session)
+    require_verified_invite_email(current_user.user_id, invite.email)
     provider = require_active_provider(invite.provider_id, organization_id, session)
     existing_provider_link = provider_identity_link(provider.id, organization_id, session)
     existing_user_link = user_identity_link(current_user.user_id, organization_id, session)

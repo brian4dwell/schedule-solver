@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
-    "test:auth": "node --test tests/auth-protection.test.mjs"
+    "test:auth": "node --test tests/auth-protection.test.mjs",
+    "test:workflows": "node --test tests/availability-editor.test.mjs tests/schedule-publication.test.mjs tests/provider-invites.test.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.2",
@@ -29,6 +30,7 @@
     "@typescript/native": "npm:typescript@^7.0.2",
     "eslint": "^9.39.5",
     "eslint-config-next": "16.3.5",
+    "jsdom": "^30.0.1",
     "tailwindcss": "^4.3.3",
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   }

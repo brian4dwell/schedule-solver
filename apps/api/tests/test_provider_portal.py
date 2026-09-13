@@ -356,7 +356,8 @@ def test_provider_invite_email_message_builds_accept_link() -> None:
     assert "token-123" in str(message.invite_url)
     assert "Schedule Solver's Provider Portal" in message.plain_text_body
     assert "submit availability for open schedule weeks" in message.plain_text_body
-    assert "For your security, this link is intended only for you." in message.plain_text_body
+    assert "This link expires in seven days." in message.plain_text_body
+    assert "verified email address that received this invite" in message.plain_text_body
     assert "Schedule Solver Team" in message.plain_text_body
     assert "Accept Provider Portal invite" in message.html_body
     assert "submit availability for open schedule weeks" in message.html_body
@@ -366,6 +367,10 @@ def test_provider_invite_email_message_builds_accept_link() -> None:
 def test_accept_provider_invite_moves_user_link_from_inactive_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        "app.services.provider_portal_service.require_verified_invite_email",
+        lambda _user_id, _email: None,
+    )
     organization_id = uuid4()
     current_user = local_development_user()
     provider = create_provider()
@@ -464,6 +469,10 @@ def test_accept_provider_invite_moves_user_link_from_inactive_provider(
 def test_accept_provider_invite_keeps_active_user_link_conflict(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        "app.services.provider_portal_service.require_verified_invite_email",
+        lambda _user_id, _email: None,
+    )
     organization_id = uuid4()
     current_user = local_development_user()
     provider = create_provider()

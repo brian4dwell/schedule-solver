@@ -45,6 +45,7 @@ class SolverShiftRequirement(BaseModel):
     locked_provider_id: UUID | None = None
     center_id: UUID
     center_name: str
+    center_is_active: bool
     room_id: UUID | None
     room_name: str | None
     shift_type: str = "full_shift"

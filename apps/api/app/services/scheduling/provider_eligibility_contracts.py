@@ -46,6 +46,9 @@ class ProviderEligibilityContext(BaseModel):
     credential_exists: bool
     credential_is_active_for_slot: bool
     room_md_only: bool
+    center_is_active: bool
+    room_is_active: bool
+    room_matches_center: bool
     required_room_type_skills: list[RequiredRoomTypeSkill] = Field(default_factory=list)
     provider_room_type_skills: list[ProviderRoomTypeSkillSummary] = Field(default_factory=list)
     weekly_availability: ProviderWeeklyAvailabilitySummary

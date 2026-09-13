@@ -46,7 +46,7 @@ def provider_invite_plain_text_body(provider: Provider, invite_url: str) -> str:
         "review your scheduling preferences, and keep your information current."
     )
     invitation_label = "Accept your invite:"
-    security_note = "For your security, this link is intended only for you."
+    security_note = "This link expires in seven days. Sign in with the verified email address that received this invite."
     unexpected_note = "If you were not expecting this invitation, you can ignore this email."
     closing = "Thank you,"
     signature = "Schedule Solver Team"
@@ -80,7 +80,7 @@ def provider_invite_html_body(provider: Provider, invite_url: str) -> str:
         "review your scheduling preferences, and keep your information current.</p>"
     )
     action = f'<p><a href="{escaped_invite_url}">Accept Provider Portal invite</a></p>'
-    security_note = "<p>For your security, this link is intended only for you.</p>"
+    security_note = "<p>This link expires in seven days. Sign in with the verified email address that received this invite.</p>"
     unexpected_note = "<p>If you were not expecting this invitation, you can ignore this email.</p>"
     closing = "<p>Thank you,<br>Schedule Solver Team</p>"
     body_parts = [

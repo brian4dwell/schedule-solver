@@ -326,12 +326,13 @@ The schedule workspace currently supports:
 - Backend eligibility verification on Provider selection.
 - Draft save through persisted Schedule Versions.
 - Schedule template save, load, and delete for reusable Room/day structures.
-- Publish through the API.
+- Publish the saved draft through the API after all board edits and notes are saved. Publication waits for pending save, generation, version-load, and template-load operations.
 - Header summary for unset Provider availability.
 - Toggle to reveal Providers with unset availability.
 - `Schedule constraints` table below the calendar.
 - Hard publish blocker count based on hard constraint rows.
 - Min/max shift request warnings without publish blocking.
+- Shorter-shift accommodation warnings without publish blocking.
 
 ## Schedule Constraints Table
 
@@ -427,7 +428,15 @@ Each protected Next.js page calls `auth.protect()` before reading data or render
 
 The pinned Clerk ESLint plugin requires authentication checks in pages, Route Handlers, and Server Functions by default. Its public exceptions live in `apps/web/eslint.config.mjs`. Run `npm run lint` and `npm run test:auth` from `apps/web` when changing authentication boundaries. FastAPI enforces authentication on API reads and writes independently of the web proxy; signed-out API requests return 401 instead of a sign-in redirect.
 
-FastAPI verifies Clerk session JWTs and requires an admin role before returning organization-scoped data. The current backend still resolves authorized users to the local organization record until real organization mapping is designed.
+FastAPI verifies Clerk session JWTs and requires an admin role before returning administrative data. Both legacy organization claims and Clerk version-2 `o.id`/`o.rol` claims are supported; conflicting claim representations are rejected. Application admin roles may come from signed `role`, `roles`, or `public_metadata.role`/`public_metadata.roles` claims.
+
+The deployment remains single-organization. Sessions with an active Clerk organization must match `clerk_org_id` on the local Organization (`00000000-0000-4000-8000-000000000001`); unknown or other organizations receive 403. Provision that mapping before using organization sessions. Personal application-admin sessions and provider sessions without an active organization retain the local organization path, with route-specific admin and provider-link checks.
+
+Provider invitations rotate their token on every reset or resend and expire after seven days. Acceptance locks the invitation row, rejects expired or consumed links, and checks the signed-in user's verified email addresses through the Clerk Backend API against the invited recipient. This requires `CLERK_SECRET_KEY`; failed identity verification cannot create an account link. Migration `202609130001` expires legacy links, so administrators must issue new invitations for outstanding recipients after upgrading.
+
+The Provider Invites page shows expired pending invitations as `Expired` with instructions to issue a new link. Accepted and linked accounts retain their account status. Creating or emailing an invitation refreshes the server status and replaces the copyable link; a failed attempt clears the previous link because it may have been revoked before delivery failed.
+
+Publication rejects inactive centers/rooms, mismatched room/center assignments, empty versions, and unresolved schedule-level hard violations from generation. Assignment eligibility is rechecked against current data; corrected work must be saved as a new draft. Warnings remain publishable. Publication flushes the new published/superseded statuses before rebuilding fairness within the same transaction.
 
 ### Concrete Credential And Skill Tables
 
@@ -449,7 +458,7 @@ Rooms can be hard-deleted when they have no schedule records and soft-deleted wh
 
 High-priority gaps:
 
-- Real Clerk organization to local Organization mapping.
+- Multi-organization routing beyond the explicitly bound local Organization.
 - Role and permission boundaries beyond the current admin gate.
 - Shift Requirement CRUD.
 - Preference model and preference UI.
@@ -487,7 +496,7 @@ Known architecture gaps:
 
 ### Auth And Multi-User Milestone
 
-- Replace local organization dependency with real organization/user resolution.
+- Extend the explicit single-organization binding to multi-organization resolution when required.
 - Add finer role and permission boundaries.
 - Add audit metadata where needed.
 
@@ -558,6 +567,7 @@ Run frontend checks:
 cd apps/web
 npm run lint
 npm run test:auth
+npm run test:workflows
 npm run typecheck
 npm run build
 ```

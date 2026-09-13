@@ -20,6 +20,11 @@ from app.core.auth import user_has_admin_role
 from app.core.config import Settings
 from app.dependencies import require_admin_user
 from app.dependencies import require_current_provider
+from app.dependencies import get_current_organization_id
+from app.dependencies import LOCAL_ORGANIZATION_ID
+from app.db.models import Organization
+from pydantic import ValidationError
+from conftest import SchedulingDatabase
 
 
 class ScalarSession:
@@ -166,3 +171,63 @@ def test_require_current_provider_reports_inactive_provider_profile() -> None:
 
     assert error.value.status_code == 403
     assert error.value.detail == "Provider profile is inactive"
+
+
+@pytest.mark.parametrize("role, is_admin", [("admin", True), ("member", False)])
+def test_v2_organization_roles_are_normalized(role: str, is_admin: bool) -> None:
+    claims = ClerkSessionClaims.model_validate({"sub": "user_123", "v": 2, "o": {"id": "org_123", "rol": role}})
+    user = authenticated_user_from_claims(claims)
+    assert user.organization_external_id == "org_123"
+    assert user.organization_role == f"org:{role}"
+    assert user_has_admin_role(user) is is_admin
+
+
+def test_public_metadata_singular_admin_role_is_recognized() -> None:
+    claims = ClerkSessionClaims.model_validate({"sub": "user_123", "public_metadata": {"role": "admin"}})
+    user = authenticated_user_from_claims(claims)
+    assert user_has_admin_role(user)
+
+
+@pytest.mark.parametrize("legacy_claims", [{"org_id": "org_other"}, {"org_role": "org:admin"}])
+def test_conflicting_v1_and_v2_organization_claims_are_rejected(legacy_claims: dict[str, str]) -> None:
+    claims = {"sub": "user_123", "o": {"id": "org_123", "rol": "member"}, **legacy_claims}
+    with pytest.raises(ValidationError):
+        ClerkSessionClaims.model_validate(claims)
+
+
+@pytest.mark.parametrize("external_id", ["org_local", "org_unknown", "org_other"])
+def test_organization_admin_access_requires_the_local_mapping(
+    scheduling_database: SchedulingDatabase,
+    external_id: str,
+) -> None:
+    session = scheduling_database.session
+    local = Organization(id=LOCAL_ORGANIZATION_ID, name="Local", clerk_org_id="org_local")
+    scheduling_database.organization.clerk_org_id = "org_other"
+    session.add(local)
+    session.commit()
+    claims = ClerkSessionClaims.model_validate({"sub": "user_123", "o": {"id": external_id, "rol": "admin"}})
+    user = authenticated_user_from_claims(claims)
+    require_admin_user(user)
+    if external_id == "org_local":
+        assert get_current_organization_id(user, session) == LOCAL_ORGANIZATION_ID
+    else:
+        with pytest.raises(HTTPException) as error:
+            get_current_organization_id(user, session)
+        assert error.value.status_code == 403
+
+
+@pytest.mark.parametrize("role", ["admin", None])
+def test_personal_admin_and_provider_sessions_keep_single_organization_access(
+    scheduling_database: SchedulingDatabase,
+    role: str | None,
+) -> None:
+    user = AuthenticatedUser(user_id="user_123", role=role)
+    organization_id = get_current_organization_id(user, scheduling_database.session)
+    assert organization_id == LOCAL_ORGANIZATION_ID
+
+
+def test_organization_role_without_identity_is_denied(scheduling_database: SchedulingDatabase) -> None:
+    user = AuthenticatedUser(user_id="user_123", organization_role="org:admin")
+    with pytest.raises(HTTPException) as error:
+        get_current_organization_id(user, scheduling_database.session)
+    assert error.value.status_code == 403

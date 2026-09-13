@@ -7,6 +7,7 @@ import {
 
 export const providerAccountStateSchema = z.enum([
   "invited",
+  "expired",
   "accepted",
   "linked",
 ]);
@@ -22,6 +23,7 @@ export const providerInviteApiSchema = z.object({
   provider_id: z.string().uuid(),
   email: z.string().email(),
   invite_token: z.string().min(1),
+  expires_at: z.string().min(1),
   status: z.string().min(1),
   accepted_by_clerk_user_id: z.string().nullable(),
   accepted_at: z.string().nullable(),

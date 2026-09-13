@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   createProviderInvite,
@@ -49,25 +50,38 @@ function workflowMessageClass(tone: ProviderInviteWorkflowTone) {
 }
 
 export function ProviderInvitesTable({ statuses }: ProviderInvitesTableProps) {
+  const router = useRouter();
   const { showToast } = useToast();
-  const [inviteLinksByProviderId, setInviteLinksByProviderId] = useState<Record<string, string>>({});
+  const [inviteLinksByProviderId, setInviteLinksByProviderId] = useState<Map<string, string>>(() => new Map());
   const [pendingProviderId, setPendingProviderId] = useState<string | null>(null);
   const [workflowMessage, setWorkflowMessage] = useState<ProviderInviteWorkflowMessage | null>(null);
+
+  function clearInviteLink(providerId: string) {
+    setInviteLinksByProviderId((currentLinks) => {
+      const nextLinks = new Map(currentLinks);
+      nextLinks.delete(providerId);
+      return nextLinks;
+    });
+  }
+
+  function showInviteLink(providerId: string, token: string) {
+    const inviteUrl = new URL("/provider-portal/accept", window.location.origin);
+    inviteUrl.searchParams.set("token", token);
+    const inviteLink = inviteUrl.toString();
+    setInviteLinksByProviderId((currentLinks) => {
+      const nextLinks = new Map(currentLinks);
+      nextLinks.set(providerId, inviteLink);
+      return nextLinks;
+    });
+  }
 
   async function inviteProvider(providerId: string) {
     setPendingProviderId(providerId);
     setWorkflowMessage(null);
+    clearInviteLink(providerId);
     try {
       const invite = await createProviderInvite(providerId);
-      const inviteUrl = new URL("/provider-portal/accept", window.location.origin);
-      inviteUrl.searchParams.set("token", invite.invite_token);
-      setInviteLinksByProviderId((currentLinks) => {
-        const nextLinks = {
-          ...currentLinks,
-          [providerId]: inviteUrl.toString(),
-        };
-        return nextLinks;
-      });
+      showInviteLink(providerId, invite.invite_token);
       showToast({
         title: "Invite link created",
         description: "The link is ready to copy from the provider row.",
@@ -88,14 +102,17 @@ export function ProviderInvitesTable({ statuses }: ProviderInvitesTableProps) {
       });
     } finally {
       setPendingProviderId(null);
+      router.refresh();
     }
   }
 
   async function emailProvider(providerId: string) {
     setPendingProviderId(providerId);
     setWorkflowMessage(null);
+    clearInviteLink(providerId);
     try {
       const emailSend = await sendProviderInviteEmail(providerId);
+      showInviteLink(providerId, emailSend.invite.invite_token);
       const message = `Invite sent to ${emailSend.recipient_email}.`;
       const nextWorkflowMessage = {
         providerId,
@@ -123,6 +140,7 @@ export function ProviderInvitesTable({ statuses }: ProviderInvitesTableProps) {
       });
     } finally {
       setPendingProviderId(null);
+      router.refresh();
     }
   }
 
@@ -140,7 +158,7 @@ export function ProviderInvitesTable({ statuses }: ProviderInvitesTableProps) {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {statuses.map((status) => {
-              const inviteLink = inviteLinksByProviderId[status.providerId];
+              const inviteLink = inviteLinksByProviderId.get(status.providerId);
               const providerIsPending = pendingProviderId === status.providerId;
               const providerMessageIsVisible = workflowMessage?.providerId === status.providerId;
               const providerMessageTone = workflowMessage?.tone;
@@ -149,6 +167,7 @@ export function ProviderInvitesTable({ statuses }: ProviderInvitesTableProps) {
                 ? workflowMessageClass(providerMessageTone)
                 : "";
               const providerIsLinked = status.accountState === "linked";
+              const inviteIsExpired = status.accountState === "expired";
 
               return (
                 <tr key={status.providerId}>
@@ -158,6 +177,11 @@ export function ProviderInvitesTable({ statuses }: ProviderInvitesTableProps) {
                   <td className="px-4 py-3 text-slate-600">{status.providerEmail ?? "No email"}</td>
                   <td className="px-4 py-3 text-slate-700">
                     {accountStateLabel(status.accountState)}
+                    {inviteIsExpired ? (
+                      <p className="mt-1 max-w-64 text-xs text-amber-800">
+                        The previous link has expired. Create a new invite or send a new email.
+                      </p>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-2">

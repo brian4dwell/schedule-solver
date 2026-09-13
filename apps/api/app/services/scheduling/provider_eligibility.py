@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Assignment
+from app.db.models import Center
 from app.db.models import Provider
 from app.db.models import ProviderCenterCredential
 from app.db.models import ProviderRoomTypeSkill
@@ -122,6 +123,22 @@ def evaluate_provider_slot_eligibility(
     context: ProviderEligibilityContext,
 ) -> ProviderSlotEligibilityResult:
     violations: list[ProviderEligibilityViolation] = []
+
+    if not context.center_is_active:
+        violation = create_violation("inactive_center", "other_hard_constraint", "Center is inactive.")
+        violations.append(violation)
+
+    if not context.room_is_active:
+        violation = create_violation("inactive_room", "other_hard_constraint", "Room is inactive.")
+        violations.append(violation)
+
+    if not context.room_matches_center:
+        violation = create_violation(
+            "room_center_mismatch",
+            "other_hard_constraint",
+            "Room does not belong to the assignment center.",
+        )
+        violations.append(violation)
 
     if not context.provider_is_active:
         violation = create_violation(
@@ -331,6 +348,18 @@ def load_room(
     return room
 
 
+def load_center(request: ProviderSlotEligibilityInput, session: Session) -> Center:
+    statement = select(Center)
+    statement = statement.where(Center.id == request.center_id)
+    statement = statement.where(Center.organization_id == request.organization_id)
+    center = session.scalar(statement)
+
+    if center is None:
+        raise ValueError("Center not found")
+
+    return center
+
+
 def load_center_credential(
     request: ProviderSlotEligibilityInput,
     session: Session,
@@ -475,6 +504,7 @@ def load_provider_eligibility_context(
     session: Session,
 ) -> ProviderEligibilityContext:
     provider = load_provider(request, session)
+    center = load_center(request, session)
     room = load_room(request, session)
     credential = load_center_credential(request, session)
     required_skills = load_required_room_type_skills(request, session)
@@ -505,6 +535,9 @@ def load_provider_eligibility_context(
         credential_exists=credential_exists,
         credential_is_active_for_slot=credential_active,
         room_md_only=room_md_only,
+        center_is_active=center.is_active,
+        room_is_active=room is None or room.is_active,
+        room_matches_center=room is None or room.center_id == center.id,
         required_room_type_skills=required_skills,
         provider_room_type_skills=provider_skills,
         weekly_availability=weekly_availability,

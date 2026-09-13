@@ -62,6 +62,7 @@ from app.services.provider_portal_service import INVITE_STATUS_ACCEPTED
 from app.services.provider_portal_service import accept_provider_invite_request
 from app.services.provider_portal_service import create_or_reset_provider_invite
 from app.services.provider_portal_service import provider_profile
+from app.services.provider_portal_service import provider_invite_has_expired
 from app.services.provider_portal_service import require_active_provider
 from app.services.provider_portal_service import require_provider_is_unlinked
 
@@ -185,6 +186,11 @@ def account_state_for_provider(
 
     if invite_was_accepted:
         return "accepted"
+
+    invite_has_expired = provider_invite_has_expired(invite)
+
+    if invite_has_expired:
+        return "expired"
 
     return "invited"
 

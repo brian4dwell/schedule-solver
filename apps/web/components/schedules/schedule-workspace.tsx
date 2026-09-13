@@ -1964,26 +1964,11 @@ export function ScheduleWorkspace({
   }
 
   async function handlePublishSchedule() {
-    const invalidAssignments = workingVersion.assignments.filter((assignment) => {
-      const room = roomForAssignment(assignment);
+    if (isScheduleOperationPending) {
+      return;
+    }
 
-      if (room === undefined) {
-        return true;
-      }
-
-      const options = providerOptionsForAssignment(
-        providers,
-        room,
-        assignment,
-        workingVersion.assignments,
-        availabilityByProviderId,
-      );
-      const option = selectedProviderOption(options, assignment.providerId);
-      const validationStatus = validationStatusForSelection(option);
-      const isInvalid = validationStatus !== "valid";
-      return isInvalid;
-    });
-    const hasInvalidAssignments = invalidAssignments.length > 0;
+    const hasInvalidAssignments = publishBlockerCount > 0 || assignedRoomCount === 0;
 
     if (hasInvalidAssignments) {
       setActionMessage("Resolve publish blockers before publishing.");
@@ -2000,6 +1985,17 @@ export function ScheduleWorkspace({
       showToast({
         title: "Publish blocked",
         description: "Save a draft before publishing.",
+        tone: "warning",
+      });
+      return;
+    }
+
+    if (!scheduleDraftIsSaved) {
+      const message = "Save the current draft before publishing these changes.";
+      setActionMessage(message);
+      showToast({
+        title: "Save draft before publishing",
+        description: message,
         tone: "warning",
       });
       return;
@@ -2786,8 +2782,14 @@ export function ScheduleWorkspace({
     savedDraftSnapshot,
   );
   const hasUnsavedScheduleChanges = !scheduleDraftIsSaved;
+  const isScheduleOperationPending =
+    isSaving || isGenerating || isLoadingVersion || isLoadingTemplate || isPublishing;
   const canPublish =
-    publishBlockerCount === 0 && assignedRoomCount > 0 && hasSavedVersion;
+    publishBlockerCount === 0
+    && assignedRoomCount > 0
+    && hasSavedVersion
+    && scheduleDraftIsSaved
+    && !isScheduleOperationPending;
   const hasSelectedTemplate = selectedTemplateId.length > 0;
   const canLoadTemplate = hasSelectedTemplate && !isLoadingTemplate;
   const canDeleteTemplate = hasSelectedTemplate && !isDeletingTemplate;
@@ -3058,12 +3060,15 @@ export function ScheduleWorkspace({
               <button
                 type="button"
                 onClick={handlePublishSchedule}
-                disabled={!canPublish || isPublishing}
+                disabled={!canPublish}
                 className="inline-flex h-9 items-center justify-center rounded-md bg-teal-700 px-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
-                {isPublishing ? "Publishing" : "Publish changes"}
+                {isPublishing ? "Publishing" : "Publish saved draft"}
               </button>
             </div>
+            {hasUnsavedScheduleChanges ? (
+              <p className="text-xs text-slate-600">Save draft before publishing these changes.</p>
+            ) : null}
           </div>
         </div>
         <div className="mt-4 border-t border-slate-200 pt-4">

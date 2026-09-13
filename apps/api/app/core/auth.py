@@ -11,6 +11,8 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import field_validator
+from pydantic import ValidationError
+from pydantic import model_validator
 
 from app.core.config import Settings
 
@@ -43,6 +45,13 @@ class ClerkPublicMetadata(BaseModel):
         return roles
 
 
+class ClerkOrganizationClaim(BaseModel):
+    id: str = Field(min_length=1)
+    rol: str = Field(min_length=1)
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class ClerkSessionClaims(BaseModel):
     sub: str
     sid: str | None = None
@@ -50,6 +59,7 @@ class ClerkSessionClaims(BaseModel):
     iss: str | None = None
     org_id: str | None = None
     org_role: str | None = None
+    o: ClerkOrganizationClaim | None = None
     role: str | None = None
     roles: list[str] = Field(default_factory=list)
     public_metadata: ClerkPublicMetadata | None = None
@@ -62,6 +72,20 @@ class ClerkSessionClaims(BaseModel):
     def normalize_roles(cls, value: object) -> object:
         roles = normalize_clerk_roles_claim(value)
         return roles
+
+    @model_validator(mode="after")
+    def validate_organization_claims(self) -> "ClerkSessionClaims":
+        if self.o is None:
+            return self
+
+        normalized_role = f"org:{self.o.rol}"
+        conflicting_id = self.org_id is not None and self.org_id != self.o.id
+        conflicting_role = self.org_role is not None and self.org_role != normalized_role
+
+        if conflicting_id or conflicting_role:
+            raise ValueError("Conflicting organization claims")
+
+        return self
 
 
 class AuthenticatedUser(BaseModel):
@@ -114,14 +138,25 @@ def authenticated_user_from_claims(claims: ClerkSessionClaims) -> AuthenticatedU
     metadata_roles = []
 
     if claims.public_metadata is not None:
-        metadata_roles = claims.public_metadata.roles
+        metadata_roles = list(claims.public_metadata.roles)
+        metadata_role = claims.public_metadata.role
+
+        if metadata_role is not None:
+            metadata_roles.append(metadata_role)
 
     roles = [*claims.roles, *metadata_roles]
+    organization_id = claims.org_id
+    organization_role = claims.org_role
+
+    if claims.o is not None:
+        organization_id = claims.o.id
+        organization_role = f"org:{claims.o.rol}"
+
     user = AuthenticatedUser(
         user_id=claims.sub,
         session_id=claims.sid,
-        organization_external_id=claims.org_id,
-        organization_role=claims.org_role,
+        organization_external_id=organization_id,
+        organization_role=organization_role,
         role=claims.role,
         roles=roles,
     )
@@ -310,7 +345,7 @@ def verify_clerk_session_token(token: str, settings: Settings) -> AuthenticatedU
             claims = verify_with_jwks(token, jwks_url, settings)
         else:
             raise HTTPException(status_code=500, detail="Clerk verification is not configured")
-    except (InvalidTokenError, PyJWKClientError) as error:
+    except (InvalidTokenError, PyJWKClientError, ValidationError) as error:
         raise HTTPException(status_code=401, detail="Invalid session token") from error
 
     validate_session_claims(claims, settings)

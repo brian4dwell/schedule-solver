@@ -12,7 +12,7 @@ from app.schemas.common import TimestampedSchema
 from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityRead
 
 
-ProviderAccountState = Literal["invited", "accepted", "linked"]
+ProviderAccountState = Literal["invited", "expired", "accepted", "linked"]
 
 
 class ProviderInviteCreate(BaseModel):
@@ -23,6 +23,7 @@ class ProviderInviteRead(TimestampedSchema):
     provider_id: UUID
     email: EmailStr
     invite_token: str
+    expires_at: datetime
     status: str
     accepted_by_clerk_user_id: str | None
     accepted_at: datetime | None

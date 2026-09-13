@@ -173,16 +173,48 @@ function clampShiftCount(value: number, minimum: number, maximum: number) {
   return clampedValue;
 }
 
-export function ProviderAvailabilityEditor(props: {
+type ProviderAvailabilityEditorProps = {
   periods: SchedulePeriod[];
   providers: Provider[];
-}) {
-  const { showToast } = useToast();
+};
+
+type SelectedProviderAvailabilityEditorProps = ProviderAvailabilityEditorProps & {
+  scheduleWeekId: string;
+  providerId: string;
+  onScheduleWeekSelected: (scheduleWeekId: string) => void;
+  onProviderSelected: (providerId: string) => void;
+};
+
+export function ProviderAvailabilityEditor(props: ProviderAvailabilityEditorProps) {
   const { periods, providers } = props;
   const firstPeriodId = periods.at(0)?.id ?? "";
   const firstProviderId = providers.at(0)?.id ?? "";
   const [scheduleWeekId, setScheduleWeekId] = useState(firstPeriodId);
   const [providerId, setProviderId] = useState(firstProviderId);
+  const selectionKey = `${scheduleWeekId}:${providerId}`;
+
+  return (
+    <SelectedProviderAvailabilityEditor
+      key={selectionKey}
+      periods={periods}
+      providers={providers}
+      scheduleWeekId={scheduleWeekId}
+      providerId={providerId}
+      onScheduleWeekSelected={setScheduleWeekId}
+      onProviderSelected={setProviderId}
+    />
+  );
+}
+
+function SelectedProviderAvailabilityEditor({
+  periods,
+  providers,
+  scheduleWeekId,
+  providerId,
+  onScheduleWeekSelected,
+  onProviderSelected,
+}: SelectedProviderAvailabilityEditorProps) {
+  const { showToast } = useToast();
   const [record, setRecord] = useState<ProviderWeeklyAvailabilityRecord | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -263,6 +295,10 @@ export function ProviderAvailabilityEditor(props: {
   }, [periods, scheduleWeekId]);
 
   const isLocked = record?.isLocked ?? false;
+  const recordMatchesSelection =
+    record?.scheduleWeekId === scheduleWeekId && record?.providerId === providerId;
+  const requestIsPending = isLoading || isSaving || isDeleting;
+  const canEditRecord = recordMatchesSelection && !requestIsPending && !isLocked;
   const statusLabel = isLocked ? "Locked (Published)" : "Editable";
   const statusToneClassName = isLocked
     ? "bg-amber-100 text-amber-900"
@@ -297,7 +333,7 @@ export function ProviderAvailabilityEditor(props: {
   }
 
   function updateDay(weekday: Weekday, option: AvailabilityOption, isChecked: boolean) {
-    if (record === null) {
+    if (record === null || !canEditRecord) {
       return;
     }
 
@@ -347,7 +383,7 @@ export function ProviderAvailabilityEditor(props: {
   }
 
   function updateMinShiftsRequested(value: string) {
-    if (record === null) {
+    if (record === null || !canEditRecord) {
       return;
     }
 
@@ -378,7 +414,7 @@ export function ProviderAvailabilityEditor(props: {
   }
 
   function updateMaxShiftsRequested(value: string) {
-    if (record === null) {
+    if (record === null || !canEditRecord) {
       return;
     }
 
@@ -409,7 +445,7 @@ export function ProviderAvailabilityEditor(props: {
   }
 
   async function saveRecord() {
-    if (record === null) {
+    if (record === null || !canEditRecord) {
       return;
     }
 
@@ -418,8 +454,8 @@ export function ProviderAvailabilityEditor(props: {
     setSuccessMessage(null);
     try {
       const savedRecord = await saveProviderWeeklyAvailability(
-        scheduleWeekId,
-        providerId,
+        record.scheduleWeekId,
+        record.providerId,
         record,
       );
       const availableShiftCapacity = totalAvailableShiftCapacity(savedRecord.days);
@@ -448,12 +484,16 @@ export function ProviderAvailabilityEditor(props: {
   }
 
   async function deleteRecord() {
+    if (record === null || !canEditRecord) {
+      return;
+    }
+
     setIsDeleting(true);
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
-      await deleteProviderWeeklyAvailability(scheduleWeekId, providerId);
-      const loadedRecord = await getProviderWeeklyAvailability(scheduleWeekId, providerId);
+      await deleteProviderWeeklyAvailability(record.scheduleWeekId, record.providerId);
+      const loadedRecord = await getProviderWeeklyAvailability(record.scheduleWeekId, record.providerId);
       const availableShiftCapacity = totalAvailableShiftCapacity(loadedRecord.days);
       const loadedMinimumWasEdited = loadedRecord.minShiftsRequested !== 0;
       const loadedMaximumWasEdited = loadedRecord.maxShiftsRequested !== availableShiftCapacity;
@@ -497,7 +537,7 @@ export function ProviderAvailabilityEditor(props: {
             <select
               className="h-12 rounded-md border border-slate-400 bg-white px-3 text-base font-semibold text-slate-950 shadow-sm focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
               value={scheduleWeekId}
-              onChange={(event) => setScheduleWeekId(event.target.value)}
+              onChange={(event) => onScheduleWeekSelected(event.target.value)}
             >
               {periods.map((period) => {
                 return (
@@ -513,7 +553,7 @@ export function ProviderAvailabilityEditor(props: {
             <select
               className="h-12 rounded-md border border-slate-400 bg-white px-3 text-base font-semibold text-slate-950 shadow-sm focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
               value={providerId}
-              onChange={(event) => setProviderId(event.target.value)}
+              onChange={(event) => onProviderSelected(event.target.value)}
             >
               {providers.map((provider) => {
                 return (
@@ -543,7 +583,7 @@ export function ProviderAvailabilityEditor(props: {
                 max={minShiftInputMaximum}
                 step={0.5}
                 value={record.minShiftsRequested}
-                disabled={isLocked}
+                disabled={!canEditRecord}
                 onChange={(event) => updateMinShiftsRequested(event.target.value)}
               />
             </label>
@@ -556,7 +596,7 @@ export function ProviderAvailabilityEditor(props: {
                 max={maxShiftRequest}
                 step={0.5}
                 value={record.maxShiftsRequested}
-                disabled={isLocked}
+                disabled={!canEditRecord}
                 onChange={(event) => updateMaxShiftsRequested(event.target.value)}
               />
             </label>
@@ -592,7 +632,7 @@ export function ProviderAvailabilityEditor(props: {
                           type="checkbox"
                           className="h-4 w-4 rounded border-slate-300"
                           checked={isChecked}
-                          disabled={isLocked}
+                          disabled={!canEditRecord}
                           onChange={(event) => updateDay(weekday, item, event.target.checked)}
                         />
                         <span>{labelForOption(item)}</span>
@@ -611,7 +651,7 @@ export function ProviderAvailabilityEditor(props: {
           type="button"
           className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
           onClick={saveRecord}
-          disabled={record === null || isSaving || isDeleting || isLocked}
+          disabled={!canEditRecord}
         >
           {isSaving ? "Saving…" : "Save"}
         </button>
@@ -619,7 +659,7 @@ export function ProviderAvailabilityEditor(props: {
           type="button"
           className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
           onClick={deleteRecord}
-          disabled={record === null || isSaving || isDeleting || isLocked}
+          disabled={!canEditRecord}
         >
           {isDeleting ? "Deleting…" : "Delete"}
         </button>
