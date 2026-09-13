@@ -55,7 +55,7 @@ const dashboardLinks = [
 ];
 
 export default async function DashboardPage() {
-  const authContext = await auth();
+  const authContext = await auth.protect();
   const user = await currentUser();
   const currentUserIsAdmin = userHasAdminRole(
     authContext.orgRole,

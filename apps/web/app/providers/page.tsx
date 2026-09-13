@@ -1,9 +1,13 @@
+import { auth } from "@clerk/nextjs/server";
+
 import { PageHeader } from "@/components/layout/page-header";
 import { AppShell } from "@/components/layout/app-shell";
 import { ProvidersTable } from "@/components/providers/providers-table";
 import { listCenters, listProviders, listRoomTypes } from "@/lib/api";
 
 export default async function ProvidersPage() {
+  await auth.protect();
+
   const centers = await listCenters();
   const providers = await listProviders({ includeInactive: true });
   const roomTypes = await listRoomTypes();

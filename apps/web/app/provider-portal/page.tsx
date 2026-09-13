@@ -1,3 +1,5 @@
+import { auth } from "@clerk/nextjs/server";
+
 import { AppShell } from "@/components/layout/app-shell";
 import { ProviderPortalTopBarNavigation } from "@/components/providers/provider-portal-top-bar-navigation";
 import { ProviderPortalWorkspace } from "@/components/providers/provider-portal-workspace";
@@ -120,6 +122,8 @@ function ProviderPortalAccessIssuePanel({
 }
 
 export default async function ProviderPortalPage() {
+  await auth.protect();
+
   let profile;
   let availabilityRecords;
   let preferences;

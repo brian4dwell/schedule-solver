@@ -24,7 +24,7 @@ FROM python:3.12-slim AS api-deps
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 
-COPY --from=ghcr.io/astral-sh/uv:0.8.13 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.13 /uv /uvx /bin/
 
 WORKDIR /repo/apps/api
 

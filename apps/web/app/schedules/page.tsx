@@ -1,3 +1,4 @@
+import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -112,6 +113,8 @@ function SchedulingRulesCallout() {
 }
 
 export default async function SchedulesPage() {
+  await auth.protect();
+
   const periods = await loadSchedulePeriodSummaries();
 
   return (

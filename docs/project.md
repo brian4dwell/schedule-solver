@@ -423,6 +423,10 @@ The app currently uses Tailwind directly. Add shadcn/ui only when shared compone
 
 The web app uses Clerk for sign-in and account controls.
 
+Each protected Next.js page calls `auth.protect()` before reading data or rendering its workflow. The server-side API client also requires authentication before obtaining a session token. `proxy.ts` initializes Clerk and configures the sign-in URLs; it does not decide which resources are protected. Sign-in, sign-up, and health routes remain public, and the root layout is shared by public and protected pages.
+
+The pinned Clerk ESLint plugin requires authentication checks in pages, Route Handlers, and Server Functions by default. Its public exceptions live in `apps/web/eslint.config.mjs`. Run `npm run lint` and `npm run test:auth` from `apps/web` when changing authentication boundaries. FastAPI enforces authentication on API reads and writes independently of the web proxy; signed-out API requests return 401 instead of a sign-in redirect.
+
 FastAPI verifies Clerk session JWTs and requires an admin role before returning organization-scoped data. The current backend still resolves authorized users to the local organization record until real organization mapping is designed.
 
 ### Concrete Credential And Skill Tables
@@ -553,8 +557,14 @@ Run frontend checks:
 ```bash
 cd apps/web
 npm run lint
+npm run test:auth
+npm run typecheck
 npm run build
 ```
+
+TypeScript 7 runs through `npm run typecheck`, which generates Next.js route types first, and automatically before `npm run build`. The `@typescript/native` dependency aliases TypeScript 7; `typescript` aliases Microsoft's `@typescript/typescript6` compatibility package because the ESLint parser and Next.js editor plugin still need the JavaScript compiler API. Next.js also runs its own build check using that compatibility package. This follows [Microsoft's side-by-side installation guidance](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6-0).
+
+ESLint is on 9.39.5, the latest compatible 9.x release as of September 13, 2026. npm marks this release as unsupported. ESLint 10 remains blocked by the published peer dependencies of `eslint-plugin-react`, `eslint-plugin-import`, and `eslint-plugin-jsx-a11y` used by `eslint-config-next`. Recheck those plugins before upgrading to ESLint 10.
 
 Do not invoke bare `pytest` in this repo.
 

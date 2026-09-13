@@ -1,3 +1,5 @@
+import { auth } from "@clerk/nextjs/server";
+
 import { CenterForm } from "@/components/centers/center-form";
 import { PageHeader } from "@/components/layout/page-header";
 import { AppShell } from "@/components/layout/app-shell";
@@ -12,6 +14,8 @@ type CenterDetailPageProps = {
 };
 
 export default async function CenterDetailPage({ params }: CenterDetailPageProps) {
+  await auth.protect();
+
   const resolvedParams = await params;
   const centerId = resolvedParams.centerId;
   const centerPromise = getCenter(centerId);

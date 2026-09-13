@@ -1,3 +1,4 @@
+import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -103,6 +104,8 @@ function acceptanceDetailClass(tone: ProviderInviteAcceptanceState["tone"]) {
 export default async function ProviderPortalAcceptPage({
   searchParams,
 }: ProviderPortalAcceptPageProps) {
+  await auth.protect();
+
   const resolvedSearchParams = await searchParams;
   const inviteToken = resolvedSearchParams.token ?? "";
   const hasInviteToken = inviteToken !== "";

@@ -1,3 +1,5 @@
+import { auth } from "@clerk/nextjs/server";
+
 import { PageHeader } from "@/components/layout/page-header";
 import { AppShell } from "@/components/layout/app-shell";
 import { RoomForm } from "@/components/rooms/room-form";
@@ -5,6 +7,8 @@ import { RoomsTable } from "@/components/rooms/rooms-table";
 import { listCenters, listRoomsForCenter, listRoomTypes } from "@/lib/api";
 
 export default async function RoomsPage() {
+  await auth.protect();
+
   const centersPromise = listCenters();
   const roomTypesPromise = listRoomTypes();
   const pageData = await Promise.all([centersPromise, roomTypesPromise]);

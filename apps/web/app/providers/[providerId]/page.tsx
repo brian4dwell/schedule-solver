@@ -1,3 +1,5 @@
+import { auth } from "@clerk/nextjs/server";
+
 import { PageHeader } from "@/components/layout/page-header";
 import { AppShell } from "@/components/layout/app-shell";
 import { ProviderForm } from "@/components/providers/provider-form";
@@ -19,6 +21,8 @@ type ProviderDetailPageProps = {
 };
 
 export default async function ProviderDetailPage({ params }: ProviderDetailPageProps) {
+  await auth.protect();
+
   const resolvedParams = await params;
   const provider = await getProvider(resolvedParams.providerId);
   const centers = await listCenters();

@@ -1,3 +1,5 @@
+import { auth } from "@clerk/nextjs/server";
+
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { MonthlyAvailabilityReport } from "@/components/reports/monthly-availability-report";
@@ -12,6 +14,8 @@ function currentMonthSelection() {
 }
 
 export default async function MonthlyAvailabilityPage() {
+  await auth.protect();
+
   const selection = currentMonthSelection();
   const report = await getMonthlyAvailabilityReport(selection.year, selection.month);
 

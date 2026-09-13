@@ -1,3 +1,5 @@
+import { auth } from "@clerk/nextjs/server";
+
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { ScheduleWorkspace } from "@/components/schedules/schedule-workspace";
@@ -49,6 +51,8 @@ async function loadInitialVersionDetail(
 export default async function ScheduleDetailPage({
   params,
 }: ScheduleDetailPageProps) {
+  await auth.protect();
+
   const routeParams = await params;
   const scheduleId = routeParams.scheduleId;
   const schedulePeriod = await getSchedulePeriod(scheduleId);

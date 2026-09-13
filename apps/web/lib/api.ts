@@ -214,7 +214,7 @@ async function serverAuthorizationHeaders(): Promise<Record<string, string>> {
   }
 
   const clerkServer = await import("@clerk/nextjs/server");
-  const authContext = await clerkServer.auth();
+  const authContext = await clerkServer.auth.protect();
   const token = await authContext.getToken();
   const tokenIsMissing = token === null;
 
