@@ -58,6 +58,8 @@ from app.services.email.gmail import GmailSendError
 from app.services.email.provider_invites import ProviderInviteEmailSendResult
 from app.services.email.provider_invites import ProviderInviteEmailMessage
 from app.services.email.provider_invites import provider_invite_email_message
+from app.services.provider_week_notes import read_provider_week_notes
+from app.services.provider_week_notes import replace_provider_week_notes
 from app.services.provider_portal_service import INVITE_STATUS_ACCEPTED
 from app.services.provider_portal_service import accept_provider_invite_request
 from app.services.provider_portal_service import create_or_reset_provider_invite
@@ -136,7 +138,8 @@ def provider_week_availability_response(
     session: Session,
 ) -> ProviderPortalWeekAvailabilityRead:
     rows = rows_for_provider_week(schedule_week.id, provider_id, organization_id, session)
-    availability = build_read_response(schedule_week, provider_id, rows)
+    notes = read_provider_week_notes(schedule_week.id, provider_id, organization_id, session)
+    availability = build_read_response(schedule_week, provider_id, rows, notes)
     completion = availability_completion(schedule_week, availability)
     response = ProviderPortalWeekAvailabilityRead(
         schedule_week_id=schedule_week.id,
@@ -468,6 +471,7 @@ def replace_current_provider_weekly_availability(
         )
         session.add(created_row)
 
+    replace_provider_week_notes(schedule_week_id, provider_id, organization_id, request.notes, session)
     session.commit()
     response = provider_week_availability_response(
         schedule_week,

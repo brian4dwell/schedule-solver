@@ -903,6 +903,7 @@ export async function saveProviderWeeklyAvailability(
   const parsedAvailability = providerWeeklyAvailabilitySchema.parse(availability);
   const payloadData = {
     min_shifts_requested: parsedAvailability.minShiftsRequested,
+    notes: parsedAvailability.notes,
     max_shifts_requested: parsedAvailability.maxShiftsRequested,
     days: parsedAvailability.days,
   };

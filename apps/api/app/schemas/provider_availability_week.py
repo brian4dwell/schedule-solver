@@ -4,6 +4,7 @@ from decimal import ROUND_HALF_UP
 
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import field_validator
 from pydantic import model_validator
 
 WEEKDAY_VALUES = [
@@ -127,9 +128,24 @@ class ProviderAvailabilityDayInput(BaseModel):
 
 
 class ProviderWeeklyAvailabilityReplaceRequest(BaseModel):
+    notes: str | None = Field(max_length=2000)
     min_shifts_requested: float = Field(ge=0, le=14)
     max_shifts_requested: float = Field(ge=0, le=14)
     days: list[ProviderAvailabilityDayInput] = Field(default_factory=list)
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_notes(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        stripped_value = value.strip()
+        is_blank = stripped_value == ""
+
+        if is_blank:
+            return None
+
+        return value
 
     @model_validator(mode="after")
     def validate_days(self) -> "ProviderWeeklyAvailabilityReplaceRequest":
@@ -169,6 +185,7 @@ class ProviderAvailabilityDayRead(BaseModel):
 
 
 class ProviderWeeklyAvailabilityRead(BaseModel):
+    notes: str | None = Field(max_length=2000)
     schedule_week_id: UUID
     provider_id: UUID
     is_locked: bool

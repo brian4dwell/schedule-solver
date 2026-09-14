@@ -252,6 +252,25 @@ class ProviderScheduleWeekAvailability(Base, TimestampMixin):
     max_shifts_requested_units: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
+class ProviderScheduleWeekNote(Base, TimestampMixin):
+    __tablename__ = "provider_schedule_week_notes"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "provider_id",
+            "schedule_week_id",
+            name="uq_provider_schedule_week_notes_scope",
+        ),
+        CheckConstraint("length(notes) <= 2000", name="ck_provider_schedule_week_notes_length"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    schedule_week_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("schedule_periods.id"), nullable=False)
+    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("providers.id"), nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class ProviderCenterPreference(Base, TimestampMixin):
     __tablename__ = "provider_center_preferences"
     __table_args__ = (UniqueConstraint("organization_id", "provider_id", "center_id"),)

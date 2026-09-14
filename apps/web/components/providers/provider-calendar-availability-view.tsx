@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { providerWeeklyNotesSchema } from "@/lib/schemas/provider-weekly-availability";
+import { ProviderWeekNotesField } from "./provider-week-notes-field";
 
 import { useToast } from "@/components/ui/toast-provider";
 import type { ProviderPortalAvailabilityRecord } from "@/lib/api";
@@ -33,6 +35,8 @@ type CalendarWeekRowProps = {
   onClosedDateClick: () => void;
   onEditDate: (dateIso: string) => void;
   onLockedDateClick: (record: ProviderPortalAvailabilityRecord) => void;
+  onRecordNotesChange: (record: ProviderPortalAvailabilityRecord, value: string) => void;
+  notesAreDirty: (record: ProviderPortalAvailabilityRecord) => boolean;
   onRecordSave: (record: ProviderPortalAvailabilityRecord) => Promise<boolean>;
   onRecordShiftRequestChange: (
     record: ProviderPortalAvailabilityRecord,
@@ -94,6 +98,8 @@ export function CalendarAvailabilityView({
   monthStartIso,
   onCalendarDayChange,
   onMonthChange,
+  onRecordNotesChange,
+  notesAreDirty,
   onRecordSave,
   onRecordShiftRequestChange,
   records,
@@ -122,6 +128,11 @@ export function CalendarAvailabilityView({
     const weekdayMatches = candidate.weekday === editingWeekday;
     return weekdayMatches;
   }) ?? null;
+
+  const editingNotes = editingRecord === null ? null : editingRecord.availability.notes;
+  const editingNotesValidation = providerWeeklyNotesSchema.safeParse(editingNotes);
+  const editingIsLocked = editingRecord !== null && editingRecord.availability.isLocked;
+  const editingSaveIsDisabled = isSavingAvailability || editingIsLocked || !editingNotesValidation.success;
 
   function selectPreviousMonth() {
     if (previousMonthIso === null) {
@@ -250,6 +261,8 @@ export function CalendarAvailabilityView({
                   onClosedDateClick={showClosedDateToast}
                   onEditDate={setEditingDateIso}
                   onLockedDateClick={showLockedDateToast}
+                  onRecordNotesChange={onRecordNotesChange}
+                  notesAreDirty={notesAreDirty}
                   onRecordSave={onRecordSave}
                   onRecordShiftRequestChange={onRecordShiftRequestChange}
                   records={records}
@@ -315,7 +328,7 @@ export function CalendarAvailabilityView({
               <button
                 type="button"
                 className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                disabled={isSavingAvailability}
+                disabled={editingSaveIsDisabled}
                 onClick={() => {
                   void saveAndCloseEditingDate();
                 }}
@@ -338,6 +351,8 @@ function CalendarWeekRow({
   onClosedDateClick,
   onEditDate,
   onLockedDateClick,
+  onRecordNotesChange,
+  notesAreDirty,
   onRecordSave,
   onRecordShiftRequestChange,
   records,
@@ -400,6 +415,8 @@ function CalendarWeekRow({
       })}
       <CalendarWeekRequestCell
         isSavingAvailability={isSavingAvailability}
+        onRecordNotesChange={onRecordNotesChange}
+        notesAreDirty={notesAreDirty}
         onRecordSave={onRecordSave}
         onRecordShiftRequestChange={onRecordShiftRequestChange}
         record={weekRecord}
@@ -410,11 +427,15 @@ function CalendarWeekRow({
 
 function CalendarWeekRequestCell({
   isSavingAvailability,
+  onRecordNotesChange,
+  notesAreDirty,
   onRecordSave,
   onRecordShiftRequestChange,
   record,
 }: {
   isSavingAvailability: boolean;
+  onRecordNotesChange: (record: ProviderPortalAvailabilityRecord, value: string) => void;
+  notesAreDirty: (record: ProviderPortalAvailabilityRecord) => boolean;
   onRecordSave: (record: ProviderPortalAvailabilityRecord) => Promise<boolean>;
   onRecordShiftRequestChange: (
     record: ProviderPortalAvailabilityRecord,
@@ -428,6 +449,8 @@ function CalendarWeekRequestCell({
   }
 
   const isLocked = record.availability.isLocked;
+  const notesValidation = providerWeeklyNotesSchema.safeParse(record.availability.notes);
+  const saveIsDisabled = isLocked || isSavingAvailability || !notesValidation.success;
   const completionClass = record.completion.isComplete ? "text-emerald-700" : "text-amber-800";
 
   return (
@@ -469,10 +492,20 @@ function CalendarWeekRequestCell({
           />
         </label>
       </div>
+      <div className="mt-3">
+        <ProviderWeekNotesField
+          notes={record.availability.notes}
+          startDate={record.scheduleWeekStartDate}
+          endDate={record.scheduleWeekEndDate}
+          disabled={isLocked || isSavingAvailability}
+          isDirty={notesAreDirty(record)}
+          onChange={(value) => onRecordNotesChange(record, value)}
+        />
+      </div>
       <button
         type="button"
         className="mt-2 w-full rounded-md bg-teal-700 px-2 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-        disabled={isLocked || isSavingAvailability}
+        disabled={saveIsDisabled}
         onClick={() => {
           void onRecordSave(record);
         }}

@@ -145,6 +145,8 @@ Min/max shift requests:
 
 Published schedule weeks lock availability edits.
 
+Providers can save optional weekly notes (up to 2,000 characters) alongside availability in the Provider Portal. Notes are scoped to the organization, Provider, and schedule week, stored separately from weekday rows, and locked when published. Admins read them in Provider week detail; admin availability edits preserve them and full-week resets clear them. Notes do not affect scheduling rules or completeness. See [Provider Portal](provider-portal.md).
+
 ## Architecture
 
 The repo follows a monorepo shape.

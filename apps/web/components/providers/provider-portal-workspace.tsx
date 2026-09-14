@@ -88,6 +88,7 @@ export function ProviderPortalWorkspace({
   const requestedWeekId = searchParams.get("weekId");
   const activeSection = providerPortalSectionFromViewValue(requestedSection);
   const [records, setRecords] = useState(availabilityRecords);
+  const [savedRecords, setSavedRecords] = useState(availabilityRecords);
   const [shiftRequestEditStates, setShiftRequestEditStates] = useState(() => {
     const editStates = shiftRequestEditStatesForRecords(availabilityRecords);
     return editStates;
@@ -231,6 +232,41 @@ export function ProviderPortalWorkspace({
       maxShiftsRequested: nextMaximum,
     };
     return shiftRequests;
+  }
+
+  function notesAreDirty(record: ProviderPortalAvailabilityRecord) {
+    const savedRecord = savedRecords.find((candidate) => candidate.scheduleWeekId === record.scheduleWeekId);
+    const isDirty = savedRecord?.availability.notes !== record.availability.notes;
+    return isDirty;
+  }
+
+  function rememberSavedRecord(savedRecord: ProviderPortalAvailabilityRecord) {
+    setSavedRecords((currentRecords) => {
+      const nextRecords = currentRecords.map((record) => {
+        const matchesWeek = record.scheduleWeekId === savedRecord.scheduleWeekId;
+        return matchesWeek ? savedRecord : record;
+      });
+      return nextRecords;
+    });
+  }
+
+  function updateRecordNotes(record: ProviderPortalAvailabilityRecord, value: string) {
+    const cannotEdit = record.availability.isLocked || isSavingAvailability;
+
+    if (cannotEdit) {
+      return;
+    }
+
+    const nextAvailability = { ...record.availability, notes: value };
+    updateRecordAvailability(record.scheduleWeekId, nextAvailability);
+  }
+
+  function updateNotes(value: string) {
+    if (selectedRecord === null) {
+      return;
+    }
+
+    updateRecordNotes(selectedRecord, value);
   }
 
   function updateSelectedAvailability(nextAvailability: ProviderWeeklyAvailabilityRecord) {
@@ -455,6 +491,7 @@ export function ProviderPortalWorkspace({
         });
         return nextRecords;
       });
+      rememberSavedRecord(savedRecord);
       replaceShiftRequestEditState(savedRecord);
       setAvailabilityMessage("Availability saved.");
       showToast({
@@ -495,6 +532,7 @@ export function ProviderPortalWorkspace({
         });
         return nextRecords;
       });
+      rememberSavedRecord(savedRecord);
       replaceShiftRequestEditState(savedRecord);
       setAvailabilityMessage("Availability saved.");
       showToast({
@@ -591,6 +629,8 @@ export function ProviderPortalWorkspace({
             availabilityMessage={availabilityMessage}
             isSavingAvailability={isSavingAvailability}
             onDayChange={updateDay}
+            onNotesChange={updateNotes}
+            notesAreDirty={selectedRecord !== null && notesAreDirty(selectedRecord)}
             onSave={saveAvailability}
             onShiftRequestChange={updateShiftRequest}
             record={selectedRecord}
@@ -603,6 +643,8 @@ export function ProviderPortalWorkspace({
             monthStartIso={selectedMonthStartIso}
             onCalendarDayChange={updateCalendarDay}
             onMonthChange={setSelectedMonthStartIso}
+            onRecordNotesChange={updateRecordNotes}
+            notesAreDirty={notesAreDirty}
             onRecordSave={saveAvailabilityRecord}
             onRecordShiftRequestChange={updateRecordShiftRequest}
             records={records}

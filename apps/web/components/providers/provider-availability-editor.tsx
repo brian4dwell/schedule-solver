@@ -375,6 +375,7 @@ function SelectedProviderAvailabilityEditor({
       scheduleWeekId: record.scheduleWeekId,
       providerId: record.providerId,
       isLocked: record.isLocked,
+      notes: record.notes,
       minShiftsRequested: nextShiftRequests.minShiftsRequested,
       maxShiftsRequested: nextShiftRequests.maxShiftsRequested,
       days: nextDays,
@@ -405,6 +406,7 @@ function SelectedProviderAvailabilityEditor({
       scheduleWeekId: record.scheduleWeekId,
       providerId: record.providerId,
       isLocked: record.isLocked,
+      notes: record.notes,
       minShiftsRequested: nextShiftRequests.minShiftsRequested,
       maxShiftsRequested: nextShiftRequests.maxShiftsRequested,
       days: record.days,
@@ -436,6 +438,7 @@ function SelectedProviderAvailabilityEditor({
       scheduleWeekId: record.scheduleWeekId,
       providerId: record.providerId,
       isLocked: record.isLocked,
+      notes: record.notes,
       minShiftsRequested: nextShiftRequests.minShiftsRequested,
       maxShiftsRequested: nextShiftRequests.maxShiftsRequested,
       days: record.days,
@@ -503,7 +506,7 @@ function SelectedProviderAvailabilityEditor({
       setSuccessMessage("Availability deleted.");
       showToast({
         title: "Availability deleted",
-        description: "Provider availability was reset.",
+        description: "Provider availability and the weekly note were reset.",
         tone: "success",
       });
     } catch (error) {
@@ -573,6 +576,15 @@ function SelectedProviderAvailabilityEditor({
 
       {record !== null ? (
         <div className="mt-4 grid gap-3">
+          <div className="rounded-md border border-slate-200 p-3 text-sm">
+            <h3 className="font-semibold text-slate-950">
+              Provider notes for this week
+              {selectedPeriod !== null ? ` (${selectedPeriod.start_date} – ${selectedPeriod.end_date})` : ""}
+            </h3>
+            <p className="mt-2 whitespace-pre-wrap break-words text-slate-700">
+              {record.notes === null ? "No notes for this week." : record.notes}
+            </p>
+          </div>
           <div className="grid gap-3 md:grid-cols-2">
             <label className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3">
               <span className="text-sm font-medium text-slate-700">Min shifts requested</span>
@@ -664,6 +676,7 @@ function SelectedProviderAvailabilityEditor({
           {isDeleting ? "Deleting…" : "Delete"}
         </button>
       </div>
+      <p className="mt-2 text-xs text-slate-500">Delete resets availability for the entire week and clears the weekly note.</p>
     </section>
   );
 }

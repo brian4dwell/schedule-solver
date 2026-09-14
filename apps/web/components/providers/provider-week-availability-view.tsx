@@ -1,3 +1,5 @@
+import { providerWeeklyNotesSchema } from "@/lib/schemas/provider-weekly-availability";
+import { ProviderWeekNotesField } from "./provider-week-notes-field";
 import type { WeekAvailabilityViewProps } from "./provider-portal-types";
 import { ShiftRequestControls } from "./provider-shift-request-controls";
 import {
@@ -13,10 +15,16 @@ export function WeekAvailabilityView({
   availabilityMessage,
   isSavingAvailability,
   onDayChange,
+  onNotesChange,
+  notesAreDirty,
   onSave,
   onShiftRequestChange,
   record,
 }: WeekAvailabilityViewProps) {
+  const notes = record === null ? null : record.availability.notes;
+  const notesValidation = providerWeeklyNotesSchema.safeParse(notes);
+  const editsAreDisabled = record === null || record.availability.isLocked || isSavingAvailability;
+  const saveIsDisabled = editsAreDisabled || !notesValidation.success;
   return (
     <section className="rounded-md border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -41,56 +49,66 @@ export function WeekAvailabilityView({
       </p>
       {record !== null ? (
         <div className="mt-4 grid gap-3">
-          <ShiftRequestControls
-            maxShiftsRequested={record.availability.maxShiftsRequested}
-            minShiftsRequested={record.availability.minShiftsRequested}
-            onChange={onShiftRequestChange}
-          />
-          {weekdayOrder.map((weekday) => {
-            const day = record.availability.days.find((candidate) => {
-              const matchesWeekday = candidate.weekday === weekday;
-              return matchesWeekday;
-            });
-            const options = day?.options ?? ["unset"];
-            const weekdayDate = dateForWeekday(record.scheduleWeekStartDate, weekday);
-            const weekdayDateLabel = formatWeekdayDate(weekdayDate);
-            const colorClassName = colorClassForWeekday(weekday);
-            const rowClassName = `grid gap-3 rounded-md border p-3 md:grid-cols-[120px_1fr] ${colorClassName}`;
+          <fieldset disabled={editsAreDisabled} className="grid gap-3">
+            <ShiftRequestControls
+              maxShiftsRequested={record.availability.maxShiftsRequested}
+              minShiftsRequested={record.availability.minShiftsRequested}
+              onChange={onShiftRequestChange}
+            />
+            {weekdayOrder.map((weekday) => {
+              const day = record.availability.days.find((candidate) => {
+                const matchesWeekday = candidate.weekday === weekday;
+                return matchesWeekday;
+              });
+              const options = day?.options ?? ["unset"];
+              const weekdayDate = dateForWeekday(record.scheduleWeekStartDate, weekday);
+              const weekdayDateLabel = formatWeekdayDate(weekdayDate);
+              const colorClassName = colorClassForWeekday(weekday);
+              const rowClassName = `grid gap-3 rounded-md border p-3 md:grid-cols-[120px_1fr] ${colorClassName}`;
 
-            return (
-              <div
-                key={weekday}
-                className={rowClassName}
-              >
-                <div className="text-sm font-semibold text-slate-800">
-                  <span className="block">{labelFromSnake(weekday)}</span>
-                  <span className="mt-1 block text-xs font-medium text-slate-600">
-                    {weekdayDateLabel}
-                  </span>
+              return (
+                <div
+                  key={weekday}
+                  className={rowClassName}
+                >
+                  <div className="text-sm font-semibold text-slate-800">
+                    <span className="block">{labelFromSnake(weekday)}</span>
+                    <span className="mt-1 block text-xs font-medium text-slate-600">
+                      {weekdayDateLabel}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    {availabilityOptions.map((option) => {
+                      const isChecked = options.includes(option);
+                      return (
+                        <label key={option} className="flex items-center gap-2 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-slate-300"
+                            checked={isChecked}
+                            onChange={(event) => onDayChange(weekday, option, event.target.checked)}
+                          />
+                          <span>{labelFromSnake(option)}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-3">
-                  {availabilityOptions.map((option) => {
-                    const isChecked = options.includes(option);
-                    return (
-                      <label key={option} className="flex items-center gap-2 text-sm text-slate-700">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 rounded border-slate-300"
-                          checked={isChecked}
-                          onChange={(event) => onDayChange(weekday, option, event.target.checked)}
-                        />
-                        <span>{labelFromSnake(option)}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+            <ProviderWeekNotesField
+              notes={record.availability.notes}
+              startDate={record.scheduleWeekStartDate}
+              endDate={record.scheduleWeekEndDate}
+              disabled={editsAreDisabled}
+              isDirty={notesAreDirty}
+              onChange={onNotesChange}
+            />
+          </fieldset>
           <button
             type="button"
             className="w-fit rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            disabled={isSavingAvailability}
+            disabled={saveIsDisabled}
             onClick={() => {
               void onSave();
             }}

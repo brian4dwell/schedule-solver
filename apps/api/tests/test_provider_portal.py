@@ -44,6 +44,9 @@ class FakeProviderPortalSession:
     def commit(self) -> None:
         return None
 
+    def scalar(self, statement: object) -> None:
+        return None
+
 
 class FakeInviteAcceptanceSession:
     def __init__(self) -> None:
@@ -134,6 +137,7 @@ def test_availability_completion_marks_unset_weekday_incomplete() -> None:
         ProviderAvailabilityDayRead(weekday="sunday", options=["none"]),
     ]
     availability = ProviderWeeklyAvailabilityRead(
+        notes=None,
         schedule_week_id=schedule_week.id,
         provider_id=provider_id,
         is_locked=False,
@@ -161,6 +165,7 @@ def test_availability_completion_ignores_unset_weekends() -> None:
         ProviderAvailabilityDayRead(weekday="sunday", options=["unset"]),
     ]
     availability = ProviderWeeklyAvailabilityRead(
+        notes=None,
         schedule_week_id=schedule_week.id,
         provider_id=provider_id,
         is_locked=False,
@@ -214,6 +219,7 @@ def test_provider_portal_availability_save_changes_unset_to_none(monkeypatch: py
             ProviderAvailabilityDayRead(weekday="sunday", options=["none"]),
         ]
         availability = ProviderWeeklyAvailabilityRead(
+            notes=None,
             schedule_week_id=selected_schedule_week.id,
             provider_id=provider.id,
             is_locked=False,
@@ -254,6 +260,7 @@ def test_provider_portal_availability_save_changes_unset_to_none(monkeypatch: py
         ProviderAvailabilityDayInput(weekday="sunday", options=["none"]),
     ]
     request = ProviderWeeklyAvailabilityReplaceRequest(
+        notes=None,
         min_shifts_requested=0,
         max_shifts_requested=1,
         days=days,

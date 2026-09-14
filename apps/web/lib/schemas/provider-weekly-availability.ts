@@ -1,5 +1,25 @@
 import { z } from "zod";
 
+export const weeklyNotesMaxLength = 2000;
+
+export function weeklyNotesCharacterCount(value: string): number {
+  const characters = Array.from(value);
+  return characters.length;
+}
+
+export const providerWeeklyNotesSchema = z.string().refine(
+  (value) => weeklyNotesCharacterCount(value) <= weeklyNotesMaxLength,
+  { message: "Notes must be 2,000 characters or fewer." },
+).nullable().transform((value) => {
+  if (value === null) {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+  const isBlank = trimmedValue === "";
+  return isBlank ? null : value;
+});
+
 export const availabilityOptionSchema = z.enum([
   "full_shift",
   "first_half",
@@ -92,6 +112,7 @@ export const providerWeeklyAvailabilitySchema = z
     scheduleWeekId: z.string().uuid(),
     providerId: z.string().uuid(),
     isLocked: z.boolean(),
+    notes: providerWeeklyNotesSchema,
     minShiftsRequested: z.number().min(0).max(14),
     maxShiftsRequested: z.number().min(0).max(14),
     days: z.array(providerWeeklyAvailabilityDaySchema).length(7),
@@ -129,6 +150,7 @@ export const providerWeeklyAvailabilityReadApiSchema = z
     schedule_week_id: z.string().uuid(),
     provider_id: z.string().uuid(),
     is_locked: z.boolean(),
+    notes: providerWeeklyNotesSchema,
     min_shifts_requested: z.number().min(0).max(14),
     max_shifts_requested: z.number().min(0).max(14),
     days: z.array(providerWeeklyAvailabilityDaySchema).length(7),
@@ -138,6 +160,7 @@ export const providerWeeklyAvailabilityReadApiSchema = z
       scheduleWeekId: value.schedule_week_id,
       providerId: value.provider_id,
       isLocked: value.is_locked,
+      notes: value.notes,
       minShiftsRequested: value.min_shifts_requested,
       maxShiftsRequested: value.max_shifts_requested,
       days: value.days,
@@ -148,6 +171,7 @@ export const providerWeeklyAvailabilityReadApiSchema = z
 
 export const providerWeeklyAvailabilityReplaceApiSchema = z
   .object({
+    notes: providerWeeklyNotesSchema,
     min_shifts_requested: z.number().min(0).max(14),
     max_shifts_requested: z.number().min(0).max(14),
     days: z.array(providerWeeklyAvailabilityDaySchema).length(7),

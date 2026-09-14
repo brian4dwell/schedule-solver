@@ -1,6 +1,6 @@
 # Weekly Availability Notes
 
-Status: Planned; not implemented by this document.
+Status: Implemented and deployed on 2026-09-14 in Fly release `v137` (`bespoke-web`). Migration `202609140001` applied in production; web and API health checks passed.
 Created: 2026-09-14.
 
 ## Problem and outcome
@@ -19,7 +19,7 @@ Providers need a free-text box to explain availability for each week they submit
 
 Example: A Provider submits September 21–27 availability and adds "Prefer an early finish on Thursday if possible." That note belongs only to that Provider and that schedule week.
 
-## Existing implementation
+## Implementation before this feature
 
 - `ProviderScheduleWeekAvailability` in `apps/api/app/db/models/scheduling.py` stores one row per weekday, with no weekly note field.
 - The separate `ProviderAvailability.notes` field belongs to time-range availability; it does not represent this weekly submission.
@@ -59,12 +59,12 @@ Share the note persistence behavior between admin and Provider save paths. Repla
 - Saving notes does not make incomplete availability complete through any new note-specific rule.
 - Add focused persistence/API tests and a UI regression check covering save, reload, clear, and locked display. Run Python tests through `uv run pytest`.
 
-## Decisions to confirm during refinement
+## First-release decisions
 
-- Is 2,000 characters the right limit?
-- Should admins be able to edit a Provider's note, or only read it? Proposed first release: read-only for admins, with their existing availability saves preserving the note.
-- Should resetting an entire week's availability clear the note? Proposed first release: yes, with that effect stated in the reset action.
-- Should notes also appear in the availability submission monitor or monthly availability report? Proposed first release: the Provider week detail only.
+- The limit is 2,000 characters.
+- Notes are read-only for admins, with their existing availability saves preserving the latest note.
+- Resetting an entire week's availability clears the note, with that effect stated beside the reset action.
+- Admin notes appear in Provider week detail only, not submission monitoring or monthly reports.
 
 ## Out of scope
 

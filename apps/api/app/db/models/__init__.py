@@ -14,6 +14,7 @@ from app.db.models.scheduling import ProviderIdentityLink
 from app.db.models.scheduling import ProviderInvite
 from app.db.models.scheduling import ProviderRoomTypeSkill
 from app.db.models.scheduling import ProviderScheduleWeekAvailability
+from app.db.models.scheduling import ProviderScheduleWeekNote
 from app.db.models.scheduling import ProviderShiftTypePreference
 from app.db.models.scheduling import Room
 from app.db.models.scheduling import RoomRoomType
@@ -44,6 +45,7 @@ __all__ = [
     "ProviderInvite",
     "ProviderRoomTypeSkill",
     "ProviderScheduleWeekAvailability",
+    "ProviderScheduleWeekNote",
     "ProviderShiftTypePreference",
     "Room",
     "RoomRoomType",

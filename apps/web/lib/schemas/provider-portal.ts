@@ -155,6 +155,7 @@ export const adminProviderStatusApiSchema = z
 export const providerPortalAvailabilityPayloadApiSchema = providerWeeklyAvailabilitySchema.transform((value) => {
   const payload = {
     min_shifts_requested: value.minShiftsRequested,
+    notes: value.notes,
     max_shifts_requested: value.maxShiftsRequested,
     days: value.days,
   };

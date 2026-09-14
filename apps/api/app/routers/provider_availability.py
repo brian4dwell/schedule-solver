@@ -19,6 +19,8 @@ from app.schemas.provider_availability_week import WEEKDAY_VALUES
 from app.schemas.provider_availability_week import half_shift_units
 from app.schemas.provider_availability_week import options_availability_units
 from app.schemas.provider_availability_week import options_include_work_availability
+from app.services.provider_week_notes import read_provider_week_notes
+from app.services.provider_week_notes import replace_provider_week_notes
 
 router = APIRouter(tags=["provider-availability"], dependencies=[Depends(require_admin_user)])
 DEFAULT_MIN_SHIFTS_REQUESTED = 0
@@ -81,7 +83,12 @@ def rows_for_provider_week(schedule_week_id: UUID, provider_id: UUID, organizati
     return rows
 
 
-def build_read_response(schedule_week: SchedulePeriod, provider_id: UUID, rows: list[ProviderScheduleWeekAvailability]) -> ProviderWeeklyAvailabilityRead:
+def build_read_response(
+    schedule_week: SchedulePeriod,
+    provider_id: UUID,
+    rows: list[ProviderScheduleWeekAvailability],
+    notes: str | None = None,
+) -> ProviderWeeklyAvailabilityRead:
     row_by_weekday = {row.weekday: row for row in rows}
     first_row = rows[0] if len(rows) > 0 else None
     min_shifts_requested = float(DEFAULT_MIN_SHIFTS_REQUESTED)
@@ -114,6 +121,7 @@ def build_read_response(schedule_week: SchedulePeriod, provider_id: UUID, rows: 
     min_shifts_requested = min(min_shifts_requested, max_shifts_requested)
     is_locked = schedule_week_is_locked(schedule_week)
     response = ProviderWeeklyAvailabilityRead(
+        notes=notes,
         schedule_week_id=schedule_week.id,
         provider_id=provider_id,
         is_locked=is_locked,
@@ -129,7 +137,8 @@ def read_provider_weekly_availability(schedule_week_id: UUID, provider_id: UUID,
     schedule_week = require_schedule_week(schedule_week_id, organization_id, session)
     require_provider(provider_id, organization_id, session)
     rows = rows_for_provider_week(schedule_week_id, provider_id, organization_id, session)
-    response = build_read_response(schedule_week, provider_id, rows)
+    notes = read_provider_week_notes(schedule_week_id, provider_id, organization_id, session)
+    response = build_read_response(schedule_week, provider_id, rows, notes)
     return response
 
 
@@ -141,6 +150,7 @@ def replace_provider_weekly_availability(schedule_week_id: UUID, provider_id: UU
     if schedule_week_is_locked(schedule_week):
         raise HTTPException(status_code=409, detail="Availability is locked for published weeks")
 
+    # Admin availability edits preserve the latest Provider-authored note.
     existing_rows = rows_for_provider_week(schedule_week_id, provider_id, organization_id, session)
 
     for row in existing_rows:
@@ -167,7 +177,8 @@ def replace_provider_weekly_availability(schedule_week_id: UUID, provider_id: UU
 
     session.commit()
     rows = rows_for_provider_week(schedule_week_id, provider_id, organization_id, session)
-    response = build_read_response(schedule_week, provider_id, rows)
+    notes = read_provider_week_notes(schedule_week_id, provider_id, organization_id, session)
+    response = build_read_response(schedule_week, provider_id, rows, notes)
     return response
 
 
@@ -184,6 +195,7 @@ def delete_provider_weekly_availability(schedule_week_id: UUID, provider_id: UUI
     for row in rows:
         session.delete(row)
 
+    replace_provider_week_notes(schedule_week_id, provider_id, organization_id, None, session)
     session.commit()
     remaining_rows: list[ProviderScheduleWeekAvailability] = []
     response = build_read_response(schedule_week, provider_id, remaining_rows)

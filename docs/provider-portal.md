@@ -70,6 +70,14 @@ Rules:
 - Providers who have not saved an open required week remain identifiable by `unset` weekday availability.
 - Published schedule weeks are read-only.
 - Draft schedule weeks are editable.
+- Each week has optional "Notes for this week" in the week and calendar editors, with the week dates displayed beside it.
+- Notes allow up to 2,000 characters, preserve line breaks, and render as plain text. Blank or whitespace-only notes save as `null`.
+- Notes save in the same transaction as weekday choices and requested shifts. Unsaved note changes are indicated beside the field; failed saves preserve the entered text for retry.
+- Providers may edit or clear their notes until the week is published. Admins can read notes in Provider week detail, including published weeks; admin availability edits preserve the latest Provider-authored note.
+- A full-week availability reset clears the note and weekday rows together. Deleting a schedule week also deletes its notes. Cloning availability does not copy notes to a different week.
+- Notes are scheduler context only. They do not affect completion checks, eligibility, solver inputs, or publishing rules. Note-only edits submitted with existing week data still update the availability submission timestamp.
+
+Weekly notes are stored once per organization, Provider, and schedule week in `provider_schedule_week_notes` (migration `202609140001`). Both replacement payloads require a nullable `notes` field; the admin endpoint preserves stored notes regardless of the supplied value. Existing submissions without a note record read as `null`.
 
 Completion logic:
 

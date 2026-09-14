@@ -26,6 +26,7 @@ function availability(providerId, scheduleWeekId, maxShiftsRequested = 5) {
     providerId,
     scheduleWeekId,
     isLocked: false,
+    notes: null,
     minShiftsRequested: 0,
     maxShiftsRequested,
     days,
@@ -144,4 +145,33 @@ test("a response for a different selection cannot be saved or deleted", async (c
   await click(button(container, "Delete"));
   assert.equal(api.saveProviderWeeklyAvailability.mock.callCount(), 0);
   assert.equal(api.deleteProviderWeeklyAvailability.mock.callCount(), 0);
+});
+
+test("admin availability edits preserve the displayed Provider note", async (context) => {
+  const record = availability("provider-a", "week-a");
+  record.notes = "Thursday: early finish\n<b>plain text</b>";
+  const api = {
+    getProviderWeeklyAvailability: mock.fn(async () => record),
+    saveProviderWeeklyAvailability: mock.fn(async (_weekId, _providerId, edited) => edited),
+  };
+  const container = await setup(context, api);
+  assert.equal(container.querySelector("textarea"), null);
+  assert.match(container.textContent, /Thursday: early finish\n<b>plain text<\/b>/);
+  assert.equal(container.querySelector("b"), null);
+  await click(container.querySelector('input[type="checkbox"]'));
+  await click(button(container, "Save"));
+  const payload = api.saveProviderWeeklyAvailability.mock.calls[0].arguments[2];
+  assert.equal(payload.notes, record.notes);
+});
+
+test("admin locked week detail still displays the saved note", async (context) => {
+  const record = availability("provider-a", "week-a");
+  record.notes = "Saved note on a published week";
+  record.isLocked = true;
+  const container = await setup(context, {
+    getProviderWeeklyAvailability: mock.fn(async () => record),
+  });
+  assert.match(container.textContent, /Saved note on a published week/);
+  assert.equal(button(container, "Save").disabled, true);
+  assert.equal(button(container, "Delete").disabled, true);
 });

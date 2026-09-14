@@ -22,6 +22,7 @@ from app.db.models import Provider
 from app.db.models import ProviderFairnessEvent
 from app.db.models import ProviderFairnessSnapshot
 from app.db.models import ProviderFairnessState
+from app.db.models import ProviderScheduleWeekNote
 from app.db.models import ProviderScheduleWeekAvailability
 from app.db.models import Room
 from app.db.models import ScheduleJob
@@ -466,6 +467,10 @@ def delete_weekly_availability_for_period(
     organization_id: UUID,
     session: Session,
 ) -> None:
+    note_statement = sqlalchemy_delete(ProviderScheduleWeekNote)
+    note_statement = note_statement.where(ProviderScheduleWeekNote.schedule_week_id == schedule_period_id)
+    note_statement = note_statement.where(ProviderScheduleWeekNote.organization_id == organization_id)
+    session.execute(note_statement)
     statement = sqlalchemy_delete(ProviderScheduleWeekAvailability)
     statement = statement.where(ProviderScheduleWeekAvailability.schedule_week_id == schedule_period_id)
     statement = statement.where(ProviderScheduleWeekAvailability.organization_id == organization_id)

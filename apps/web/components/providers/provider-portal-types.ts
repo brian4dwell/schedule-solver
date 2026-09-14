@@ -46,6 +46,8 @@ export type WeekAvailabilityViewProps = {
   availabilityMessage: string | null;
   isSavingAvailability: boolean;
   onDayChange: (weekday: Weekday, option: AvailabilityOption, isChecked: boolean) => void;
+  onNotesChange: (value: string) => void;
+  notesAreDirty: boolean;
   onSave: () => Promise<boolean>;
   onShiftRequestChange: (field: ShiftRequestField, value: string) => void;
   record: ProviderPortalAvailabilityRecord | null;
@@ -62,6 +64,8 @@ export type CalendarAvailabilityViewProps = {
     isChecked: boolean,
   ) => void;
   onMonthChange: (monthStartIso: string) => void;
+  onRecordNotesChange: (record: ProviderPortalAvailabilityRecord, value: string) => void;
+  notesAreDirty: (record: ProviderPortalAvailabilityRecord) => boolean;
   onRecordSave: (record: ProviderPortalAvailabilityRecord) => Promise<boolean>;
   onRecordShiftRequestChange: (
     record: ProviderPortalAvailabilityRecord,

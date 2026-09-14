@@ -29,6 +29,7 @@ def create_schedule_week(status: str) -> SchedulePeriod:
 
 def test_provider_weekly_availability_requires_seven_unique_days() -> None:
     request_data = {
+        "notes": None,
         "min_shifts_requested": 2,
         "max_shifts_requested": 3.5,
         "days": [
@@ -49,6 +50,7 @@ def test_provider_weekly_availability_requires_seven_unique_days() -> None:
 
 def test_provider_weekly_availability_rejects_duplicate_weekday() -> None:
     request_data = {
+        "notes": None,
         "min_shifts_requested": 2,
         "max_shifts_requested": 5,
         "days": [
@@ -68,6 +70,7 @@ def test_provider_weekly_availability_rejects_duplicate_weekday() -> None:
 
 def test_provider_weekly_availability_rejects_invalid_shift_request_range() -> None:
     request_data = {
+        "notes": None,
         "min_shifts_requested": 6,
         "max_shifts_requested": 5,
         "days": [
@@ -87,6 +90,7 @@ def test_provider_weekly_availability_rejects_invalid_shift_request_range() -> N
 
 def test_provider_weekly_availability_rejects_min_above_available_days() -> None:
     request_data = {
+        "notes": None,
         "min_shifts_requested": 6,
         "max_shifts_requested": 6,
         "days": [
@@ -106,6 +110,7 @@ def test_provider_weekly_availability_rejects_min_above_available_days() -> None
 
 def test_provider_weekly_availability_allows_max_above_available_capacity() -> None:
     request_data = {
+        "notes": None,
         "min_shifts_requested": 2,
         "max_shifts_requested": 6,
         "days": [
