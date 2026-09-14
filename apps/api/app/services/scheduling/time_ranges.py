@@ -4,7 +4,8 @@ from datetime import date
 from datetime import datetime
 from datetime import time
 from uuid import UUID
-from zoneinfo import ZoneInfo
+
+from app.core.timezones import require_timezone
 
 
 class ScheduleTimeError(ValueError):
@@ -18,7 +19,11 @@ class SlotInstants:
 
 
 def local_datetime(schedule_date: date, clock: time, timezone: str) -> datetime:
-    zone = ZoneInfo(timezone)
+    try:
+        zone = require_timezone(timezone)
+    except ValueError as error:
+        raise ScheduleTimeError(str(error)) from error
+
     naive_value = datetime.combine(schedule_date, clock)
     local_value = naive_value.replace(tzinfo=zone)
     alternate_value = local_value.replace(fold=1)

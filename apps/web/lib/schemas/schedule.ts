@@ -85,8 +85,8 @@ export const scheduleVersionSchema = z.object({
 export const schedulePeriodApiSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
-  start_date: z.string().min(1),
-  end_date: z.string().min(1),
+  start_date: scheduleDateSchema,
+  end_date: scheduleDateSchema,
   status: z.string().min(1),
   created_at: z.string().min(1),
   updated_at: z.string().min(1),
@@ -94,8 +94,8 @@ export const schedulePeriodApiSchema = z.object({
 
 export const schedulePeriodFormSchema = z.object({
   name: z.string().min(1),
-  startDate: z.string().min(1),
-  endDate: z.string().min(1),
+  startDate: scheduleDateSchema,
+  endDate: scheduleDateSchema,
 });
 
 export const schedulePeriodRenameSchema = z.object({

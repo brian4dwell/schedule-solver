@@ -26,14 +26,15 @@ function formStringValue(formData: FormData, fieldName: string): string {
   return value;
 }
 
-function parseDateAtStartOfDay(dateValue: string): Date {
-  const startOfDayDate = new Date(`${dateValue}T00:00:00`);
+function parseDateAtUtcMidnight(dateValue: string): Date {
+  const startOfDayDate = new Date(`${dateValue}T00:00:00.000Z`);
   return startOfDayDate;
 }
 
 function addDays(date: Date, dayCount: number): Date {
   const nextDate = new Date(date);
-  nextDate.setDate(date.getDate() + dayCount);
+  const nextDay = date.getUTCDate() + dayCount;
+  nextDate.setUTCDate(nextDay);
   return nextDate;
 }
 
@@ -44,21 +45,21 @@ function formatDateInputValue(date: Date): string {
 }
 
 function dateValueIsMonday(dateValue: string): boolean {
-  const startDate = parseDateAtStartOfDay(dateValue);
+  const startDate = parseDateAtUtcMidnight(dateValue);
   const dayOfWeek = startDate.getUTCDay();
   const isMonday = dayOfWeek === MONDAY_DAY_INDEX;
   return isMonday;
 }
 
 function weekEndDateValue(startDateValue: string): string {
-  const startDate = parseDateAtStartOfDay(startDateValue);
+  const startDate = parseDateAtUtcMidnight(startDateValue);
   const endDate = addDays(startDate, SCHEDULE_WEEK_END_OFFSET_DAYS);
   const endDateValue = formatDateInputValue(endDate);
   return endDateValue;
 }
 
 function scheduleNameValue(startDateValue: string): string {
-  const startDate = parseDateAtStartOfDay(startDateValue);
+  const startDate = parseDateAtUtcMidnight(startDateValue);
   const formatter = new Intl.DateTimeFormat("en-US", {
     month: "long",
     day: "numeric",

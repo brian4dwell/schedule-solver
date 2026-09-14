@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from datetime import date
 from datetime import datetime
-from datetime import timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -507,15 +506,12 @@ def provider_time_conflicts(
         return ProviderTimeConflicts(overlaps=False, same_day=False)
 
     requested = slot_instants(request.schedule_date, request.start_time, request.end_time, center.timezone)
-    first_date = request.schedule_date - timedelta(days=1)
-    last_date = request.schedule_date + timedelta(days=1)
     statement = select(Assignment, Center)
     statement = statement.join(Center, Center.id == Assignment.center_id)
     statement = statement.where(Assignment.organization_id == request.organization_id)
     statement = statement.where(Center.organization_id == request.organization_id)
     statement = statement.where(Assignment.schedule_version_id == request.schedule_version_id)
     statement = statement.where(Assignment.provider_id == request.provider_id)
-    statement = statement.where(Assignment.schedule_date.between(first_date, last_date))
 
     if request.assignment_id is not None:
         statement = statement.where(Assignment.id != request.assignment_id)

@@ -1,6 +1,6 @@
 # Schedule wall-clock time remediation
 
-Updated: 2026-09-14. Status: implementation, tests, configured-database cleanup/migration, and Fly application deployment complete.
+Updated: 2026-09-14. Status: original implementation, tests, cleanup/migration, and deployment complete. Second-review boundary fixes are implemented and tested locally; their deployment remains pending. See [the second review](../time-issues.md#second-review) for findings and verification.
 
 This plan addresses finding **1** in [the deep code review](../reviews/deep-code-review-2026-09-13.md) and [time-issues.md](../time-issues.md). It includes the time-related period and same-day validation gaps in findings 14 and 15. The other review findings remain separate work.
 

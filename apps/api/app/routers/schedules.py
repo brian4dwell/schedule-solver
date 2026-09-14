@@ -60,6 +60,7 @@ from app.schemas.schedule import ScheduleTemplateWeekday
 from app.schemas.schedule import ScheduleVersionDetailRead
 from app.schemas.schedule import ScheduleVersionRead
 from app.schemas.schedule_time import ClockRange
+from app.schemas.schedule_time import ScheduleTimeRange
 from app.services.email.calendar_availability import CalendarAvailabilityEmailMessage
 from app.services.email.calendar_availability import CalendarAvailabilityEmailSendResult
 from app.services.email.calendar_availability import calendar_availability_email_message
@@ -859,6 +860,26 @@ def require_date_in_period(schedule_date: date, period: SchedulePeriod) -> None:
         raise HTTPException(status_code=400, detail="Slot date must be within the schedule period.")
 
 
+def validate_slot_time(
+    slot: ScheduleTimeRange,
+    center_id: UUID,
+    organization_id: UUID,
+    session: Session,
+) -> None:
+    statement = select(Center)
+    statement = statement.where(Center.id == center_id)
+    statement = statement.where(Center.organization_id == organization_id)
+    center = session.scalar(statement)
+
+    if center is None:
+        raise HTTPException(status_code=404, detail="Center not found")
+
+    try:
+        slot_instants(slot.schedule_date, slot.start_time, slot.end_time, center.timezone)
+    except ScheduleTimeError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 def validate_assignment_times(
     assignments: list[ScheduleAssignmentCreate],
     period: SchedulePeriod,
@@ -877,18 +898,7 @@ def validate_assignment_times(
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
-        statement = select(Center)
-        statement = statement.where(Center.id == assignment.center_id)
-        statement = statement.where(Center.organization_id == organization_id)
-        center = session.scalar(statement)
-
-        if center is None:
-            raise HTTPException(status_code=404, detail="Center not found")
-
-        try:
-            slot_instants(assignment.schedule_date, assignment.start_time, assignment.end_time, center.timezone)
-        except ScheduleTimeError as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
+        validate_slot_time(assignment, assignment.center_id, organization_id, session)
 
 
 def save_schedule_version(
@@ -1160,6 +1170,7 @@ def apply_schedule_structure_template(
             continue
 
         applied_slot = applied_template_slot(slot, room, schedule_period)
+        validate_slot_time(applied_slot, room.center_id, organization_id, session)
         applied_slots.append(applied_slot)
 
     template_read = read_model_for_template(template, slots)

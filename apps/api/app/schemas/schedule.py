@@ -1,4 +1,3 @@
-from datetime import date
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
@@ -9,6 +8,7 @@ from pydantic import Field
 
 from app.schemas.common import TimestampedSchema
 from app.schemas.schedule_time import ClockRange
+from app.schemas.schedule_time import ScheduleDate
 from app.schemas.schedule_time import ScheduleTimeRange
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityViolation
 from app.services.scheduling.solver_contracts import SolverGenerationMode
@@ -73,8 +73,8 @@ class ScheduleGenerateRequest(BaseModel):
 
 class SchedulePeriodCreate(BaseModel):
     name: str
-    start_date: date
-    end_date: date
+    start_date: ScheduleDate
+    end_date: ScheduleDate
     status: str = "draft"
 
 
@@ -139,8 +139,8 @@ class ScheduleStructureTemplateApplyResponse(BaseModel):
 
 class SchedulePeriodRead(TimestampedSchema):
     name: str
-    start_date: date
-    end_date: date
+    start_date: ScheduleDate
+    end_date: ScheduleDate
     status: str
 
     model_config = ConfigDict(from_attributes=True)

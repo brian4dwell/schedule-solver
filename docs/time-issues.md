@@ -1,6 +1,22 @@
 # Schedule Wall-Clock Times
 
-Updated: 2026-09-14. Implemented and tested; cleanup and migration applied to the configured `bespoke` database. API and web deployed to `bespoke-web` as Fly release 134.
+Updated: 2026-09-14. Original clock migration and application fix deployed. A second review found five remaining boundary issues; the follow-up fixes below are implemented and tested locally and await deployment.
+
+## Second Review
+
+Rechecked storage, API contracts, save/read cycles, generation, eligibility, publication, templates, reports, and browser calendar calculations. The original assignment clock drift was not reproduced. The configured database remains at `202609130002`, with all eight date/clock columns correct and all six CHECK constraints validated. All three centers use `America/Denver`; there are currently no assignment rows to audit for new drift.
+
+Found and fixed these remaining issues:
+
+- The new-schedule form combined local midnight with UTC weekday/formatting operations. In Tokyo, selecting March 2 produced a March 7 end date instead of March 8 and failed the Monday check. Date construction and arithmetic now consistently use UTC for calendar-only calculations.
+- Center create/update accepted nonexistent timezone names, and update accepted null. Scheduling then raised an unhandled timezone exception. Center inputs now validate timezone names and reject explicit null; invalid stored names produce an actionable scheduling error.
+- Manual overlap detection limited comparisons to adjacent local dates. UTC-12 and UTC+14 assignments two local dates apart can overlap. Eligibility now checks all of that provider's assignments in the selected version using UTC instants, matching the solver.
+- Recurring templates could apply slots whose endpoints were ambiguous or nonexistent on the selected DST date. Application now performs the same center-timezone validation as save/generation and rejects the operation before returning invalid slots.
+- Period date contracts accepted midnight timestamps and Unix seconds through implicit coercion. Period inputs and frontend schemas now require calendar dates, matching assignment date boundaries.
+
+The ten new backend regression cases failed before their fixes and now pass. The actual form regression failed in Tokyo before its fix and now passes in all four tested browser timezones. Final verification: **246 backend tests passed**, including **7 isolated PostgreSQL integration cases**; **27 scheduling/component tests per timezone** passed in UTC, Denver, New York, and Tokyo; **35 workflow tests** and **6 auth tests** passed. Lint, typechecking, and production build passed. PostgreSQL tests used the isolated local 18.4 server; the configured database inspection was read-only.
+
+No additional migration is required. These second-review changes have not been deployed by this review. Save/publish remain the authoritative full-draft validation boundaries; browser provider checks are advisory. No live schedule was created or published for testing.
 
 ## Contract
 

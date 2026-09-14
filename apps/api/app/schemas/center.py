@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from pydantic import ConfigDict
+from pydantic import field_validator
 
+from app.core.timezones import require_timezone
 from app.schemas.common import TimestampedSchema
 
 
@@ -12,6 +14,12 @@ class CenterBase(BaseModel):
     state: str | None = None
     postal_code: str | None = None
     timezone: str = "America/New_York"
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        require_timezone(value)
+        return value
 
 
 class CenterCreate(CenterBase):
@@ -26,6 +34,15 @@ class CenterUpdate(BaseModel):
     state: str | None = None
     postal_code: str | None = None
     timezone: str | None = None
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("Center timezone cannot be null.")
+
+        require_timezone(value)
+        return value
 
 
 class CenterRead(TimestampedSchema, CenterBase):

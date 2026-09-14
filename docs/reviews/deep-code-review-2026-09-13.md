@@ -14,6 +14,8 @@ Deployment follow-up (September 14, 19:27 UTC): deployed the review fixes to `be
 
 **1. [P1] Loading and saving a schedule changes its wall-clock times.**
 
+Status after time remediation and September 14 re-review: the original drift path is fixed and migrated. Five additional calendar/timezone boundary issues were reproduced and fixed locally; see [the second time review](../time-issues.md#second-review). Verification passed 246 backend tests, including seven PostgreSQL cases, plus the four-timezone frontend suite. These latest boundary fixes await deployment. The description below preserves the original finding.
+
 Location: [schedule-workspace.tsx:245](../../apps/web/components/schedules/schedule-workspace.tsx#L245), [initial migration:183](../../apps/api/alembic/versions/202604290001_initial_schema.py#L183).
 
 The migration creates assignment timestamps without a timezone, while the ORM declares timezone-aware fields. `timeLabelFromDateTime()` parses a timezone-less API timestamp with `new Date()`, then extracts UTC hours. In an America/New_York runtime, the actual helper turns `2026-09-14T07:00:00` into `11:00`; `dateTimeForAssignment()` sends back `2026-09-14T11:00:00.000Z`. A save can therefore permanently change shift times without a time edit. Repeated round trips can drift again and eventually make the same-day range invalid. The checked-in migrations do not correct this mismatch. The issue is already described in `docs/time-issues.md` and remains present.

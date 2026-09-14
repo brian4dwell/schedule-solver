@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { loadTsModule } from "./helpers/render-component.mjs";
+import { act, loadTsModule, renderComponent } from "./helpers/render-component.mjs";
 
 if (process.env.SCHEDULE_TIME_TEST_CHILD !== "1") {
   for (const timezone of ["UTC", "America/Denver", "America/New_York", "Asia/Tokyo"]) {
@@ -91,6 +91,32 @@ if (process.env.SCHEDULE_TIME_TEST_CHILD !== "1") {
     assert.equal(formatScheduleClock(template.end_time), "3:00 PM");
     assert.equal(formatScheduleClock("00:00"), "12:00 AM");
     assert.equal(formatScheduleClock("23:59"), "11:59 PM");
+  });
+
+  test("the new schedule form preserves Monday and Sunday across browser timezones", async (context) => {
+    const overrides = new Map([
+      ["next/navigation", { useRouter: () => ({ push() {}, refresh() {} }) }],
+      ["@/lib/api", { createSchedulePeriod: async () => ({ id }) }],
+      ["@/lib/logrocket", { captureScheduleWorkflowException() {}, trackSchedulePeriodCreated() {} }],
+      ["@/components/ui/toast-provider", { useToast: () => ({ showToast() {} }) }],
+    ]);
+    const { SchedulePeriodForm } = loadTsModule("components/schedules/schedule-period-form.tsx", overrides);
+    const container = await renderComponent(context, SchedulePeriodForm, {});
+    const input = container.querySelector('input[name="startDate"]');
+    const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value");
+
+    for (const [start, end, name] of [
+      ["2026-03-02", "2026-03-08", "Week of March 2, 2026"],
+      ["2026-10-26", "2026-11-01", "Week of October 26, 2026"],
+      ["2026-09-14", "2026-09-20", "Week of September 14, 2026"],
+    ]) {
+      await act(async () => {
+        descriptor.set.call(input, start);
+        input.dispatchEvent(new window.Event("input", { bubbles: true }));
+      });
+      assert.equal(container.querySelector('input[name="endDate"]').value, end);
+      assert.equal(container.querySelector('input[name="name"]').value, name);
+    }
   });
 
   test("same-day constraints allow only a non-overlapping split pair at one center", () => {
