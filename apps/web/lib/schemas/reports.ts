@@ -1,3 +1,4 @@
+import { scheduleTimeRangeSchema } from "@/lib/schemas/schedule-time";
 import { z } from "zod";
 
 const monthlyAvailabilityOptionSchema = z.enum([
@@ -7,7 +8,7 @@ const monthlyAvailabilityOptionSchema = z.enum([
   "short_shift",
 ]);
 
-export const monthlyScheduleAssignmentApiSchema = z.object({
+export const monthlyScheduleAssignmentApiSchema = scheduleTimeRangeSchema.safeExtend({
   assignment_id: z.string().uuid(),
   schedule_period_id: z.string().uuid(),
   schedule_period_name: z.string().min(1),
@@ -19,8 +20,6 @@ export const monthlyScheduleAssignmentApiSchema = z.object({
   room_id: z.string().uuid().nullable(),
   room_name: z.string().nullable(),
   shift_type: monthlyAvailabilityOptionSchema,
-  start_time: z.string().min(1),
-  end_time: z.string().min(1),
 });
 
 export const monthlyAvailabilityProviderApiSchema = z.object({

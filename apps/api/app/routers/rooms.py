@@ -11,6 +11,7 @@ from app.db.models import Center
 from app.db.models import Room
 from app.db.models import RoomRoomType
 from app.db.models import RoomType
+from app.db.models import ScheduleStructureTemplateSlot
 from app.db.models import ShiftRequirement
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
@@ -200,7 +201,15 @@ def room_has_schedule_records(
     assignment_id = session.scalar(assignment_statement)
     has_assignment = assignment_id is not None
 
-    return has_assignment
+    if has_assignment:
+        return True
+
+    template_statement = select(ScheduleStructureTemplateSlot.id)
+    template_statement = template_statement.where(ScheduleStructureTemplateSlot.organization_id == organization_id)
+    template_statement = template_statement.where(ScheduleStructureTemplateSlot.room_id == room.id)
+    template_statement = template_statement.limit(1)
+    template_slot_id = session.scalar(template_statement)
+    return template_slot_id is not None
 
 
 def delete_room_type_assignments(

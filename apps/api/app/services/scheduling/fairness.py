@@ -16,8 +16,8 @@ from app.db.models import ProviderScheduleWeekAvailability
 from app.db.models import SchedulePeriod
 from app.db.models import ScheduleVersion
 from app.db.models.scheduling import current_utc_time
-from app.schemas.fairness import FairnessMetricRead
 from app.schemas.fairness import FairnessConfigVersionRead
+from app.schemas.fairness import FairnessMetricRead
 from app.schemas.fairness import FairnessReportRead
 from app.schemas.fairness import ProviderFairnessEventRead
 from app.schemas.fairness import ProviderFairnessSnapshotRead
@@ -233,7 +233,7 @@ def weekly_availability_rows_for_provider(
 
 
 def weekday_for_assignment(assignment: Assignment) -> str:
-    weekday_index = assignment.start_time.weekday()
+    weekday_index = assignment.schedule_date.weekday()
     weekday = WEEKDAY_VALUES[weekday_index]
     return weekday
 
@@ -883,6 +883,18 @@ def rebuild_published_fairness_state(
             snapshots,
             schedule_version,
         )
+
+    represented_provider_ids = {state.provider_id for state in ledger_states}
+    state_statement = select(ProviderFairnessState)
+    state_statement = state_statement.where(ProviderFairnessState.organization_id == organization_id)
+    existing_states = list(session.scalars(state_statement))
+
+    for state in existing_states:
+        if state.provider_id in represented_provider_ids:
+            continue
+
+        # This table is derived entirely from published schedules, not manual adjustments.
+        session.delete(state)
 
     write_provider_fairness_ledger_states(
         ledger_states,

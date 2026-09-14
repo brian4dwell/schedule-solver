@@ -1,10 +1,12 @@
 from datetime import UTC
+from datetime import date
 from datetime import datetime
+from datetime import time
 from datetime import timedelta
 from pathlib import Path
-import sys
 from types import SimpleNamespace
 from uuid import uuid4
+import sys
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -22,14 +24,15 @@ def create_request(provider_id=None, room_id=None) -> ProviderSlotEligibilityInp
     organization_id = uuid4()
     request_provider_id = provider_id or uuid4()
     request_room_id = room_id or uuid4()
-    start_time = datetime(2026, 5, 4, 7, 0, tzinfo=UTC)
-    end_time = datetime(2026, 5, 4, 15, 0, tzinfo=UTC)
+    start_time = time(7, 0)
+    end_time = time(15, 0)
     request = ProviderSlotEligibilityInput(
         organization_id=organization_id,
         schedule_period_id=uuid4(),
         provider_id=request_provider_id,
         center_id=uuid4(),
         room_id=request_room_id,
+        schedule_date=date(2026, 5, 4),
         start_time=start_time,
         end_time=end_time,
     )

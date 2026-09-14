@@ -14,6 +14,7 @@ from app.services.scheduling.provider_eligibility_contracts import ProviderRoomT
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityInput
 from app.services.scheduling.provider_eligibility_contracts import ProviderWeeklyAvailabilitySummary
 from app.services.scheduling.provider_eligibility_contracts import RequiredRoomTypeSkill
+from app.services.scheduling.shift_request_units import shift_request_units_for_shift_type
 from app.services.scheduling.solver_contracts import SolverAssignment
 from app.services.scheduling.solver_contracts import SolverCenterCredential
 from app.services.scheduling.solver_contracts import SolverGenerationMode
@@ -25,7 +26,8 @@ from app.services.scheduling.solver_contracts import SolverResult
 from app.services.scheduling.solver_contracts import SolverRoom
 from app.services.scheduling.solver_contracts import SolverShiftRequirement
 from app.services.scheduling.solver_contracts import SolverViolation
-from app.services.scheduling.shift_request_units import shift_request_units_for_shift_type
+from app.services.scheduling.time_ranges import ranges_overlap
+from app.services.scheduling.time_ranges import split_day_pair_is_allowed
 
 BELOW_MIN_SHIFT_REQUEST_UNIT_PENALTY = 10
 ABOVE_MAX_SHIFT_REQUEST_UNIT_PENALTY = 15
@@ -101,16 +103,16 @@ def time_ranges_overlap(
     second_start: datetime,
     second_end: datetime,
 ) -> bool:
-    starts_before_second_ends = first_start < second_end
-    ends_after_second_starts = first_end > second_start
-    overlaps = starts_before_second_ends and ends_after_second_starts
+    overlaps = ranges_overlap(first_start, first_end, second_start, second_end)
     return overlaps
 
 
 def shift_requirement_time_is_valid(
     shift_requirement: SolverShiftRequirement,
 ) -> bool:
-    time_is_valid = shift_requirement.end_time > shift_requirement.start_time
+    same_date = shift_requirement.start_time.date() == shift_requirement.end_time.date()
+    ordered = shift_requirement.end_time > shift_requirement.start_time
+    time_is_valid = same_date and ordered
     return time_is_valid
 
 
@@ -193,16 +195,14 @@ def same_day_assignment_pair_is_allowed(
     first_shift: SolverShiftRequirement,
     second_shift: SolverShiftRequirement,
 ) -> bool:
-    centers_match = first_shift.center_id == second_shift.center_id
-
-    if not centers_match:
-        return False
-
-    split_day_pair = shift_type_pair_is_split_day(
+    allowed = split_day_pair_is_allowed(
+        first_shift.center_id,
         first_shift.shift_type,
+        second_shift.center_id,
         second_shift.shift_type,
     )
-    return split_day_pair
+    return allowed
+
 
 
 def room_for_shift(
@@ -320,8 +320,9 @@ def provider_eligibility_request(
         room_id=shift_requirement.room_id,
         required_provider_type=shift_requirement.required_provider_type,
         shift_type=shift_requirement.shift_type,
-        start_time=shift_requirement.start_time,
-        end_time=shift_requirement.end_time,
+        schedule_date=shift_requirement.start_time.date(),
+        start_time=shift_requirement.start_time.time(),
+        end_time=shift_requirement.end_time.time(),
     )
     return request
 

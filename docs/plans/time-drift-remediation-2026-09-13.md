@@ -1,12 +1,28 @@
 # Schedule wall-clock time remediation
 
-Updated: 2026-09-13. Status: proposed; database inspection completed, implementation and data changes not performed.
+Updated: 2026-09-14. Status: implementation, tests, configured-database cleanup/migration, and Fly application deployment complete.
 
 This plan addresses finding **1** in [the deep code review](../reviews/deep-code-review-2026-09-13.md) and [time-issues.md](../time-issues.md). It includes the time-related period and same-day validation gaps in findings 14 and 15. The other review findings remain separate work.
 
 **Recommendation:** implement the explicit wall-clock contract and migrate assignments and shift requirements to `date + time + time` together. Clear the obsolete draft versions in a scoped rollout cleanup, then enforce fully validated database constraints and start fresh schedules from templates. Focus implementation on preventing future drift.
 
-**User decision, 2026-09-13:** old schedule drafts will not be needed. Historical repair, successor-draft reconstruction, and special support for corrupt historical reads are out of scope. The cleanup below is planned work; no database deletion has been performed.
+**User decision, 2026-09-13:** old schedule drafts will not be needed. Historical repair, successor-draft reconstruction, and special support for corrupt historical reads are out of scope. The scoped cleanup was subsequently completed as recorded below.
+
+**Rollout conditions confirmed by the user:** a full database backup already exists, and no other users are currently writing to the database. Proceed as one coordinated implementation and cutover; no separate backup-preparation or multi-user rollout phase is needed. These conditions do not replace implementation tests or coordination of any running solver jobs.
+
+## Implementation result
+
+Implemented migration `202609130002`, strict Pydantic/Zod date and clock contracts, workspace/report clock handling, shared same-day validation, center-timezone instant conversion, and the explicit draft cleanup command. The full backend suite passed with **223 tests**, including **7 PostgreSQL integration cases**. PostgreSQL tests ran on a separate local 18.4 server; the original inspected database is 16.15. Frontend scheduling tests exercise **17 checks in each of four timezones**, including the actual board save handler.
+
+The steps below record the implementation design and cutover procedure. See [time-issues.md](../time-issues.md) for the implemented contract, cleanup commands, and test commands. Cleanup, migration, and deployment followed implementation under separate explicit user requests.
+
+## Migration execution result
+
+Applied to the configured `bespoke` database at the user's request on September 13. Removed the 187 obsolete draft versions and 2,587 assignments plus their dependent violations/fairness records. Alembic advanced from `202609130001` to `202609130002`. Verification at 22:02:54 UTC confirmed all eight date/clock columns, all six validated CHECK constraints, zero remaining invalid ranges, and unchanged row counts/checksums for 22 retained tables. No Fly deployment was performed.
+
+## Deployment execution result
+
+Deployed the matching API and web application at the user's request on September 14 to `bespoke-web`, Fly release 134, image `deployment-01M2G15XBQ0H7MRJRK278JZ1AJ`. The remote production build and startup migration checks succeeded. Fly smoke and machine checks passed; public `/health` and `/api/health` both returned HTTP 200 with `{"status":"ok"}`. Existing browser sessions should reload before editing schedules.
 
 ## Database evidence
 
@@ -121,8 +137,8 @@ Prefer the final model now. This database already has assignment dates, contains
 
 Clear the obsolete drafts as a separate, explicit rollout operation before the schema migration. Keep environment-specific cleanup out of the reusable Alembic revision:
 
-1. Take a normal recoverable database backup before rollout and rehearse on an isolated PostgreSQL copy. A bespoke lineage export or repair system is unnecessary. Keep backups outside the repository.
-2. Stop/drain writers and run the scoped draft cleanup described below. Under the migration transaction and appropriate locks, recheck column types and any remaining rows: valid ranges, timestamp dates equal to `schedule_date`, minute precision, and requirement same-day/date integrity. Abort on unexpected retained data rather than extending the deletion scope.
+1. Use the full backup the user has already confirmed. Rehearse on an isolated PostgreSQL copy; no additional backup or bespoke lineage export is required for the confirmed scope.
+2. Keep app writes idle during cutover, drain any running solver jobs, and run the scoped draft cleanup described below. No coordination with other users is currently needed. Under the migration transaction and appropriate locks, recheck column types and any remaining rows: valid ranges, timestamp dates equal to `schedule_date`, minute precision, and requirement same-day/date integrity. Abort on unexpected retained data rather than extending the deletion scope.
 3. Change assignment `start_time` and `end_time` to `time without time zone`. The inspected obsolete assignment set should now be empty. For any separately retained valid rows, convert their literal clock portions and keep `schedule_date` unchanged. Do not use `AT TIME ZONE` for this conversion.
 4. Add nullable `shift_requirements.schedule_date`; derive it from the original start timestamp where rows exist, after same-day preflight. Convert its clocks, then make the date non-null. Update dependent query ordering/index definitions as needed.
 5. Add named, fully validated CHECK constraints for minute precision, valid clock bounds including exclusion of `24:00`, and `end_time > start_time` on assignments, requirements, and template slots. No `NOT VALID` constraint or deferred historical debt is needed. See [PostgreSQL ALTER TABLE constraint behavior](https://www.postgresql.org/docs/16/sql-altertable.html).
@@ -130,7 +146,7 @@ Clear the obsolete drafts as a separate, explicit rollout operation before the s
 
 The schema migration must remain usable on other databases: it validates and converts retained valid data, and fails clearly if invalid data needs an explicit cleanup decision. It must not automatically delete every draft wherever Alembic runs.
 
-Use one coordinated API/web release with a short maintenance window. Old clients will send datetime payloads and must receive a clear reload-required error, with no permissive dual-format parser. Stop/drain old writers and solver jobs before changing column types, and reopen only with matching API and frontend contracts. The existing Fly startup path runs migrations automatically, so the release procedure must prevent old processes from writing during the change.
+Use one coordinated API/web cutover; a separately scheduled multi-user maintenance window is unnecessary under the confirmed conditions. Reload the user's browser after the update. Old clients will send datetime payloads and must receive a clear reload-required error, with no permissive dual-format parser. Keep writes idle and drain any solver jobs before changing column types, then resume with matching API and frontend contracts. The existing Fly startup path runs migrations automatically, so the release procedure must prevent old processes from writing during the change.
 
 Implement and rehearse a downgrade that reconstructs timezone-less timestamps from `schedule_date + clock`, restores prior column types, and removes new constraints before dropping the added requirement date. The schema downgrade does not recreate deleted drafts; the backup is the recovery path if cleanup targeted the wrong data. Restoring the old application also restores its drift bug; keep writes paused if rollback is necessary. No Fly deployment is part of this planning task.
 

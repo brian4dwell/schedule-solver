@@ -39,6 +39,11 @@ export function loadTsModule(relativePath, overrides = new Map()) {
       return overrides.get(name);
     }
 
+    if (name.startsWith("@/")) {
+      const localPath = name.slice(2) + ".ts";
+      return loadTsModule(localPath, overrides);
+    }
+
     return requireModule(name);
   }
 

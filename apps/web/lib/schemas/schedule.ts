@@ -1,3 +1,4 @@
+import { clockRangeSchema, scheduleTimeRangeSchema, scheduleDateSchema, wallClockSchema } from "@/lib/schemas/schedule-time";
 import { z } from "zod";
 
 export const scheduleDayKeySchema = z.enum([
@@ -55,14 +56,18 @@ export const providerSlotEligibilityApiSchema = z.object({
 export const scheduleRoomAssignmentSchema = z.object({
   id: z.string().min(1),
   dayKey: scheduleDayKeySchema,
-  slotDate: z.string().min(1),
+  slotDate: scheduleDateSchema,
   slotDateChanged: z.boolean(),
   centerId: z.string().uuid(),
-  roomId: z.string().uuid(),
+  roomId: z.string().uuid().nullable(),
+  shiftRequirementId: z.string().uuid().nullable(),
+  requiredProviderType: z.string().nullable(),
+  source: z.string().min(1),
+  notes: z.string().nullable(),
   shiftType: z.enum(["full_shift", "first_half", "second_half", "short_shift"]),
   providerId: z.string().uuid().nullable(),
-  startTime: z.string().min(1),
-  endTime: z.string().min(1),
+  startTime: wallClockSchema,
+  endTime: wallClockSchema,
   sortOrder: z.number().int().min(0),
   validationStatus: z.enum(["unknown", "valid", "warning", "invalid"]),
   validationMessages: z.array(z.string()),
@@ -97,7 +102,7 @@ export const schedulePeriodRenameSchema = z.object({
   name: z.string().trim().min(1),
 });
 
-export const scheduleAssignmentApiSchema = z.object({
+export const scheduleAssignmentApiSchema = scheduleTimeRangeSchema.safeExtend({
   id: z.string().uuid(),
   room_slot_id: z.string().uuid(),
   schedule_version_id: z.string().uuid(),
@@ -108,9 +113,6 @@ export const scheduleAssignmentApiSchema = z.object({
   shift_requirement_id: z.string().uuid().nullable(),
   required_provider_type: z.string().nullable(),
   shift_type: z.enum(["full_shift", "first_half", "second_half", "short_shift"]),
-  schedule_date: z.string().min(1),
-  start_time: z.string().min(1),
-  end_time: z.string().min(1),
   assignment_status: z.string().min(1),
   source: z.string().min(1),
   notes: z.string().nullable(),
@@ -160,14 +162,12 @@ export const schedulePeriodCloneResponseApiSchema = z.object({
   schedule_version: scheduleDraftSaveResponseApiSchema,
 });
 
-export const scheduleStructureTemplateSlotApiSchema = z.object({
+export const scheduleStructureTemplateSlotApiSchema = clockRangeSchema.safeExtend({
   id: z.string().uuid(),
   template_id: z.string().uuid(),
   weekday: scheduleDayKeySchema,
   room_id: z.string().uuid(),
   shift_type: z.enum(["full_shift", "first_half", "second_half", "short_shift"]),
-  start_time: z.string().min(1),
-  end_time: z.string().min(1),
   display_order: z.number().int().min(0),
   created_at: z.string().min(1),
   updated_at: z.string().min(1),
@@ -181,12 +181,10 @@ export const scheduleStructureTemplateApiSchema = z.object({
   updated_at: z.string().min(1),
 });
 
-export const scheduleStructureTemplateSlotPayloadSchema = z.object({
+export const scheduleStructureTemplateSlotPayloadSchema = clockRangeSchema.safeExtend({
   weekday: scheduleDayKeySchema,
   room_id: z.string().uuid(),
   shift_type: z.enum(["full_shift", "first_half", "second_half", "short_shift"]),
-  start_time: z.string().min(1),
-  end_time: z.string().min(1),
   display_order: z.number().int().min(0),
 });
 
@@ -195,15 +193,12 @@ export const scheduleStructureTemplatePayloadSchema = z.object({
   slots: z.array(scheduleStructureTemplateSlotPayloadSchema),
 });
 
-export const scheduleStructureTemplateAppliedSlotApiSchema = z.object({
+export const scheduleStructureTemplateAppliedSlotApiSchema = scheduleTimeRangeSchema.safeExtend({
   room_slot_id: z.string().uuid(),
   weekday: scheduleDayKeySchema,
   room_id: z.string().uuid(),
   center_id: z.string().uuid(),
   shift_type: z.enum(["full_shift", "first_half", "second_half", "short_shift"]),
-  schedule_date: z.string().min(1),
-  start_time: z.string().min(1),
-  end_time: z.string().min(1),
   display_order: z.number().int().min(0),
 });
 
@@ -324,3 +319,28 @@ export type ScheduleGenerateResponseApi = z.infer<
 export type SchedulePublishResponseApi = z.infer<
   typeof schedulePublishResponseApiSchema
 >;
+
+export const scheduleAssignmentSavePayloadSchema = scheduleTimeRangeSchema.safeExtend({
+  room_slot_id: z.string().uuid(),
+  allow_slot_date_change: z.boolean(),
+  provider_id: z.string().uuid().nullable(),
+  center_id: z.string().uuid(),
+  room_id: z.string().uuid().nullable(),
+  shift_requirement_id: z.string().uuid().nullable(),
+  required_provider_type: z.string().nullable(),
+  shift_type: z.enum(["full_shift", "first_half", "second_half", "short_shift"]),
+  source: z.string().min(1),
+  notes: z.string().nullable(),
+});
+
+export const providerSlotEligibilityPayloadSchema = scheduleTimeRangeSchema.safeExtend({
+  schedule_period_id: z.string().uuid(),
+  schedule_version_id: z.string().uuid().nullable(),
+  assignment_id: z.string().uuid().nullable(),
+  shift_requirement_id: z.string().uuid().nullable(),
+  provider_id: z.string().uuid(),
+  center_id: z.string().uuid(),
+  room_id: z.string().uuid().nullable(),
+  required_provider_type: z.string().nullable(),
+  shift_type: z.enum(["full_shift", "first_half", "second_half", "short_shift"]),
+});

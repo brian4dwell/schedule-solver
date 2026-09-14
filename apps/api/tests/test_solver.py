@@ -542,8 +542,8 @@ def test_solver_shift_from_assignment_preserves_room_slot_id() -> None:
         required_provider_type=None,
         shift_type="full_shift",
         schedule_date=date(2026, 5, 6),
-        start_time=datetime(2026, 5, 6, 7, 0, tzinfo=UTC),
-        end_time=datetime(2026, 5, 6, 15, 0, tzinfo=UTC),
+        start_time="07:00",
+        end_time="15:00",
         source="manual",
         notes=None,
     )

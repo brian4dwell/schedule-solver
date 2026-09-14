@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
+from pydantic import AwareDatetime
 from pydantic import BaseModel
 from pydantic import Field
 
@@ -49,8 +50,8 @@ class SolverShiftRequirement(BaseModel):
     room_id: UUID | None
     room_name: str | None
     shift_type: str = "full_shift"
-    start_time: datetime
-    end_time: datetime
+    start_time: AwareDatetime
+    end_time: AwareDatetime
     required_provider_count: int
     required_provider_type: str | None
 
@@ -122,8 +123,8 @@ class SolverAssignment(BaseModel):
     room_id: UUID | None
     required_provider_type: str | None
     shift_type: str
-    start_time: datetime
-    end_time: datetime
+    start_time: AwareDatetime
+    end_time: AwareDatetime
 
 
 class SolverViolation(BaseModel):

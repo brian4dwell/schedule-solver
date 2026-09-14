@@ -1,6 +1,5 @@
 from datetime import date
 from datetime import datetime
-from datetime import time
 from typing import Literal
 from uuid import UUID
 
@@ -9,6 +8,8 @@ from pydantic import ConfigDict
 from pydantic import Field
 
 from app.schemas.common import TimestampedSchema
+from app.schemas.schedule_time import ClockRange
+from app.schemas.schedule_time import ScheduleTimeRange
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityViolation
 from app.services.scheduling.solver_contracts import SolverGenerationMode
 from app.services.scheduling.solver_contracts import SolverRunMetrics
@@ -31,20 +32,19 @@ ScheduleShiftType = Literal[
 ]
 
 
-class ProviderEligibilityRequest(BaseModel):
+class ProviderEligibilityRequest(ScheduleTimeRange):
     schedule_period_id: UUID
     schedule_version_id: UUID | None = None
     assignment_id: UUID | None = None
+    shift_requirement_id: UUID | None = None
     provider_id: UUID
     center_id: UUID
     room_id: UUID | None = None
     required_provider_type: str | None = None
     shift_type: str = "full_shift"
-    start_time: datetime
-    end_time: datetime
 
 
-class ScheduleAssignmentCreate(BaseModel):
+class ScheduleAssignmentCreate(ScheduleTimeRange):
     room_slot_id: UUID
     allow_slot_date_change: bool = False
     provider_id: UUID | None
@@ -53,9 +53,6 @@ class ScheduleAssignmentCreate(BaseModel):
     shift_requirement_id: UUID | None = None
     required_provider_type: str | None = None
     shift_type: str = "full_shift"
-    schedule_date: date
-    start_time: datetime
-    end_time: datetime
     source: str = "manual"
     notes: str | None = None
 
@@ -85,12 +82,10 @@ class SchedulePeriodRenameRequest(BaseModel):
     name: str = Field(min_length=1)
 
 
-class ScheduleStructureTemplateSlotWrite(BaseModel):
+class ScheduleStructureTemplateSlotWrite(ClockRange):
     weekday: ScheduleTemplateWeekday
     room_id: UUID
     shift_type: ScheduleShiftType
-    start_time: time
-    end_time: time
     display_order: int = Field(ge=0)
 
 
@@ -99,13 +94,11 @@ class ScheduleStructureTemplateWrite(BaseModel):
     slots: list[ScheduleStructureTemplateSlotWrite] = Field(default_factory=list)
 
 
-class ScheduleStructureTemplateSlotRead(TimestampedSchema):
+class ScheduleStructureTemplateSlotRead(TimestampedSchema, ClockRange):
     template_id: UUID
     weekday: ScheduleTemplateWeekday
     room_id: UUID
     shift_type: ScheduleShiftType
-    start_time: time
-    end_time: time
     display_order: int
 
     model_config = ConfigDict(from_attributes=True)
@@ -122,15 +115,12 @@ class ScheduleStructureTemplateApplyRequest(BaseModel):
     schedule_period_id: UUID
 
 
-class ScheduleStructureTemplateAppliedSlot(BaseModel):
+class ScheduleStructureTemplateAppliedSlot(ScheduleTimeRange):
     room_slot_id: UUID
     weekday: ScheduleTemplateWeekday
     room_id: UUID
     center_id: UUID
     shift_type: ScheduleShiftType
-    schedule_date: date
-    start_time: datetime
-    end_time: datetime
     display_order: int
 
 
@@ -156,7 +146,7 @@ class SchedulePeriodRead(TimestampedSchema):
     model_config = ConfigDict(from_attributes=True)
 
 
-class AssignmentRead(TimestampedSchema):
+class AssignmentRead(TimestampedSchema, ScheduleTimeRange):
     room_slot_id: UUID
     schedule_version_id: UUID
     schedule_period_id: UUID
@@ -166,9 +156,6 @@ class AssignmentRead(TimestampedSchema):
     shift_requirement_id: UUID | None
     required_provider_type: str | None
     shift_type: str
-    schedule_date: date
-    start_time: datetime
-    end_time: datetime
     assignment_status: str
     source: str
     notes: str | None

@@ -1,22 +1,22 @@
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import Field
 
+from app.schemas.schedule_time import ScheduleTimeRange
 
-class ProviderSlotEligibilityInput(BaseModel):
+
+class ProviderSlotEligibilityInput(ScheduleTimeRange):
     organization_id: UUID
     schedule_period_id: UUID
     schedule_version_id: UUID | None = None
     assignment_id: UUID | None = None
+    shift_requirement_id: UUID | None = None
     provider_id: UUID
     center_id: UUID
     room_id: UUID | None = None
     required_provider_type: str | None = None
     shift_type: str = "full_shift"
-    start_time: datetime
-    end_time: datetime
 
 
 class RequiredRoomTypeSkill(BaseModel):
@@ -55,6 +55,7 @@ class ProviderEligibilityContext(BaseModel):
     schedule_week_assignment_count: int = 0
     schedule_week_assignment_units: int = 0
     has_double_booking: bool = False
+    has_same_day_conflict: bool = False
 
 
 class ProviderEligibilityViolation(BaseModel):

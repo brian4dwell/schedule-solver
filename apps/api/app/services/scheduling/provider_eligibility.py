@@ -1,4 +1,7 @@
+from dataclasses import dataclass
+from datetime import date
 from datetime import datetime
+from datetime import timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -12,6 +15,7 @@ from app.db.models import ProviderRoomTypeSkill
 from app.db.models import ProviderScheduleWeekAvailability
 from app.db.models import Room
 from app.db.models import RoomRoomType
+from app.services.scheduling.assignment_requirements import required_provider_type_for_assignment
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityContext
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityViolation
 from app.services.scheduling.provider_eligibility_contracts import ProviderRoomTypeSkillSummary
@@ -20,6 +24,9 @@ from app.services.scheduling.provider_eligibility_contracts import ProviderSlotE
 from app.services.scheduling.provider_eligibility_contracts import ProviderWeeklyAvailabilitySummary
 from app.services.scheduling.provider_eligibility_contracts import RequiredRoomTypeSkill
 from app.services.scheduling.shift_request_units import shift_request_units_for_shift_type
+from app.services.scheduling.time_ranges import ranges_overlap
+from app.services.scheduling.time_ranges import slot_instants
+from app.services.scheduling.time_ranges import split_day_pair_is_allowed
 
 WEEKDAY_VALUES = [
     "monday",
@@ -272,6 +279,14 @@ def evaluate_provider_slot_eligibility(
             )
             violations.append(violation)
 
+    if context.has_same_day_conflict:
+        violation = create_violation(
+            "provider_same_day_conflict",
+            "other_hard_constraint",
+            "Same-day assignments must be a non-overlapping first-half/second-half pair at one center.",
+        )
+        violations.append(violation)
+
     if context.has_double_booking:
         violation = create_violation(
             "provider_double_booked",
@@ -411,7 +426,7 @@ def load_provider_room_type_skills(
     return skill_summaries
 
 
-def weekday_for_start_time(start_time: datetime) -> str:
+def weekday_for_start_time(start_time: date) -> str:
     weekday_index = start_time.weekday()
     weekday = WEEKDAY_VALUES[weekday_index]
     return weekday
@@ -421,7 +436,7 @@ def load_weekly_availability(
     request: ProviderSlotEligibilityInput,
     session: Session,
 ) -> ProviderWeeklyAvailabilitySummary:
-    weekday = weekday_for_start_time(request.start_time)
+    weekday = weekday_for_start_time(request.schedule_date)
     statement = select(ProviderScheduleWeekAvailability)
     statement = statement.where(ProviderScheduleWeekAvailability.organization_id == request.organization_id)
     statement = statement.where(ProviderScheduleWeekAvailability.schedule_week_id == request.schedule_period_id)
@@ -477,26 +492,55 @@ def provider_assignment_units_for_week(
     return assignment_units
 
 
-def has_double_booking(
-    request: ProviderSlotEligibilityInput,
-    session: Session,
-) -> bool:
-    if request.schedule_version_id is None:
-        return False
+@dataclass(frozen=True)
+class ProviderTimeConflicts:
+    overlaps: bool
+    same_day: bool
 
-    statement = select(Assignment)
+
+def provider_time_conflicts(
+    request: ProviderSlotEligibilityInput,
+    center: Center,
+    session: Session,
+) -> ProviderTimeConflicts:
+    if request.schedule_version_id is None:
+        return ProviderTimeConflicts(overlaps=False, same_day=False)
+
+    requested = slot_instants(request.schedule_date, request.start_time, request.end_time, center.timezone)
+    first_date = request.schedule_date - timedelta(days=1)
+    last_date = request.schedule_date + timedelta(days=1)
+    statement = select(Assignment, Center)
+    statement = statement.join(Center, Center.id == Assignment.center_id)
     statement = statement.where(Assignment.organization_id == request.organization_id)
+    statement = statement.where(Center.organization_id == request.organization_id)
     statement = statement.where(Assignment.schedule_version_id == request.schedule_version_id)
     statement = statement.where(Assignment.provider_id == request.provider_id)
-    statement = statement.where(Assignment.start_time < request.end_time)
-    statement = statement.where(Assignment.end_time > request.start_time)
+    statement = statement.where(Assignment.schedule_date.between(first_date, last_date))
 
     if request.assignment_id is not None:
         statement = statement.where(Assignment.id != request.assignment_id)
 
-    overlapping_assignments = list(session.scalars(statement))
-    has_overlapping_assignments = len(overlapping_assignments) > 0
-    return has_overlapping_assignments
+    rows = session.execute(statement)
+    overlaps = False
+    same_day_conflict = False
+    same_day_count = 0
+
+    for assignment, assignment_center in rows:
+        assigned = slot_instants(assignment.schedule_date, assignment.start_time, assignment.end_time, assignment_center.timezone)
+        pair_overlaps = ranges_overlap(requested.start, requested.end, assigned.start, assigned.end)
+        overlaps = overlaps or pair_overlaps
+
+        if assignment.schedule_date != request.schedule_date:
+            continue
+
+        same_day_count = same_day_count + 1
+        allowed_pair = split_day_pair_is_allowed(request.center_id, request.shift_type, assignment.center_id, assignment.shift_type)
+        invalid_pair = not allowed_pair or pair_overlaps
+        same_day_conflict = same_day_conflict or invalid_pair
+
+    too_many_assignments = same_day_count > 1
+    same_day_conflict = same_day_conflict or too_many_assignments
+    return ProviderTimeConflicts(overlaps=overlaps, same_day=same_day_conflict)
 
 
 def load_provider_eligibility_context(
@@ -512,11 +556,13 @@ def load_provider_eligibility_context(
     credential_exists = credential is not None
     credential_active = False
 
+    instants = slot_instants(request.schedule_date, request.start_time, request.end_time, center.timezone)
+
     if credential is not None:
         credential_active = credential_is_active_for_slot(
             credential,
-            request.start_time,
-            request.end_time,
+            instants.start,
+            instants.end,
         )
 
     room_md_only = False
@@ -527,7 +573,7 @@ def load_provider_eligibility_context(
     weekly_availability = load_weekly_availability(request, session)
     schedule_week_assignment_units = provider_assignment_units_for_week(request, session)
     schedule_week_assignment_count = schedule_week_assignment_units // 2
-    double_booking = has_double_booking(request, session)
+    time_conflicts = provider_time_conflicts(request, center, session)
     context = ProviderEligibilityContext(
         provider_id=provider.id,
         provider_is_active=provider.is_active,
@@ -543,7 +589,8 @@ def load_provider_eligibility_context(
         weekly_availability=weekly_availability,
         schedule_week_assignment_count=schedule_week_assignment_count,
         schedule_week_assignment_units=schedule_week_assignment_units,
-        has_double_booking=double_booking,
+        has_double_booking=time_conflicts.overlaps,
+        has_same_day_conflict=time_conflicts.same_day,
     )
     return context
 
@@ -552,6 +599,13 @@ def check_provider_slot_eligibility(
     request: ProviderSlotEligibilityInput,
     session: Session,
 ) -> ProviderSlotEligibilityResult:
-    context = load_provider_eligibility_context(request, session)
-    result = evaluate_provider_slot_eligibility(request, context)
+    checked_request = request.model_copy()
+    checked_request.required_provider_type = required_provider_type_for_assignment(
+        request.shift_requirement_id,
+        request.required_provider_type,
+        request.organization_id,
+        session,
+    )
+    context = load_provider_eligibility_context(checked_request, session)
+    result = evaluate_provider_slot_eligibility(checked_request, context)
     return result

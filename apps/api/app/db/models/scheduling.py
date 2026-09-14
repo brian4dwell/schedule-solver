@@ -1,10 +1,11 @@
-import uuid
+from datetime import UTC
 from datetime import date
 from datetime import datetime
-from datetime import UTC
 from datetime import time
+import uuid
 
 from sqlalchemy import Boolean
+from sqlalchemy import CheckConstraint
 from sqlalchemy import Date
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
@@ -361,15 +362,31 @@ class ProviderFairnessSnapshot(Base, TimestampMixin):
     positive_event_count: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+def clock_precision_constraint(table_name: str) -> CheckConstraint:
+    expression = (
+        "start_time < TIME '24:00' AND end_time < TIME '24:00' "
+        "AND EXTRACT(SECOND FROM start_time) = 0 "
+        "AND EXTRACT(SECOND FROM end_time) = 0"
+    )
+    constraint = CheckConstraint(expression, name=f"ck_{table_name}_clock_precision")
+    constraint.ddl_if(dialect="postgresql")
+    return constraint
+
+
 class ShiftRequirement(Base, TimestampMixin):
     __tablename__ = "shift_requirements"
+    __table_args__ = (
+        CheckConstraint("end_time > start_time", name="ck_shift_requirements_time_range"),
+        clock_precision_constraint("shift_requirements"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
     center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("centers.id"), nullable=False)
     room_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("rooms.id"), nullable=True)
-    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    schedule_date: Mapped[date] = mapped_column(Date, nullable=False)
+    start_time: Mapped[time] = mapped_column(Time(timezone=False), nullable=False)
+    end_time: Mapped[time] = mapped_column(Time(timezone=False), nullable=False)
     required_provider_count: Mapped[int] = mapped_column(Integer, nullable=False)
     required_provider_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -401,6 +418,10 @@ class ScheduleStructureTemplate(Base, TimestampMixin):
 
 class ScheduleStructureTemplateSlot(Base, TimestampMixin):
     __tablename__ = "schedule_structure_template_slots"
+    __table_args__ = (
+        CheckConstraint("end_time > start_time", name="ck_schedule_structure_template_slots_time_range"),
+        clock_precision_constraint("schedule_structure_template_slots"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
@@ -447,7 +468,11 @@ class ScheduleVersion(Base, TimestampMixin):
 
 class Assignment(Base, TimestampMixin):
     __tablename__ = "assignments"
-    __table_args__ = (UniqueConstraint("organization_id", "schedule_version_id", "room_slot_id"),)
+    __table_args__ = (
+        UniqueConstraint("organization_id", "schedule_version_id", "room_slot_id"),
+        CheckConstraint("end_time > start_time", name="ck_assignments_time_range"),
+        clock_precision_constraint("assignments"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
     room_slot_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -461,8 +486,8 @@ class Assignment(Base, TimestampMixin):
     required_provider_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
     shift_type: Mapped[str] = mapped_column(String(40), nullable=False, default="full_shift")
     schedule_date: Mapped[date] = mapped_column(Date, nullable=False)
-    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    start_time: Mapped[time] = mapped_column(Time(timezone=False), nullable=False)
+    end_time: Mapped[time] = mapped_column(Time(timezone=False), nullable=False)
     assignment_status: Mapped[str] = mapped_column(String(40), nullable=False)
     source: Mapped[str] = mapped_column(String(40), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

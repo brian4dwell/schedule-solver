@@ -3,8 +3,10 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.schemas.schedule_time import ScheduleTimeRange
 
-class MonthlyScheduleAssignmentRead(BaseModel):
+
+class MonthlyScheduleAssignmentRead(ScheduleTimeRange):
     assignment_id: UUID
     schedule_period_id: UUID
     schedule_period_name: str
@@ -16,8 +18,6 @@ class MonthlyScheduleAssignmentRead(BaseModel):
     room_id: UUID | None
     room_name: str | None
     shift_type: str
-    start_time: str
-    end_time: str
 
 
 class MonthlyAvailabilityProviderRead(BaseModel):

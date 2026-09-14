@@ -2,6 +2,7 @@ from calendar import monthrange
 from dataclasses import dataclass
 from datetime import date
 from datetime import datetime
+from datetime import time
 from datetime import timedelta
 from uuid import UUID
 
@@ -22,8 +23,8 @@ from app.db.models import ScheduleVersion
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
 from app.dependencies import require_admin_user
-from app.schemas.provider_availability_week import WORK_AVAILABILITY_OPTION_VALUES
 from app.schemas.provider_availability_week import WEEKDAY_VALUES
+from app.schemas.provider_availability_week import WORK_AVAILABILITY_OPTION_VALUES
 from app.schemas.reports import MonthlyAvailabilityDayRead
 from app.schemas.reports import MonthlyAvailabilityProviderRead
 from app.schemas.reports import MonthlyAvailabilityReportRead
@@ -83,8 +84,8 @@ class MonthlyScheduleAssignmentRow:
     room_name: str | None
     shift_type: str
     schedule_date: date
-    start_time: datetime
-    end_time: datetime
+    start_time: time
+    end_time: time
 
 
 def validate_month(month: int) -> None:
@@ -503,7 +504,7 @@ def monthly_schedule_assignment_rows(
     statement = statement.where(Assignment.schedule_version_id.in_(selected_version_ids))
     statement = statement.where(Assignment.schedule_date >= start_date)
     statement = statement.where(Assignment.schedule_date <= end_date)
-    statement = statement.order_by(Assignment.start_time)
+    statement = statement.order_by(Assignment.schedule_date, Assignment.start_time)
     results = session.execute(statement).all()
     rows: list[MonthlyScheduleAssignmentRow] = []
 
@@ -545,8 +546,9 @@ def assignment_read_for_row(
         room_id=row.room_id,
         room_name=row.room_name,
         shift_type=row.shift_type,
-        start_time=row.start_time.isoformat(),
-        end_time=row.end_time.isoformat(),
+        schedule_date=row.schedule_date,
+        start_time=row.start_time,
+        end_time=row.end_time,
     )
     return read_model
 
@@ -606,27 +608,23 @@ def providers_for_date(
     value: date,
     rows: list[MonthlyAvailabilityRow],
     assignment_rows: list[MonthlyScheduleAssignmentRow],
-    candidates: list[LatestScheduleCandidate],
     selections: list[SelectedSchedulePeriod],
 ) -> list[MonthlyAvailabilityProviderRead]:
     providers: list[MonthlyAvailabilityProviderRead] = []
-    selected_schedule_period_id = selected_schedule_period_id_for_date(
-        value,
-        candidates,
-        selections,
-    )
-    has_schedule_candidates = len(candidates) > 0
 
     for row in rows:
         row_applies = row_applies_to_date(row, value)
-        period_matches = row.schedule_period_id == selected_schedule_period_id
 
-        if not has_schedule_candidates:
-            period_matches = True
+        if not row_applies:
+            continue
 
-        row_matches = row_applies and period_matches
+        group_key = date_range_group_key(row.schedule_period_start_date, row.schedule_period_end_date)
+        group_selections = [selection for selection in selections if selection.group_key == group_key]
+        group_has_selection = len(group_selections) > 0
+        period_is_selected = any(selection.schedule_period_id == row.schedule_period_id for selection in group_selections)
+        period_is_excluded = group_has_selection and not period_is_selected
 
-        if not row_matches:
+        if period_is_excluded:
             continue
 
         provider = provider_read_for_row(row, value, assignment_rows)
@@ -662,7 +660,6 @@ def monthly_availability_days(
             month_date,
             rows,
             schedule_assignment_rows,
-            schedule_candidates,
             schedule_selections,
         )
         day = MonthlyAvailabilityDayRead(date=month_date, providers=providers)
@@ -682,13 +679,11 @@ def build_monthly_availability_report(
     end_date = month_end_date(year, month)
     candidates = latest_schedule_candidates(organization_id, start_date, end_date, session)
     selections = selected_schedule_periods(candidates, selected_schedule_period_ids_request)
-    selected_period_ids = selected_schedule_period_ids(selections)
-    availability_period_ids = selected_period_ids if len(candidates) > 0 else None
     rows = monthly_availability_rows(
         organization_id,
         start_date,
         end_date,
-        availability_period_ids,
+        None,
         session,
     )
     assignment_rows = monthly_schedule_assignment_rows(

@@ -1,6 +1,4 @@
-from datetime import UTC
 from datetime import date
-from datetime import datetime
 from datetime import time
 from uuid import UUID
 from uuid import uuid4
@@ -8,6 +6,7 @@ from uuid import uuid4
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import delete as sqlalchemy_delete
 from sqlalchemy import func
 from sqlalchemy import select
@@ -17,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.core.config import get_settings
 from app.db.models import Assignment
+from app.db.models import Center
 from app.db.models import ConstraintViolation
 from app.db.models import Provider
 from app.db.models import ProviderFairnessEvent
@@ -24,25 +24,25 @@ from app.db.models import ProviderFairnessSnapshot
 from app.db.models import ProviderFairnessState
 from app.db.models import ProviderScheduleWeekAvailability
 from app.db.models import Room
-from app.db.models import Center
 from app.db.models import ScheduleJob
 from app.db.models import SchedulePeriod
 from app.db.models import ScheduleStructureTemplate
 from app.db.models import ScheduleStructureTemplateSlot
 from app.db.models import ScheduleVersion
+from app.db.models.scheduling import current_utc_time
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
 from app.dependencies import require_admin_user
+from app.schemas.schedule import AssignmentRead
 from app.schemas.schedule import CalendarAvailabilityEmailRecipientRead
 from app.schemas.schedule import CalendarAvailabilityEmailSendRead
-from app.schemas.schedule import ProviderEligibilityRequest
-from app.schemas.schedule import AssignmentRead
 from app.schemas.schedule import ConstraintViolationRead
+from app.schemas.schedule import ProviderEligibilityRequest
+from app.schemas.schedule import ScheduleAssignmentCreate
 from app.schemas.schedule import ScheduleDraftSaveRequest
 from app.schemas.schedule import ScheduleDraftSaveResponse
 from app.schemas.schedule import ScheduleGenerateRequest
 from app.schemas.schedule import ScheduleGenerateResponse
-from app.schemas.schedule import ScheduleAssignmentCreate
 from app.schemas.schedule import SchedulePeriodCloneResponse
 from app.schemas.schedule import SchedulePeriodCreate
 from app.schemas.schedule import SchedulePeriodRead
@@ -59,7 +59,7 @@ from app.schemas.schedule import ScheduleStructureTemplateWrite
 from app.schemas.schedule import ScheduleTemplateWeekday
 from app.schemas.schedule import ScheduleVersionDetailRead
 from app.schemas.schedule import ScheduleVersionRead
-from app.db.models.scheduling import current_utc_time
+from app.schemas.schedule_time import ClockRange
 from app.services.email.calendar_availability import CalendarAvailabilityEmailMessage
 from app.services.email.calendar_availability import CalendarAvailabilityEmailSendResult
 from app.services.email.calendar_availability import calendar_availability_email_message
@@ -69,12 +69,15 @@ from app.services.scheduling.availability_service import clone_weekly_availabili
 from app.services.scheduling.fairness import rebuild_published_fairness_state
 from app.services.scheduling.fairness import record_fairness_for_schedule_version
 from app.services.scheduling.provider_eligibility import check_provider_slot_eligibility
-from app.services.scheduling.publish_validation import schedule_publish_violations
+from app.services.scheduling.assignment_requirements import required_provider_type_for_assignment
 from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityViolation
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityInput
 from app.services.scheduling.provider_eligibility_contracts import ProviderSlotEligibilityResult
+from app.services.scheduling.publish_validation import schedule_publish_violations
 from app.services.scheduling.shift_request_warning_service import shift_request_constraint_violations
 from app.services.scheduling.solver_service import generate_schedule_draft
+from app.services.scheduling.time_ranges import ScheduleTimeError
+from app.services.scheduling.time_ranges import slot_instants
 
 router = APIRouter(tags=["schedules"], dependencies=[Depends(require_admin_user)])
 
@@ -217,11 +220,13 @@ def eligibility_input_from_request(
         schedule_period_id=request.schedule_period_id,
         schedule_version_id=request.schedule_version_id,
         assignment_id=request.assignment_id,
+        shift_requirement_id=request.shift_requirement_id,
         provider_id=request.provider_id,
         center_id=request.center_id,
         room_id=request.room_id,
         required_provider_type=request.required_provider_type,
         shift_type=request.shift_type,
+        schedule_date=request.schedule_date,
         start_time=request.start_time,
         end_time=request.end_time,
     )
@@ -243,11 +248,13 @@ def eligibility_input_from_assignment(
         schedule_period_id=assignment.schedule_period_id,
         schedule_version_id=assignment.schedule_version_id,
         assignment_id=assignment.id,
+        shift_requirement_id=assignment.shift_requirement_id,
         provider_id=provider_id,
         center_id=assignment.center_id,
         room_id=assignment.room_id,
         required_provider_type=required_provider_type,
         shift_type=assignment.shift_type,
+        schedule_date=assignment.schedule_date,
         start_time=assignment.start_time,
         end_time=assignment.end_time,
     )
@@ -313,7 +320,7 @@ def assignments_for_version(
 ) -> list[Assignment]:
     statement = select(Assignment).where(Assignment.schedule_version_id == schedule_version_id)
     statement = statement.where(Assignment.organization_id == organization_id)
-    statement = statement.order_by(Assignment.start_time, Assignment.created_at, Assignment.id)
+    statement = statement.order_by(Assignment.schedule_date, Assignment.start_time, Assignment.created_at, Assignment.id)
     assignments = list(session.scalars(statement))
     return assignments
 
@@ -634,26 +641,6 @@ def schedule_date_for_template_weekday(
     return date_value
 
 
-def datetime_for_template_slot(
-    schedule_date: date,
-    slot_time: time,
-) -> datetime:
-    date_time = datetime.combine(schedule_date, slot_time, tzinfo=UTC)
-    return date_time
-
-
-def require_slot_end_after_start(
-    start_time: datetime,
-    end_time: datetime,
-) -> datetime:
-    end_is_after_start = end_time > start_time
-
-    if end_is_after_start:
-        return end_time
-
-    raise HTTPException(status_code=400, detail="Slot end time must be after start time")
-
-
 def require_template_slot_end_after_start(
     start_time: time,
     end_time: time,
@@ -701,9 +688,8 @@ def applied_template_slot(
     schedule_period: SchedulePeriod,
 ) -> ScheduleStructureTemplateAppliedSlot:
     schedule_date = schedule_date_for_template_weekday(schedule_period, slot.weekday)
-    start_time = datetime_for_template_slot(schedule_date, slot.start_time)
-    end_time = datetime_for_template_slot(schedule_date, slot.end_time)
-    valid_end_time = require_slot_end_after_start(start_time, end_time)
+    require_date_in_period(schedule_date, schedule_period)
+    valid_range = ClockRange(start_time=slot.start_time, end_time=slot.end_time)
     room_slot_id = uuid4()
     applied_slot = ScheduleStructureTemplateAppliedSlot(
         room_slot_id=room_slot_id,
@@ -712,8 +698,8 @@ def applied_template_slot(
         center_id=room.center_id,
         shift_type=slot.shift_type,
         schedule_date=schedule_date,
-        start_time=start_time,
-        end_time=valid_end_time,
+        start_time=valid_range.start_time,
+        end_time=valid_range.end_time,
         display_order=slot.display_order,
     )
     return applied_slot
@@ -746,44 +732,6 @@ def create_assignment_from_request(
     return assignment
 
 
-def datetime_with_date(source_datetime: datetime, target_date: date) -> datetime:
-    source_time = source_datetime.timetz()
-    updated_datetime = datetime.combine(target_date, source_time)
-    return updated_datetime
-
-
-def assignment_datetimes_for_schedule_date(
-    requested_assignment: ScheduleAssignmentCreate,
-    schedule_date: date,
-) -> tuple[datetime, datetime]:
-    start_time = datetime_with_date(
-        requested_assignment.start_time,
-        schedule_date,
-    )
-    end_time = datetime_with_date(
-        requested_assignment.end_time,
-        schedule_date,
-    )
-    valid_end_time = require_slot_end_after_start(start_time, end_time)
-    return start_time, valid_end_time
-
-
-def assignment_request_with_schedule_date_times(
-    requested_assignment: ScheduleAssignmentCreate,
-) -> ScheduleAssignmentCreate:
-    start_time, end_time = assignment_datetimes_for_schedule_date(
-        requested_assignment,
-        requested_assignment.schedule_date,
-    )
-    updated_assignment = requested_assignment.model_copy(
-        update={
-            "start_time": start_time,
-            "end_time": end_time,
-        },
-    )
-    return updated_assignment
-
-
 def parent_assignments_for_version(
     parent_schedule_version_id: UUID | None,
     organization_id: UUID,
@@ -804,17 +752,8 @@ def preserve_parent_assignment_dates(
     requested_assignment: ScheduleAssignmentCreate,
     parent_assignment: Assignment,
 ) -> ScheduleAssignmentCreate:
-    start_time, end_time = assignment_datetimes_for_schedule_date(
-        requested_assignment,
-        parent_assignment.schedule_date,
-    )
-    updated_assignment = requested_assignment.model_copy(
-        update={
-            "schedule_date": parent_assignment.schedule_date,
-            "start_time": start_time,
-            "end_time": end_time,
-        },
-    )
+    updated_assignment = requested_assignment.model_copy()
+    updated_assignment.schedule_date = parent_assignment.schedule_date
     return updated_assignment
 
 
@@ -834,11 +773,11 @@ def stable_assignment_request(
         break
 
     if parent_assignment is None:
-        stable_assignment = assignment_request_with_schedule_date_times(requested_assignment)
+        stable_assignment = requested_assignment
         return stable_assignment
 
     if requested_assignment.allow_slot_date_change:
-        stable_assignment = assignment_request_with_schedule_date_times(requested_assignment)
+        stable_assignment = requested_assignment
         return stable_assignment
 
     stable_assignment = preserve_parent_assignment_dates(
@@ -913,13 +852,53 @@ def duplicate_assignment_requests(assignments: list[Assignment]) -> list[Schedul
     return requested_assignments
 
 
+def require_date_in_period(schedule_date: date, period: SchedulePeriod) -> None:
+    inside_period = period.start_date <= schedule_date <= period.end_date
+
+    if not inside_period:
+        raise HTTPException(status_code=400, detail="Slot date must be within the schedule period.")
+
+
+def validate_assignment_times(
+    assignments: list[ScheduleAssignmentCreate],
+    period: SchedulePeriod,
+    organization_id: UUID,
+    session: Session,
+) -> None:
+    for assignment in assignments:
+        require_date_in_period(assignment.schedule_date, period)
+        try:
+            assignment.required_provider_type = required_provider_type_for_assignment(
+                assignment.shift_requirement_id,
+                assignment.required_provider_type,
+                organization_id,
+                session,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+        statement = select(Center)
+        statement = statement.where(Center.id == assignment.center_id)
+        statement = statement.where(Center.organization_id == organization_id)
+        center = session.scalar(statement)
+
+        if center is None:
+            raise HTTPException(status_code=404, detail="Center not found")
+
+        try:
+            slot_instants(assignment.schedule_date, assignment.start_time, assignment.end_time, center.timezone)
+        except ScheduleTimeError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 def save_schedule_version(
     request: ScheduleDraftSaveRequest,
     source: str,
     session: Session,
     organization_id: UUID,
 ) -> ScheduleDraftSaveResponse:
-    require_schedule_period(request.schedule_period_id, organization_id, session)
+    schedule_period = require_schedule_period(request.schedule_period_id, organization_id, session)
+    validate_assignment_times(request.assignments, schedule_period, organization_id, session)
     validate_parent_version(
         request.parent_schedule_version_id,
         request.schedule_period_id,
@@ -937,6 +916,7 @@ def save_schedule_version(
         organization_id,
         session,
     )
+    validate_assignment_times(requested_assignments, schedule_period, organization_id, session)
     schedule_version = ScheduleVersion(
         organization_id=organization_id,
         schedule_period_id=request.schedule_period_id,
@@ -983,6 +963,8 @@ def save_schedule_version(
 
         try:
             result = check_provider_slot_eligibility(eligibility_input, session)
+        except ScheduleTimeError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
@@ -1158,6 +1140,18 @@ def apply_schedule_structure_template(
     skipped_slots: list[ScheduleStructureTemplateSkippedSlot] = []
 
     for slot in slots:
+        slot_date = schedule_date_for_template_weekday(schedule_period, slot.weekday)
+
+        if slot_date > schedule_period.end_date:
+            skipped_slot = ScheduleStructureTemplateSkippedSlot(
+                weekday=slot.weekday,
+                room_id=slot.room_id,
+                reason="outside_schedule_period",
+                message="Template weekday falls outside this schedule period.",
+            )
+            skipped_slots.append(skipped_slot)
+            continue
+
         room = active_room_for_template_slot(slot, organization_id, session)
 
         if room is None:
@@ -1300,6 +1294,8 @@ def delete_schedule_period(
     delete_schedule_jobs_for_period(period_id, organization_id, session)
     delete_weekly_availability_for_period(period_id, organization_id, session)
     session.delete(schedule_period)
+    session.flush()
+    rebuild_published_fairness_state(organization_id, session)
     session.commit()
     return schedule_period_read
 
@@ -1402,6 +1398,7 @@ def generate_schedule_period(
     requested_assignments = None
 
     if generate_request.assignments is not None:
+        validate_assignment_times(generate_request.assignments, schedule_period, organization_id, session)
         requested_assignments = stable_assignment_requests(
             generate_request.assignments,
             generate_request.parent_schedule_version_id,
@@ -1409,15 +1406,22 @@ def generate_schedule_period(
             session,
         )
 
-    generated_draft = generate_schedule_draft(
-        schedule_period,
-        generate_request.parent_schedule_version_id,
-        generate_request.notes,
-        organization_id,
-        session,
-        requested_assignments,
-        generate_request.generation_mode,
-    )
+    if requested_assignments is not None:
+        validate_assignment_times(requested_assignments, schedule_period, organization_id, session)
+
+    try:
+        generated_draft = generate_schedule_draft(
+            schedule_period,
+            generate_request.parent_schedule_version_id,
+            generate_request.notes,
+            organization_id,
+            session,
+            requested_assignments,
+            generate_request.generation_mode,
+        )
+    except ScheduleTimeError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
     response = ScheduleGenerateResponse(
         version=generated_draft.version,
         assignments=generated_draft.assignments,
@@ -1441,10 +1445,14 @@ def read_provider_eligibility(
     session: Session = Depends(get_db),
     organization_id: UUID = Depends(get_current_organization_id),
 ) -> ProviderSlotEligibilityResult:
+    period = require_schedule_period(request.schedule_period_id, organization_id, session)
+    require_date_in_period(request.schedule_date, period)
     eligibility_input = eligibility_input_from_request(request, organization_id)
 
     try:
         result = check_provider_slot_eligibility(eligibility_input, session)
+    except ScheduleTimeError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
@@ -1538,14 +1546,27 @@ def publish_schedule_version(
             violations.append(violation)
             continue
 
-        eligibility_input = eligibility_input_from_assignment(
-            assignment,
-            assignment.required_provider_type,
-            organization_id,
-        )
+        try:
+            eligibility_input = eligibility_input_from_assignment(
+                assignment,
+                assignment.required_provider_type,
+                organization_id,
+            )
+        except ValidationError:
+            # schedule_publish_violations already records this invalid range.
+            continue
 
         try:
             result = check_provider_slot_eligibility(eligibility_input, session)
+        except ScheduleTimeError as error:
+            violation = ProviderEligibilityViolation(
+                severity="hard_violation",
+                constraint_type="invalid_shift_time_range",
+                category="other_hard_constraint",
+                message=str(error),
+            )
+            violations.append(violation)
+            continue
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 

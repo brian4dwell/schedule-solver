@@ -1,11 +1,10 @@
-from datetime import UTC
 from datetime import date
-from datetime import datetime
 from datetime import time
 from uuid import uuid4
 
-import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
+import pytest
 
 from app.db.models import Assignment
 from app.db.models import Provider
@@ -30,9 +29,9 @@ from app.routers.schedules import skipped_template_slot
 from app.routers.schedules import stable_assignment_request
 from app.routers.schedules import unassigned_provider_violation
 from app.routers.schedules import validate_schedule_period_dates
-from app.schemas.schedule import ScheduleStructureTemplateSlotWrite
 from app.schemas.schedule import ScheduleAssignmentCreate
 from app.schemas.schedule import SchedulePeriodCreate
+from app.schemas.schedule import ScheduleStructureTemplateSlotWrite
 from app.services.scheduling.availability_service import create_cloned_weekly_availability_row
 from app.services.scheduling.shift_request_warning_service import shift_request_constraint_violations_for_provider
 
@@ -230,8 +229,8 @@ def create_assignment_for_shift_requests(
         required_provider_type=None,
         shift_type="full_shift",
         schedule_date=date(2026, 5, 4),
-        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=UTC),
-        end_time=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
+        start_time=time(7, 0),
+        end_time=time(15, 0),
         assignment_status="draft",
         source="manual",
         notes=None,
@@ -281,8 +280,8 @@ def test_create_assignment_from_request_maps_provider_slot_fields() -> None:
     center_id = uuid4()
     room_id = uuid4()
     room_slot_id = uuid4()
-    start_time = datetime(2026, 5, 4, 7, 0, tzinfo=UTC)
-    end_time = datetime(2026, 5, 4, 15, 0, tzinfo=UTC)
+    start_time = time(7, 0)
+    end_time = time(15, 0)
     request = ScheduleAssignmentCreate(
         room_slot_id=room_slot_id,
         provider_id=provider_id,
@@ -326,8 +325,8 @@ def test_create_assignment_from_request_allows_unassigned_provider() -> None:
     center_id = uuid4()
     room_id = uuid4()
     room_slot_id = uuid4()
-    start_time = datetime(2026, 5, 4, 7, 0, tzinfo=UTC)
-    end_time = datetime(2026, 5, 4, 15, 0, tzinfo=UTC)
+    start_time = time(7, 0)
+    end_time = time(15, 0)
     request = ScheduleAssignmentCreate(
         room_slot_id=room_slot_id,
         provider_id=None,
@@ -365,8 +364,8 @@ def test_duplicate_assignment_request_copies_assignment_fields() -> None:
     room_id = uuid4()
     room_slot_id = uuid4()
     shift_requirement_id = uuid4()
-    start_time = datetime(2026, 5, 4, 7, 0, tzinfo=UTC)
-    end_time = datetime(2026, 5, 4, 15, 0, tzinfo=UTC)
+    start_time = time(7, 0)
+    end_time = time(15, 0)
     assignment = Assignment(
         room_slot_id=room_slot_id,
         organization_id=organization_id,
@@ -410,8 +409,8 @@ def test_duplicate_assignment_request_preserves_stable_room_slot_key() -> None:
     center_id = uuid4()
     room_id = uuid4()
     room_slot_id = uuid4()
-    start_time = datetime(2026, 5, 6, 7, 0, tzinfo=UTC)
-    end_time = datetime(2026, 5, 6, 15, 0, tzinfo=UTC)
+    start_time = time(7, 0)
+    end_time = time(15, 0)
     assignment = Assignment(
         room_slot_id=room_slot_id,
         organization_id=organization_id,
@@ -452,8 +451,8 @@ def test_duplicate_assignment_requests_copies_each_assignment() -> None:
         required_provider_type=None,
         shift_type="full_shift",
         schedule_date=date(2026, 5, 4),
-        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=UTC),
-        end_time=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
+        start_time=time(7, 0),
+        end_time=time(15, 0),
         assignment_status="draft",
         source="manual",
         notes=None,
@@ -470,8 +469,8 @@ def test_duplicate_assignment_requests_copies_each_assignment() -> None:
         required_provider_type=None,
         shift_type="first_half",
         schedule_date=date(2026, 5, 5),
-        start_time=datetime(2026, 5, 5, 7, 0, tzinfo=UTC),
-        end_time=datetime(2026, 5, 5, 11, 0, tzinfo=UTC),
+        start_time=time(7, 0),
+        end_time=time(11, 0),
         assignment_status="draft",
         source="manual",
         notes=None,
@@ -559,19 +558,15 @@ def test_create_template_slot_maps_write_contract() -> None:
 
 
 def test_create_template_slot_rejects_end_before_start() -> None:
-    request = ScheduleStructureTemplateSlotWrite(
-        weekday="monday",
-        room_id=uuid4(),
-        shift_type="full_shift",
-        start_time=time(15, 0),
-        end_time=time(7, 0),
-        display_order=2,
-    )
-
-    with pytest.raises(HTTPException) as error:
-        create_template_slot(request, uuid4(), uuid4())
-
-    assert error.value.status_code == 400
+    with pytest.raises(ValidationError, match="end time must be after start time"):
+        ScheduleStructureTemplateSlotWrite(
+            weekday="monday",
+            room_id=uuid4(),
+            shift_type="full_shift",
+            start_time="15:00",
+            end_time="07:00",
+            display_order=2,
+        )
 
 
 def test_template_weekday_maps_to_target_schedule_period_date() -> None:
@@ -628,8 +623,8 @@ def test_applied_template_slot_maps_room_and_clears_provider_shape() -> None:
     assert applied_slot.room_id == room_id
     assert applied_slot.center_id == center_id
     assert applied_slot.schedule_date == date(2026, 5, 4)
-    assert applied_slot.start_time == datetime(2026, 5, 4, 7, 0, tzinfo=UTC)
-    assert applied_slot.end_time == datetime(2026, 5, 4, 15, 0, tzinfo=UTC)
+    assert applied_slot.start_time == time(7, 0)
+    assert applied_slot.end_time == time(15, 0)
     assert not hasattr(applied_slot, "provider_id")
 
 
@@ -674,8 +669,8 @@ def test_stable_assignment_request_preserves_parent_slot_date() -> None:
         required_provider_type=None,
         shift_type="full_shift",
         schedule_date=date(2026, 5, 4),
-        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=UTC),
-        end_time=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
+        start_time=time(7, 0),
+        end_time=time(15, 0),
         assignment_status="draft",
         source="manual",
         notes=None,
@@ -689,8 +684,8 @@ def test_stable_assignment_request_preserves_parent_slot_date() -> None:
         required_provider_type=None,
         shift_type="full_shift",
         schedule_date=date(2026, 5, 5),
-        start_time=datetime(2026, 5, 5, 8, 30, tzinfo=UTC),
-        end_time=datetime(2026, 5, 5, 16, 30, tzinfo=UTC),
+        start_time=time(8, 30),
+        end_time=time(16, 30),
         source="manual",
         notes=None,
     )
@@ -700,59 +695,21 @@ def test_stable_assignment_request_preserves_parent_slot_date() -> None:
         [parent_assignment],
     )
 
-    assert stable_assignment.start_time == datetime(2026, 5, 4, 8, 30, tzinfo=UTC)
-    assert stable_assignment.end_time == datetime(2026, 5, 4, 16, 30, tzinfo=UTC)
+    assert stable_assignment.start_time == time(8, 30)
+    assert stable_assignment.end_time == time(16, 30)
     assert stable_assignment.schedule_date == date(2026, 5, 4)
 
 
-def test_stable_assignment_request_rejects_end_before_start() -> None:
-    organization_id = uuid4()
-    schedule_period_id = uuid4()
-    schedule_version_id = uuid4()
-    provider_id = uuid4()
-    center_id = uuid4()
-    room_id = uuid4()
-    room_slot_id = uuid4()
-    parent_assignment = Assignment(
-        room_slot_id=room_slot_id,
-        organization_id=organization_id,
-        schedule_period_id=schedule_period_id,
-        schedule_version_id=schedule_version_id,
-        provider_id=provider_id,
-        center_id=center_id,
-        room_id=room_id,
-        shift_requirement_id=None,
-        required_provider_type=None,
-        shift_type="full_shift",
-        schedule_date=date(2026, 5, 4),
-        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=UTC),
-        end_time=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
-        assignment_status="draft",
-        source="manual",
-        notes=None,
-    )
-    requested_assignment = ScheduleAssignmentCreate(
-        room_slot_id=room_slot_id,
-        provider_id=provider_id,
-        center_id=center_id,
-        room_id=room_id,
-        shift_requirement_id=None,
-        required_provider_type=None,
-        shift_type="full_shift",
-        schedule_date=date(2026, 5, 4),
-        start_time=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
-        end_time=datetime(2026, 5, 4, 7, 0, tzinfo=UTC),
-        source="manual",
-        notes=None,
-    )
-
-    with pytest.raises(HTTPException) as error:
-        stable_assignment_request(
-            requested_assignment,
-            [parent_assignment],
+def test_assignment_contract_rejects_end_before_start() -> None:
+    with pytest.raises(ValidationError, match="end time must be after start time"):
+        ScheduleAssignmentCreate(
+            room_slot_id=uuid4(),
+            provider_id=None,
+            center_id=uuid4(),
+            schedule_date=date(2026, 5, 4),
+            start_time="15:00",
+            end_time="07:00",
         )
-
-    assert error.value.status_code == 400
 
 
 def test_stable_assignment_request_allows_explicit_slot_date_change() -> None:
@@ -763,8 +720,8 @@ def test_stable_assignment_request_allows_explicit_slot_date_change() -> None:
     center_id = uuid4()
     room_id = uuid4()
     room_slot_id = uuid4()
-    requested_start_time = datetime(2026, 5, 5, 8, 30, tzinfo=UTC)
-    requested_end_time = datetime(2026, 5, 5, 16, 30, tzinfo=UTC)
+    requested_start_time = time(8, 30)
+    requested_end_time = time(16, 30)
     parent_assignment = Assignment(
         room_slot_id=room_slot_id,
         organization_id=organization_id,
@@ -777,8 +734,8 @@ def test_stable_assignment_request_allows_explicit_slot_date_change() -> None:
         required_provider_type=None,
         shift_type="full_shift",
         schedule_date=date(2026, 5, 4),
-        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=UTC),
-        end_time=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
+        start_time=time(7, 0),
+        end_time=time(15, 0),
         assignment_status="draft",
         source="manual",
         notes=None,

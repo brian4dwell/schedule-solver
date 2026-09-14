@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 from app.db.models import Assignment
 from app.db.models import ConstraintViolation
 from app.db.models import ScheduleVersion
+from app.services.scheduling.fairness import record_fairness_for_schedule_version
 from app.services.scheduling.solver_contracts import SolverAssignment
 from app.services.scheduling.solver_contracts import SolverResult
 from app.services.scheduling.solver_contracts import SolverViolation
-from app.services.scheduling.fairness import record_fairness_for_schedule_version
 
 
 def next_solver_version_number(
@@ -79,8 +79,8 @@ def create_assignment(
         required_provider_type=solver_assignment.required_provider_type,
         shift_type=solver_assignment.shift_type,
         schedule_date=solver_assignment.start_time.date(),
-        start_time=solver_assignment.start_time,
-        end_time=solver_assignment.end_time,
+        start_time=solver_assignment.start_time.time(),
+        end_time=solver_assignment.end_time.time(),
         assignment_status="draft",
         source="solver",
         notes=None,

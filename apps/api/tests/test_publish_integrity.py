@@ -1,9 +1,9 @@
-from datetime import datetime
+from datetime import time
 from uuid import uuid4
 
-import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
+import pytest
 
 from app.db.models import Center
 from app.db.models import ConstraintViolation
@@ -28,8 +28,8 @@ def assignment_request(database: SchedulingDatabase, shift_type: str = "full_shi
         room_id=database.room.id,
         shift_type=shift_type,
         schedule_date=database.period.start_date,
-        start_time=datetime(2026, 9, 14, 7),
-        end_time=datetime(2026, 9, 14, 11),
+        start_time=time(7, 0),
+        end_time=time(11, 0),
     )
 
 
@@ -66,6 +66,7 @@ def test_structural_violations_are_shared_by_eligibility_drafts_and_publish(
         provider_id=request.provider_id,
         center_id=request.center_id,
         room_id=request.room_id,
+        schedule_date=request.schedule_date,
         start_time=request.start_time,
         end_time=request.end_time,
     )

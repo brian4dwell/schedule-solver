@@ -252,6 +252,14 @@ PUT    /schedule-weeks/{schedule_week_id}/providers/{provider_id}/availability
 DELETE /schedule-weeks/{schedule_week_id}/providers/{provider_id}/availability
 ```
 
+## Schedule Clock Contract
+
+Schedule assignments and requirements use an explicit `schedule_date` plus `start_time` and `end_time` wall clocks. API clocks are strict `HH:mm` values; storage uses `date` and `time without time zone`. There are no overnight slots: `end_time` must be later than `start_time`, and the slot date must belong to its schedule period. Template application reports out-of-period weekdays as skipped.
+
+The workspace and monthly report never convert slot clocks through browser timezones. The backend resolves center-local times to actual instants for solver overlap and credential checks, rejecting ambiguous/nonexistent DST values. Audit and publication timestamps remain instants. Manual eligibility and the solver permit multiple same-day assignments only as a non-overlapping first-half/second-half pair at one center.
+
+Migration `202609130002` and the scoped obsolete-draft cleanup command are implemented. Old drafts are disposable by user decision; periods, availability, and templates are preserved. Applying the migration to the shared database requires the matching API/web cutover. See [Schedule Wall-Clock Times](time-issues.md) for rollout and verification.
+
 ## Data Model
 
 Core tables:
@@ -438,6 +446,10 @@ The Provider Invites page shows expired pending invitations as `Expired` with in
 
 Publication rejects inactive centers/rooms, mismatched room/center assignments, empty versions, and unresolved schedule-level hard violations from generation. Assignment eligibility is rechecked against current data; corrected work must be saved as a new draft. Warnings remain publishable. Publication flushes the new published/superseded statuses before rebuilding fairness within the same transaction.
 
+Deleting a schedule period rebuilds fairness from the remaining published versions in the same transaction. Providers with no remaining ledger history have their derived state removed, including when the last published period is deleted.
+
+Monthly availability remains visible for weeks with no saved schedule. Version selection applies within each matching date-range group; saving another week's draft does not hide submitted availability.
+
 ### Concrete Credential And Skill Tables
 
 The original plan allowed for generic Provider credentials. The current implementation uses concrete Center credential and Room Type skill tables because these are core scheduling rules.
@@ -450,9 +462,15 @@ Room type skills and MD-only Rooms were implemented earlier than originally plan
 
 The frontend workspace originally explored local room placement. It now uses persisted schedule periods, versions, assignments, save, and publish flows.
 
+Save, generation, template operations, version loading, publication, and provider checks run one at a time. The board disables editing and dragging until the current operation completes. Provider picking checks working-board conflicts locally and asks the backend for provider/room eligibility without sending a stale saved-version snapshot; saving and publication validate the complete draft.
+
+Assignment saves preserve requirement links, provider-type restrictions, source, notes, and roomless assignments. Roomless assignments have an explicit read-only card. Linked Shift Requirements supply the authoritative provider-type restriction for save, solver input, eligibility, and publication.
+
+The constraints table and blocker count include backend assignment and schedule violations for the checked board snapshot, including best-effort results with preserved unsolved slots. Edits invalidate those results and show pending validation until another save. Warnings remain visible without counting as publish blockers.
+
 ### Room Deletion Is Conditional
 
-Rooms can be hard-deleted when they have no schedule records and soft-deleted when schedule records exist.
+Rooms can be hard-deleted when they have no assignments, shift requirements, or structure-template references. Referenced rooms are deactivated; template application reports their slots as skipped.
 
 ## Current Gaps
 
@@ -469,7 +487,7 @@ High-priority gaps:
 
 Known architecture gaps:
 
-- Timezone model needs to stay explicit as scheduling gets more complex.
+- Overnight shifts and disambiguation of DST gap/fold clock values are not supported.
 - Recurring availability is intentionally out of the first availability pass.
 - Soft constraint weighting needs product calibration.
 - Schedule Version conflict handling may need optimistic concurrency once multiple users edit the same period.
@@ -480,7 +498,7 @@ Known architecture gaps:
 
 - Finish Shift Requirement CRUD.
 - Connect Schedule Periods to Shift Requirements in the UI.
-- Persist and display backend warning rows in the schedule constraints table.
+- Extend persisted backend warnings as new scheduling rules are added.
 - Add Provider preference data model.
 - Add preference-driven soft constraint rows.
 - Improve availability refresh behavior across pages.

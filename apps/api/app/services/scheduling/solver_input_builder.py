@@ -1,7 +1,3 @@
-from datetime import UTC
-from datetime import datetime
-from datetime import time
-from datetime import timedelta
 from uuid import UUID
 from uuid import uuid4
 
@@ -22,6 +18,7 @@ from app.db.models import RoomRoomType
 from app.db.models import SchedulePeriod
 from app.db.models import ShiftRequirement
 from app.schemas.schedule import ScheduleAssignmentCreate
+from app.services.scheduling.assignment_requirements import required_provider_type_for_assignment
 from app.services.scheduling.solver_contracts import SolverCenterCredential
 from app.services.scheduling.solver_contracts import SolverInput
 from app.services.scheduling.solver_contracts import SolverManagerCenterPreference
@@ -34,24 +31,12 @@ from app.services.scheduling.solver_contracts import SolverRequiredRoomTypeSkill
 from app.services.scheduling.solver_contracts import SolverRoom
 from app.services.scheduling.solver_contracts import SolverShiftRequirement
 from app.services.scheduling.solver_contracts import SolverWeeklyAvailabilityDay
+from app.services.scheduling.time_ranges import slot_instants
 
 
 def numeric_value(value: object) -> float:
     number = float(value)
     return number
-
-
-def period_start_datetime(schedule_period: SchedulePeriod) -> datetime:
-    start_datetime = datetime.combine(schedule_period.start_date, time.min)
-    aware_start_datetime = start_datetime.replace(tzinfo=UTC)
-    return aware_start_datetime
-
-
-def period_end_datetime(schedule_period: SchedulePeriod) -> datetime:
-    next_date = schedule_period.end_date + timedelta(days=1)
-    end_datetime = datetime.combine(next_date, time.min)
-    aware_end_datetime = end_datetime.replace(tzinfo=UTC)
-    return aware_end_datetime
 
 
 def required_room_type_skills_for_room(
@@ -340,6 +325,7 @@ def solver_shift_from_model(
     if room is not None:
         room_name = room.name
 
+    instants = slot_instants(shift_requirement.schedule_date, shift_requirement.start_time, shift_requirement.end_time, center.timezone)
     solver_shift = SolverShiftRequirement(
         id=shift_requirement.id,
         room_slot_id=shift_requirement.id,
@@ -352,8 +338,8 @@ def solver_shift_from_model(
         room_id=shift_requirement.room_id,
         room_name=room_name,
         shift_type="full_shift",
-        start_time=shift_requirement.start_time,
-        end_time=shift_requirement.end_time,
+        start_time=instants.start,
+        end_time=instants.end,
         required_provider_count=shift_requirement.required_provider_count,
         required_provider_type=shift_requirement.required_provider_type,
     )
@@ -371,6 +357,7 @@ def solver_shift_from_assignment(
     if room is not None:
         room_name = room.name
 
+    instants = slot_instants(assignment.schedule_date, assignment.start_time, assignment.end_time, center.timezone)
     solver_shift = SolverShiftRequirement(
         id=shift_id,
         room_slot_id=assignment.room_slot_id,
@@ -383,8 +370,8 @@ def solver_shift_from_assignment(
         room_id=assignment.room_id,
         room_name=room_name,
         shift_type=assignment.shift_type,
-        start_time=assignment.start_time,
-        end_time=assignment.end_time,
+        start_time=instants.start,
+        end_time=instants.end,
         required_provider_count=1,
         required_provider_type=assignment.required_provider_type,
     )
@@ -396,13 +383,11 @@ def load_shift_requirements(
     organization_id: UUID,
     session: Session,
 ) -> list[ShiftRequirement]:
-    period_start = period_start_datetime(schedule_period)
-    period_end = period_end_datetime(schedule_period)
     statement = select(ShiftRequirement)
     statement = statement.where(ShiftRequirement.organization_id == organization_id)
-    statement = statement.where(ShiftRequirement.start_time < period_end)
-    statement = statement.where(ShiftRequirement.end_time > period_start)
-    statement = statement.order_by(ShiftRequirement.start_time, ShiftRequirement.id)
+    statement = statement.where(ShiftRequirement.schedule_date <= schedule_period.end_date)
+    statement = statement.where(ShiftRequirement.schedule_date >= schedule_period.start_date)
+    statement = statement.order_by(ShiftRequirement.schedule_date, ShiftRequirement.start_time, ShiftRequirement.id)
     shift_requirements = list(session.scalars(statement))
     return shift_requirements
 
@@ -538,10 +523,17 @@ def build_solver_input(
         solver_shift_requirements: list[SolverShiftRequirement] = []
 
         for requested_assignment in requested_assignments:
+            checked_assignment = requested_assignment.model_copy()
+            checked_assignment.required_provider_type = required_provider_type_for_assignment(
+                requested_assignment.shift_requirement_id,
+                requested_assignment.required_provider_type,
+                organization_id,
+                session,
+            )
             center = center_for_id(requested_assignment.center_id, centers)
             room = room_for_id(requested_assignment.room_id, rooms)
             solver_shift_requirement = solver_shift_from_assignment(
-                requested_assignment,
+                checked_assignment,
                 center,
                 room,
             )

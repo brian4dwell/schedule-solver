@@ -1,5 +1,7 @@
 "use client";
 
+import { formatScheduleClock } from "@/lib/schedule-time";
+
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -238,15 +240,6 @@ function formatShortDate(value: string): string {
   return label;
 }
 
-function formatTime(value: string): string {
-  const date = new Date(value);
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  const label = formatter.format(date);
-  return label;
-}
 
 function formatScheduleGroupRange(group: MonthlyScheduleCandidateGroupApi): string {
   const startDate = formatShortDate(group.start_date);
@@ -352,8 +345,8 @@ function daysWithProviderSelections(days: MonthlyAvailabilityDayApi[]): number {
 
 function assignmentDetail(assignment: MonthlyScheduleAssignmentApi) {
   const shiftType = shiftTypeLabel(assignment.shift_type);
-  const startTime = formatTime(assignment.start_time);
-  const endTime = formatTime(assignment.end_time);
+  const startTime = formatScheduleClock(assignment.start_time);
+  const endTime = formatScheduleClock(assignment.end_time);
   const roomName = assignment.room_name ?? "No room";
   const versionStatus = statusLabel(assignment.schedule_version_status);
   const detail = `${assignment.center_name} / ${roomName} / ${shiftType} / ${startTime}-${endTime} / v${assignment.schedule_version_number} ${versionStatus}`;

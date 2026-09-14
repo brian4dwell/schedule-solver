@@ -52,8 +52,8 @@ function versionDetail(shiftType = "full_shift") {
       required_provider_type: null,
       shift_type: shiftType,
       schedule_date: "2026-09-14",
-      start_time: "2026-09-14T07:00:00Z",
-      end_time: "2026-09-14T11:00:00Z",
+      start_time: "07:00",
+      end_time: "11:00",
       assignment_status: "draft",
       source: "manual",
       notes: null,
@@ -64,7 +64,7 @@ function versionDetail(shiftType = "full_shift") {
   });
 }
 
-async function setup(context, { detail = versionDetail(), availabilityOption = "full_shift", apiOverrides = {} } = {}) {
+async function setup(context, { detail = versionDetail(), availabilityOption = "full_shift", apiOverrides = {}, propsOverrides = {} } = {}) {
   const weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
   const days = weekdays.map((weekday) => ({ weekday, options: [availabilityOption] }));
   const availability = {
@@ -130,6 +130,7 @@ async function setup(context, { detail = versionDetail(), availabilityOption = "
       updated_at: timestamp,
     },
     scheduleId: periodId,
+    ...propsOverrides,
   };
   const container = await renderComponent(context, ScheduleWorkspace, props);
   return { container, api, toast };
@@ -250,3 +251,207 @@ test("availability must finish loading before publication", async (context) => {
   });
   assert.equal(button(container, "Publish saved draft").disabled, false);
 });
+
+test("the real board preserves wall clocks and metadata when saved repeatedly", async (context) => {
+  const detail = versionDetail();
+  detail.assignments[0].required_provider_type = "doctor";
+  detail.assignments[0].shift_requirement_id = nextVersionId;
+  detail.assignments[0].notes = "Preserve slot notes";
+  detail.assignments[0].source = "solver";
+  const { container, api } = await setup(context, { detail });
+
+  for (let cycle = 0; cycle < 10; cycle += 1) {
+    await changeNotes(container, `Round trip ${cycle}`);
+    await click(button(container, "Save draft"));
+    const payload = api.saveDraftScheduleVersion.mock.calls.at(-1).arguments[0];
+    assert.equal(payload.assignments[0].schedule_date, "2026-09-14");
+    assert.equal(payload.assignments[0].start_time, "07:00");
+    assert.equal(payload.assignments[0].end_time, "11:00");
+    assert.equal(payload.assignments[0].required_provider_type, "doctor");
+    assert.equal(payload.assignments[0].shift_requirement_id, nextVersionId);
+    assert.equal(payload.assignments[0].notes, "Preserve slot notes");
+    assert.equal(payload.assignments[0].source, "solver");
+  }
+});
+
+test("a roomless saved slot remains in the next board save", async (context) => {
+  const detail = versionDetail();
+  detail.assignments[0].room_id = null;
+  const { container, api } = await setup(context, { detail });
+  assert.match(container.textContent, /Center assignment \(no room\)/);
+  assert.doesNotMatch(container.textContent, /Room is missing or inactive/);
+  await changeNotes(container, "Retain unplaced slot");
+  await click(button(container, "Save draft"));
+  const payload = api.saveDraftScheduleVersion.mock.calls[0].arguments[0];
+  assert.equal(payload.assignments.length, 1);
+  assert.equal(payload.assignments[0].room_id, null);
+});
+
+function savedViolation(detail, constraintType, message, assignmentId = detail.assignments[0]?.id ?? null) {
+  return scheduleSchemas.constraintViolationApiSchema.parse({
+    id: crypto.randomUUID(),
+    schedule_version_id: detail.version.id,
+    assignment_id: assignmentId,
+    severity: "hard_violation",
+    constraint_type: constraintType,
+    message,
+    metadata_json: null,
+    created_at: timestamp,
+    updated_at: timestamp,
+  });
+}
+
+test("roomless slots report an explicit template limitation and stay on the board", async (context) => {
+  const detail = versionDetail();
+  detail.assignments[0].room_id = null;
+  const { container, toast } = await setup(context, { detail });
+  const templateName = container.querySelector('input[type="text"]');
+  assert.ok(templateName);
+  const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value");
+  await act(async () => {
+    descriptor.set.call(templateName, "Roomless template");
+    templateName.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  await click(button(container, "Save template"));
+  const notification = toast.showToast.mock.calls.at(-1).arguments[0];
+  assert.equal(notification.title, "Template save failed");
+  assert.match(notification.description, /Assign a room to every slot/);
+  assert.equal(container.querySelector("fieldset").disabled, false);
+  assert.match(container.textContent, /Center assignment \(no room\)/);
+});
+
+test("backend-only assignment and schedule blockers remain visible and refresh after saving", async (context) => {
+  const detail = versionDetail();
+  detail.violations = [
+    savedViolation(detail, "inactive_center_credential", "Credential expired before this slot."),
+    savedViolation(detail, "insufficient_required_skill_level", "Skill A proficiency is too low."),
+    savedViolation(detail, "insufficient_required_skill_level", "Skill B proficiency is too low."),
+    savedViolation(detail, "coverage_incomplete", "Required coverage is incomplete.", null),
+  ];
+  const saveDraftScheduleVersion = mock.fn(async (payload) => ({
+    ...detail,
+    version: { ...detail.version, notes: payload.notes },
+    violations: [],
+  }));
+  const { container } = await setup(context, { detail, apiOverrides: { saveDraftScheduleVersion } });
+  assert.match(container.textContent, /4 publish blockers/);
+  for (const violation of detail.violations) {
+    assert.ok(container.querySelector("table").textContent.includes(violation.message));
+  }
+  assert.match(container.textContent, /Not publishable/);
+  assert.equal(button(container, "Publish saved draft").disabled, true);
+
+  await changeNotes(container, "Changed snapshot");
+  assert.match(container.textContent, /Save draft to refresh backend validation/);
+  assert.doesNotMatch(container.textContent, /Credential expired/);
+  assert.equal(button(container, "Publish saved draft").disabled, true);
+  await click(button(container, "Save draft"));
+  assert.match(container.textContent, /0 publish blockers/);
+  assert.equal(button(container, "Publish saved draft").disabled, false);
+});
+
+test("backend warnings stay visible without blocking publication", async (context) => {
+  const detail = versionDetail();
+  const violation = savedViolation(detail, "backend_warning", "Review the provider preference.");
+  violation.severity = "warning";
+  detail.violations = [violation];
+  const { container } = await setup(context, { detail });
+  assert.match(container.querySelector("table").textContent, /Review the provider preference/);
+  assert.match(container.textContent, /0 publish blockers/);
+  assert.equal(button(container, "Publish saved draft").disabled, false);
+});
+
+test("best-effort generation shows schedule blockers even with preserved unsolved slots", async (context) => {
+  const generated = versionDetail();
+  generated.assignments = [];
+  generated.violations = [savedViolation(generated, "coverage_incomplete", "No eligible provider covers this slot.", null)];
+  const generateScheduleVersion = mock.fn(async () => ({ ...generated, metrics: { solve_duration_ms: 12 }, is_feasible: false }));
+  const { container } = await setup(context, { apiOverrides: { generateScheduleVersion } });
+  await click(button(container, "Solve - Best Effort"));
+  assert.match(container.querySelector("table").textContent, /No eligible provider covers this slot/);
+  assert.match(container.textContent, /2 publish blockers/);
+  assert.equal(button(container, "Publish saved draft").disabled, true);
+});
+
+function pickerOption(container) {
+  const options = Array.from(container.querySelectorAll("button"));
+  const option = options.find((candidate) => candidate.textContent.startsWith("Provider A") && !candidate.hasAttribute("aria-expanded"));
+  assert.ok(option);
+  return option;
+}
+
+test("clearing a saved assignment lets the working board reuse the provider", async (context) => {
+  const detail = versionDetail();
+  const nextSlot = { ...detail.assignments[0], id: crypto.randomUUID(), room_slot_id: crypto.randomUUID(), provider_id: null };
+  detail.assignments.push(nextSlot);
+  const checkProviderSlotEligibility = mock.fn(async () => ({ provider_id: providerId, is_eligible: true, violations: [] }));
+  const { container } = await setup(context, { detail, apiOverrides: { checkProviderSlotEligibility } });
+
+  const picker = container.querySelectorAll("button[aria-expanded]:not([aria-label])")[1];
+  await click(picker);
+  assert.equal(pickerOption(container).disabled, true);
+  await click(button(container, "Clear"));
+  await click(picker);
+  assert.equal(pickerOption(container).disabled, false);
+  await click(pickerOption(container));
+
+  const payload = checkProviderSlotEligibility.mock.calls[0].arguments[0];
+  assert.equal(payload.schedule_version_id, null);
+  assert.equal(payload.assignment_id, null);
+  assert.equal(payload.shift_requirement_id, null);
+  assert.doesNotMatch(container.textContent, /Provider not assigned/);
+  assert.equal(container.querySelectorAll("button[aria-expanded]:not([aria-label])")[1].textContent.startsWith("Provider A"), true);
+});
+
+for (const operation of ["save", "generate", "load", "provider check"]) {
+  test(`${operation} serializes board edits and other operations until completion`, async (context) => {
+    const pending = Promise.withResolvers();
+    const detail = versionDetail();
+    const otherVersion = { ...detail.version, id: nextVersionId, version_number: 2 };
+    const apiOverrides = {
+      saveDraftScheduleVersion: mock.fn(() => pending.promise),
+      generateScheduleVersion: mock.fn(() => pending.promise),
+      getScheduleVersion: mock.fn(() => pending.promise),
+      checkProviderSlotEligibility: mock.fn(() => pending.promise),
+    };
+    const { container, api } = await setup(context, { detail, apiOverrides, propsOverrides: { initialVersions: [detail.version, otherVersion] } });
+    await changeNotes(container, "Before request");
+    const versionSelect = Array.from(container.querySelectorAll("select")).find((element) => Array.from(element.options).some((option) => option.value === nextVersionId));
+    assert.ok(versionSelect);
+    if (operation === "save") {
+      await click(button(container, "Save draft"));
+    } else if (operation === "generate") {
+      await click(button(container, "Solve - Strict"));
+    } else if (operation === "load") {
+      await select(versionSelect, nextVersionId);
+    } else {
+      await click(container.querySelector("button[aria-expanded]:not([aria-label])"));
+      await click(pickerOption(container));
+    }
+
+    assert.equal(container.querySelector("fieldset").disabled, true);
+    assert.equal(versionSelect.matches(":disabled"), true);
+    assert.equal(container.querySelector("textarea").matches(":disabled"), true);
+    assert.equal(container.querySelector('button[aria-label="Edit shift type for Room A"]').matches(":disabled"), true);
+    assert.equal(container.querySelectorAll('[draggable="true"]').length, 0);
+    await click(button(container, "Clear"));
+    await changeNotes(container, "Attempted pending edit");
+    // Even duplicate selection events in the same operation cannot start another request.
+    await select(versionSelect, nextVersionId);
+    const requestCount = Object.values(apiOverrides).reduce((count, method) => count + method.mock.callCount(), 0);
+    assert.equal(requestCount, 1);
+
+    if (operation === "provider check") {
+      await finishRequest(pending, { provider_id: providerId, is_eligible: true, violations: [] });
+    } else {
+      const completed = { ...detail, version: { ...detail.version, notes: "Before request" }, metrics: { solve_duration_ms: 1 }, is_feasible: true };
+      await finishRequest(pending, completed);
+    }
+    assert.equal(container.querySelector("fieldset").disabled, false);
+    assert.equal(container.querySelector("textarea").value, "Before request");
+    assert.equal(button(container, "Clear").matches(":disabled"), false);
+    assert.equal(api.publishScheduleVersion.mock.callCount(), 0);
+    await changeNotes(container, "After request");
+    assert.equal(container.querySelector("textarea").value, "After request");
+  });
+}

@@ -1,6 +1,5 @@
-from datetime import UTC
 from datetime import date
-from datetime import datetime
+from datetime import time
 from uuid import uuid4
 
 from app.db.models import Assignment
@@ -47,8 +46,8 @@ def create_assignment(provider: Provider) -> Assignment:
         required_provider_type="doctor",
         shift_type="full_shift",
         schedule_date=date(2026, 5, 4),
-        start_time=datetime(2026, 5, 4, 7, 0, tzinfo=UTC),
-        end_time=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
+        start_time=time(7, 0),
+        end_time=time(15, 0),
         assignment_status="draft",
         source="solver",
         notes=None,

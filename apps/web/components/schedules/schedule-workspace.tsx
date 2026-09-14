@@ -1,5 +1,7 @@
 "use client";
 
+import { assignmentSavePayload, providerHasTimeConflict } from "@/lib/schedule-time";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -117,6 +119,7 @@ type ConstraintSeverity = "Hard" | "Warning" | "Soft";
 
 type ConstraintRow = {
   id: string;
+  localValidationId?: string;
   severity: ConstraintSeverity;
   scope: string;
   subject: string;
@@ -128,7 +131,11 @@ type ScheduleDraftAssignmentSnapshot = {
   id: string;
   slotDate: string;
   centerId: string;
-  roomId: string;
+  roomId: string | null;
+  shiftRequirementId: string | null;
+  requiredProviderType: string | null;
+  source: string;
+  notes: string | null;
   shiftType: ScheduleRoomAssignment["shiftType"];
   providerId: string | null;
   startTime: string;
@@ -228,8 +235,8 @@ function dayIndexForDayKey(dayKey: ScheduleDayKey) {
   return dayIndex;
 }
 
-function dayKeyForAssignment(startTime: string): ScheduleDayKey {
-  const assignmentDate = new Date(startTime);
+function dayKeyForAssignment(scheduleDate: string): ScheduleDayKey {
+  const assignmentDate = dateAtUtcMidnight(scheduleDate);
   const assignmentWeekday = assignmentDate.getUTCDay();
   const dayColumnIndex = (assignmentWeekday + 6) % 7;
   const dayColumn = dayColumns[dayColumnIndex];
@@ -242,14 +249,6 @@ function dayKeyForAssignment(startTime: string): ScheduleDayKey {
   return dayKey;
 }
 
-function timeLabelFromDateTime(value: string) {
-  const date = new Date(value);
-  const hour = date.getUTCHours().toString().padStart(2, "0");
-  const minute = date.getUTCMinutes().toString().padStart(2, "0");
-  const label = `${hour}:${minute}`;
-  return label;
-}
-
 function dateForDayKey(schedulePeriod: SchedulePeriod, dayKey: ScheduleDayKey) {
   const periodStart = dateAtUtcMidnight(schedulePeriod.start_date);
   const periodStartWeekday = (periodStart.getUTCDay() + 6) % 7;
@@ -259,37 +258,6 @@ function dateForDayKey(schedulePeriod: SchedulePeriod, dayKey: ScheduleDayKey) {
   const dateTime = periodStart.getTime() + weekdayOffset * millisecondsPerDay;
   const date = new Date(dateTime);
   return date;
-}
-
-function dateTimeForAssignment(
-  slotDate: string,
-  timeValue: string,
-): string {
-  const timeParts = timeValue.split(":");
-  const hour = Number(timeParts[0]);
-  const minute = Number(timeParts[1]);
-  const date = dateAtUtcMidnight(slotDate);
-  date.setUTCHours(hour, minute, 0, 0);
-  const value = date.toISOString();
-  return value;
-}
-
-function assignmentDateTimeRange(
-  assignment: ScheduleRoomAssignment,
-): { startDateTime: string; endDateTime: string } {
-  const startDateTime = dateTimeForAssignment(
-    assignment.slotDate,
-    assignment.startTime,
-  );
-  const rawEndDateTime = dateTimeForAssignment(
-    assignment.slotDate,
-    assignment.endTime,
-  );
-  const range = {
-    startDateTime,
-    endDateTime: rawEndDateTime,
-  };
-  return range;
 }
 
 function slotDateForDayKey(
@@ -311,10 +279,6 @@ function versionFromDetail(
   detail: ScheduleVersionDetail,
 ): ScheduleVersion {
   const assignments = detail.assignments.flatMap((assignment, index) => {
-    if (assignment.room_id === null) {
-      return [];
-    }
-
     const violations = detail.violations.filter((violation) => {
       return violation.assignment_id === assignment.id;
     });
@@ -341,10 +305,14 @@ function versionFromDetail(
       slotDateChanged: false,
       centerId: assignment.center_id,
       roomId: assignment.room_id,
+      shiftRequirementId: assignment.shift_requirement_id,
+      requiredProviderType: assignment.required_provider_type,
+      source: assignment.source,
+      notes: assignment.notes,
       shiftType: assignment.shift_type,
       providerId: assignment.provider_id,
-      startTime: timeLabelFromDateTime(assignment.start_time),
-      endTime: timeLabelFromDateTime(assignment.end_time),
+      startTime: assignment.start_time,
+      endTime: assignment.end_time,
       sortOrder: index,
       validationStatus,
       validationMessages,
@@ -435,6 +403,10 @@ function scheduleDraftAssignmentSnapshot(
     slotDate: assignment.slotDate,
     centerId: assignment.centerId,
     roomId: assignment.roomId,
+    shiftRequirementId: assignment.shiftRequirementId,
+    requiredProviderType: assignment.requiredProviderType,
+    source: assignment.source,
+    notes: assignment.notes,
     shiftType: assignment.shiftType,
     providerId: assignment.providerId,
     startTime: assignment.startTime,
@@ -674,85 +646,6 @@ function fullShiftAvailabilityAccommodatesShiftType(
   return shiftTypeIsAccommodated;
 }
 
-function shiftTypePairIsSplitDay(
-  firstShiftType: ScheduleRoomAssignment["shiftType"],
-  secondShiftType: ScheduleRoomAssignment["shiftType"],
-) {
-  const firstIsFirstHalf = firstShiftType === "first_half";
-  const secondIsSecondHalf = secondShiftType === "second_half";
-  const firstPairMatches = firstIsFirstHalf && secondIsSecondHalf;
-  const firstIsSecondHalf = firstShiftType === "second_half";
-  const secondIsFirstHalf = secondShiftType === "first_half";
-  const secondPairMatches = firstIsSecondHalf && secondIsFirstHalf;
-  const isSplitDayPair = firstPairMatches || secondPairMatches;
-  return isSplitDayPair;
-}
-
-function overlappingAssignmentIsAllowed(
-  requestCenterId: string,
-  requestShiftType: ScheduleRoomAssignment["shiftType"],
-  existingCenterId: string,
-  existingShiftType: ScheduleRoomAssignment["shiftType"],
-) {
-  const centersMatch = requestCenterId === existingCenterId;
-
-  if (!centersMatch) {
-    return false;
-  }
-
-  const splitDayPair = shiftTypePairIsSplitDay(
-    requestShiftType,
-    existingShiftType,
-  );
-  return splitDayPair;
-}
-
-function assignmentsOverlap(
-  firstAssignment: ScheduleRoomAssignment,
-  secondAssignment: ScheduleRoomAssignment,
-) {
-  const firstRange = assignmentDateTimeRange(firstAssignment);
-  const secondRange = assignmentDateTimeRange(secondAssignment);
-  const firstStartTime = firstRange.startDateTime;
-  const firstEndTime = firstRange.endDateTime;
-  const secondStartTime = secondRange.startDateTime;
-  const secondEndTime = secondRange.endDateTime;
-  const startsBeforeSecondEnds = firstStartTime < secondEndTime;
-  const endsAfterSecondStarts = firstEndTime > secondStartTime;
-  const overlaps = startsBeforeSecondEnds && endsAfterSecondStarts;
-  return overlaps;
-}
-
-function providerHasOverlappingAssignment(
-  assignments: ScheduleRoomAssignment[],
-  assignment: ScheduleRoomAssignment,
-  providerId: string,
-) {
-  const overlappingAssignment = assignments.find((candidate) => {
-    const isSameAssignment = candidate.id === assignment.id;
-    const isProviderAssignment = candidate.providerId === providerId;
-    const assignmentsAreOverlapping = assignmentsOverlap(
-      assignment,
-      candidate,
-    );
-    const overlapIsAllowed = overlappingAssignmentIsAllowed(
-      assignment.centerId,
-      assignment.shiftType,
-      candidate.centerId,
-      candidate.shiftType,
-    );
-    const shouldBlock = (
-      !isSameAssignment
-      && isProviderAssignment
-      && assignmentsAreOverlapping
-      && !overlapIsAllowed
-    );
-    return shouldBlock;
-  });
-  const hasOverlappingAssignment = overlappingAssignment !== undefined;
-  return hasOverlappingAssignment;
-}
-
 function hasHardProviderReasons(reasons: ProviderIneligibilityReason[]) {
   const hardReasons = reasons.filter((reason) => {
     return reason.severity === "hard_violation";
@@ -952,7 +845,7 @@ function providerEligibilityForAssignment(
 
   }
 
-  const hasOverlappingAssignment = providerHasOverlappingAssignment(
+  const hasOverlappingAssignment = providerHasTimeConflict(
     assignments,
     assignment,
     provider.id,
@@ -962,7 +855,7 @@ function providerEligibilityForAssignment(
     const reason = createHardProviderReason(
       "provider_double_booked",
       "other_hard_constraint",
-      "Provider is already assigned to an overlapping slot.",
+      "Provider has a conflicting same-day assignment.",
     );
     reasons.push(reason);
   }
@@ -1262,12 +1155,17 @@ function assignmentConstraintRows(
   availabilityByProviderId: Map<string, ProviderWeeklyAvailabilityRecord>,
 ): ConstraintRow[] {
   const rows = assignments.flatMap((assignment) => {
+    // Center-only assignments are preserved and validated by the backend.
+    if (assignment.roomId === null && assignment.providerId !== null) {
+      return [];
+    }
+
     const room = rooms.find((availableRoom) => {
       return availableRoom.id === assignment.roomId;
     });
     const subject = slotSubject(assignment, room);
 
-    if (room === undefined) {
+    if (room === undefined && assignment.roomId !== null) {
       const row = {
         id: `${assignment.id}-room_missing`,
         severity: "Hard" as const,
@@ -1291,6 +1189,10 @@ function assignmentConstraintRows(
         message: "Assign a provider before publishing this slot.",
       };
       return [row];
+    }
+
+    if (room === undefined) {
+      return [];
     }
 
     const providerOptions = providerOptionsForAssignment(
@@ -1360,6 +1262,28 @@ function scheduleConstraintRows(
   );
   const rows = [...assignmentRows, ...shiftRequestRows];
   return rows;
+}
+
+function authoritativeConstraintRows(detail: ScheduleVersionDetail): ConstraintRow[] {
+  return detail.violations.map((violation) => {
+    const assignment = detail.assignments.find((candidate) => candidate.id === violation.assignment_id);
+    const severity: ConstraintSeverity = violation.severity === "hard_violation"
+      ? "Hard"
+      : violation.severity === "warning" ? "Warning" : "Soft";
+    const subject = assignment === undefined
+      ? "Saved schedule"
+      : `${assignment.schedule_date} / slot ${assignment.room_slot_id}`;
+    const row: ConstraintRow = {
+      id: assignment === undefined ? `schedule-${violation.id}` : `${assignment.room_slot_id}-${violation.constraint_type}-${violation.id}`,
+      localValidationId: assignment === undefined ? undefined : `${assignment.room_slot_id}-${violation.constraint_type}`,
+      severity,
+      scope: assignment === undefined ? "Schedule" : "Slot",
+      subject,
+      constraint: violation.constraint_type.replaceAll("_", " "),
+      message: violation.message,
+    };
+    return row;
+  });
 }
 
 function providerNeedsAvailabilityReminder(
@@ -1543,6 +1467,10 @@ function createRoomAssignment(
     slotDateChanged: false,
     centerId: room.centerId,
     roomId: room.id,
+    shiftRequirementId: null,
+    requiredProviderType: null,
+    source: "manual",
+    notes: null,
     shiftType: "full_shift",
     providerId: null,
     startTime: "07:00",
@@ -1559,6 +1487,10 @@ function templatePayloadFromAssignments(
   assignments: ScheduleRoomAssignment[],
 ): ScheduleStructureTemplateSavePayload {
   const slots = assignments.map((assignment) => {
+    if (assignment.roomId === null) {
+      throw new Error("Assign a room to every slot before saving a structure template.");
+    }
+
     const slot = {
       weekday: assignment.dayKey,
       room_id: assignment.roomId,
@@ -1586,10 +1518,14 @@ function assignmentFromAppliedTemplateSlot(
     slotDateChanged: false,
     centerId: slot.center_id,
     roomId: slot.room_id,
+    shiftRequirementId: null,
+    requiredProviderType: null,
+    source: "manual",
+    notes: null,
     shiftType: slot.shift_type,
     providerId: null,
-    startTime: timeLabelFromDateTime(slot.start_time),
-    endTime: timeLabelFromDateTime(slot.end_time),
+    startTime: slot.start_time,
+    endTime: slot.end_time,
     sortOrder: slot.display_order,
     validationStatus: "unknown",
     validationMessages: [],
@@ -1624,6 +1560,8 @@ export function ScheduleWorkspace({
 }: ScheduleWorkspaceProps) {
   const { dismissToast, showToast } = useToast();
   const router = useRouter();
+  const scheduleOperationRef = useRef(false);
+  const [isScheduleBusy, setIsScheduleBusy] = useState(false);
   const pendingNavigationToastId = useRef<string | null>(null);
   const saveWorkingDraftRef = useRef<() => Promise<boolean>>(async () => {
     return false;
@@ -1640,6 +1578,9 @@ export function ScheduleWorkspace({
   });
   const [savedVersionDetail, setSavedVersionDetail] =
     useState<ScheduleVersionDetail | null>(initialVersionDetail);
+  const [backendValidationSnapshot, setBackendValidationSnapshot] = useState(() => {
+    return scheduleDraftSnapshot(workingVersion);
+  });
   const [publishEvents, setPublishEvents] = useState<SchedulePublishEvent[]>(() => {
     return publishEventsFromDetail(initialVersionDetail);
   });
@@ -1743,7 +1684,61 @@ export function ScheduleWorkspace({
     setWorkingVersion(nextVersion);
   }
 
+  async function runScheduleOperation(operation: () => Promise<void>) {
+    if (scheduleOperationRef.current) {
+      return;
+    }
+
+    scheduleOperationRef.current = true;
+    setIsScheduleBusy(true);
+    try {
+      await operation();
+    } finally {
+      scheduleOperationRef.current = false;
+      setIsScheduleBusy(false);
+    }
+  }
+
+  async function saveWorkingDraft() {
+    let draftWasSaved = false;
+    await runScheduleOperation(async () => {
+      draftWasSaved = await performSaveWorkingDraft();
+    });
+    return draftWasSaved;
+  }
+
+  async function handleSaveTemplate() {
+    await runScheduleOperation(performSaveTemplate);
+  }
+
+  async function handleLoadTemplate() {
+    await runScheduleOperation(performLoadTemplate);
+  }
+
+  async function handleDeleteTemplate() {
+    await runScheduleOperation(performDeleteTemplate);
+  }
+
+  async function handlePublishSchedule() {
+    await runScheduleOperation(performPublishSchedule);
+  }
+
+  async function handleGenerateSchedule(mode: "strict" | "best_effort") {
+    await runScheduleOperation(() => performGenerateSchedule(mode));
+  }
+
+  async function handleVersionSelected(versionId: string) {
+    await runScheduleOperation(() => performVersionSelected(versionId));
+  }
+
+  async function handleProviderSelected(assignment: ScheduleRoomAssignment, option: ProviderPickerOption) {
+    await runScheduleOperation(() => performProviderSelected(assignment, option));
+  }
+
   function handleNotesChanged(notes: string) {
+    if (scheduleOperationRef.current) {
+      return;
+    }
     const nextVersion = scheduleVersionSchema.parse({
       ...workingVersion,
       notes,
@@ -1751,7 +1746,7 @@ export function ScheduleWorkspace({
     updateWorkingVersion(nextVersion);
   }
 
-  async function handleSaveTemplate() {
+  async function performSaveTemplate() {
     const normalizedName = templateName.trim();
     const hasTemplateName = normalizedName.length > 0;
 
@@ -1787,13 +1782,13 @@ export function ScheduleWorkspace({
       }
     }
 
-    const payload = templatePayloadFromAssignments(
-      normalizedName,
-      workingVersion.assignments,
-    );
     setIsSavingTemplate(true);
 
     try {
+      const payload = templatePayloadFromAssignments(
+        normalizedName,
+        workingVersion.assignments,
+      );
       const savedTemplate =
         existingTemplate === undefined
           ? await createScheduleStructureTemplate(payload)
@@ -1823,7 +1818,7 @@ export function ScheduleWorkspace({
     }
   }
 
-  async function handleLoadTemplate() {
+  async function performLoadTemplate() {
     const hasSelectedTemplate = selectedTemplateId.length > 0;
 
     if (!hasSelectedTemplate) {
@@ -1884,7 +1879,7 @@ export function ScheduleWorkspace({
     }
   }
 
-  async function handleDeleteTemplate() {
+  async function performDeleteTemplate() {
     const selectedTemplate = templateOptions.find((template) => {
       return template.id === selectedTemplateId;
     });
@@ -1939,31 +1934,11 @@ export function ScheduleWorkspace({
   function savePayloadFromAssignments(
     assignments: ScheduleRoomAssignment[],
   ): ScheduleAssignmentSavePayload[] {
-    const payload = assignments.map((assignment) => {
-      const dateTimeRange = assignmentDateTimeRange(assignment);
-      const startTime = dateTimeRange.startDateTime;
-      const endTime = dateTimeRange.endDateTime;
-      const assignmentPayload = {
-        room_slot_id: assignment.id,
-        allow_slot_date_change: assignment.slotDateChanged,
-        provider_id: assignment.providerId,
-        center_id: assignment.centerId,
-        room_id: assignment.roomId,
-        shift_requirement_id: null,
-        required_provider_type: null,
-        shift_type: assignment.shiftType,
-        schedule_date: assignment.slotDate,
-        start_time: startTime,
-        end_time: endTime,
-        source: "manual",
-        notes: null,
-      };
-      return assignmentPayload;
-    });
+    const payload = assignments.map(assignmentSavePayload);
     return payload;
   }
 
-  async function handlePublishSchedule() {
+  async function performPublishSchedule() {
     if (isScheduleOperationPending) {
       return;
     }
@@ -2059,7 +2034,7 @@ export function ScheduleWorkspace({
     }
   }
 
-  async function saveWorkingDraft() {
+  async function performSaveWorkingDraft() {
     const nextAssignments = workingVersion.assignments.map((assignment) => {
       const room = roomForAssignment(assignment);
 
@@ -2108,6 +2083,7 @@ export function ScheduleWorkspace({
       const detail = await saveDraftScheduleVersion(payload);
       const nextVersion = versionFromDetail(schedulePeriod, detail);
       setSavedVersionDetail(detail);
+      setBackendValidationSnapshot(scheduleDraftSnapshot(nextVersion));
       setSelectedVersionId(detail.version.id);
       setVersionOptions((currentOptions) => {
         const nextOptions = upsertVersionOption(currentOptions, detail.version);
@@ -2153,7 +2129,7 @@ export function ScheduleWorkspace({
     saveWorkingDraftRef.current = saveWorkingDraft;
   });
 
-  async function handleGenerateSchedule(generationMode: "strict" | "best_effort") {
+  async function performGenerateSchedule(generationMode: "strict" | "best_effort") {
     const parentVersionId =
       savedVersionDetail === null ? null : savedVersionDetail.version.id;
     const payload = {
@@ -2182,7 +2158,7 @@ export function ScheduleWorkspace({
       const generatedAssignmentCount = detail.assignments.length;
       const currentAssignmentCount = workingVersion.assignments.length;
       const wouldClearWorkingSchedule =
-        generatedAssignmentCount === 0 && currentAssignmentCount > 0;
+        generationMode === "strict" && generatedAssignmentCount === 0 && currentAssignmentCount > 0;
 
       if (wouldClearWorkingSchedule) {
         setActionMessage("Generation produced no assignments, so the current board was kept.");
@@ -2201,6 +2177,7 @@ export function ScheduleWorkspace({
           : generatedVersion;
       const duration = detail.metrics.solve_duration_ms;
       setSavedVersionDetail(detail);
+      setBackendValidationSnapshot(scheduleDraftSnapshot(nextVersion));
       setSelectedVersionId(detail.version.id);
       setVersionOptions((currentOptions) => {
         const nextOptions = upsertVersionOption(currentOptions, detail.version);
@@ -2250,7 +2227,7 @@ export function ScheduleWorkspace({
     }
   }
 
-  async function handleVersionSelected(versionId: string) {
+  async function performVersionSelected(versionId: string) {
     setSelectedVersionId(versionId);
     setIsLoadingVersion(true);
     setActionMessage(null);
@@ -2260,6 +2237,7 @@ export function ScheduleWorkspace({
       const nextVersion = versionFromDetail(schedulePeriod, detail);
       const nextPublishEvents = publishEventsFromDetail(detail);
       setSavedVersionDetail(detail);
+      setBackendValidationSnapshot(scheduleDraftSnapshot(nextVersion));
       setPublishEvents(nextPublishEvents);
       updateWorkingVersion(nextVersion);
       setActionMessage("Draft loaded.");
@@ -2282,6 +2260,10 @@ export function ScheduleWorkspace({
   }
 
   function handleDragStart(event: React.DragEvent, payload: DragPayload) {
+    if (scheduleOperationRef.current) {
+      event.preventDefault();
+      return;
+    }
     const payloadText = JSON.stringify(payload);
     event.dataTransfer.setData("application/json", payloadText);
     event.dataTransfer.effectAllowed = "move";
@@ -2301,6 +2283,9 @@ export function ScheduleWorkspace({
 
   function handleDropOnColumn(event: React.DragEvent, dayKey: ScheduleDayKey) {
     event.preventDefault();
+    if (scheduleOperationRef.current) {
+      return;
+    }
     handleDropIndicatorCleared();
 
     const payloadText = event.dataTransfer.getData("application/json");
@@ -2361,6 +2346,9 @@ export function ScheduleWorkspace({
   ) {
     event.preventDefault();
     event.stopPropagation();
+    if (scheduleOperationRef.current) {
+      return;
+    }
     handleDropIndicatorCleared();
 
     const payloadText = event.dataTransfer.getData("application/json");
@@ -2595,37 +2583,24 @@ export function ScheduleWorkspace({
     setOpenShiftTypeAssignmentId(nextAssignmentId);
   }
 
-  function savedAssignmentIdForRequest(assignment: ScheduleRoomAssignment) {
-    const savedAssignment = savedVersionDetail?.assignments.find((candidate) => {
-      return candidate.room_slot_id === assignment.id;
-    });
-    const assignmentId = savedAssignment?.id ?? null;
-    return assignmentId;
-  }
-
   async function verifiedProviderOption(
     assignment: ScheduleRoomAssignment,
     option: ProviderPickerOption,
   ) {
-    const startTime = dateTimeForAssignment(
-      assignment.slotDate,
-      assignment.startTime,
-    );
-    const endTime = dateTimeForAssignment(
-      assignment.slotDate,
-      assignment.endTime,
-    );
-    const savedAssignmentId = savedAssignmentIdForRequest(assignment);
-    const savedVersionId = savedVersionDetail?.version.id ?? null;
+    const startTime = assignment.startTime;
+    const endTime = assignment.endTime;
+    // The local picker checks the working board; save/publish checks the full persisted draft.
     const payload = {
       schedule_period_id: scheduleId,
-      schedule_version_id: savedVersionId,
-      assignment_id: savedAssignmentId,
+      schedule_version_id: null,
+      assignment_id: null,
+      shift_requirement_id: assignment.shiftRequirementId,
       provider_id: option.provider.id,
       center_id: assignment.centerId,
       room_id: assignment.roomId,
-      required_provider_type: null,
+      required_provider_type: assignment.requiredProviderType,
       shift_type: assignment.shiftType,
+      schedule_date: assignment.slotDate,
       start_time: startTime,
       end_time: endTime,
     };
@@ -2640,7 +2615,7 @@ export function ScheduleWorkspace({
     return verifiedOption;
   }
 
-  async function handleProviderSelected(
+  async function performProviderSelected(
     assignment: ScheduleRoomAssignment,
     option: ProviderPickerOption,
   ) {
@@ -2672,10 +2647,10 @@ export function ScheduleWorkspace({
     const optionIsSelectable = providerOptionIsSelectable(selectedOption);
 
     if (!optionIsSelectable) {
-      setActionMessage("Provider is already assigned to an overlapping slot.");
+      setActionMessage("Provider has a conflicting same-day assignment.");
       showToast({
         title: "Provider not assigned",
-        description: "Provider is already assigned to an overlapping slot.",
+        description: "Provider has a conflicting same-day assignment.",
         tone: "warning",
       });
       setOpenProviderAssignmentId(null);
@@ -2748,16 +2723,12 @@ export function ScheduleWorkspace({
   }
 
   const hasSavedVersion = savedVersionDetail !== null;
-  const constraintRows = scheduleConstraintRows(
+  const localConstraintRows = scheduleConstraintRows(
     providers,
     workingVersion.assignments,
     availableRooms,
     availabilityByProviderId,
   );
-  const hardConstraintRows = constraintRows.filter((row) => {
-    return row.severity === "Hard";
-  });
-  const publishBlockerCount = hardConstraintRows.length;
   const availabilityReminderProviders = providersNeedingAvailabilityReminder(
     providers,
     availabilityByProviderId,
@@ -2782,8 +2753,18 @@ export function ScheduleWorkspace({
     savedDraftSnapshot,
   );
   const hasUnsavedScheduleChanges = !scheduleDraftIsSaved;
+  const backendValidationIsCurrent = scheduleDraftSnapshotsMatch(currentDraftSnapshot, backendValidationSnapshot);
+  const backendValidationIsPending = savedVersionDetail === null || !backendValidationIsCurrent;
+  const savedConstraintRows = savedVersionDetail !== null && backendValidationIsCurrent
+    ? authoritativeConstraintRows(savedVersionDetail)
+    : [];
+  const authoritativeValidationIds = new Set(savedConstraintRows.map((row) => row.localValidationId));
+  const additionalLocalRows = localConstraintRows.filter((row) => !authoritativeValidationIds.has(row.id));
+  const constraintRows = [...additionalLocalRows, ...savedConstraintRows];
+  const hardConstraintRows = constraintRows.filter((row) => row.severity === "Hard");
+  const publishBlockerCount = hardConstraintRows.length;
   const isScheduleOperationPending =
-    isSaving || isGenerating || isLoadingVersion || isLoadingTemplate || isPublishing;
+    isScheduleBusy || isSaving || isGenerating || isLoadingVersion || isLoadingTemplate || isPublishing;
   const canPublish =
     publishBlockerCount === 0
     && assignedRoomCount > 0
@@ -2904,7 +2885,8 @@ export function ScheduleWorkspace({
   }, [dismissToast, hasUnsavedScheduleChanges, router, showToast]);
 
   return (
-    <div className="space-y-5">
+    <fieldset disabled={isScheduleBusy} aria-busy={isScheduleBusy} className="min-w-0 space-y-5">
+      {isScheduleBusy ? <p role="status" className="text-sm text-slate-600">Please wait for the current schedule operation to finish before editing.</p> : null}
       <section className="rounded-md border border-slate-200 bg-white px-4 py-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
@@ -3202,6 +3184,21 @@ export function ScheduleWorkspace({
                     }}
                   >
                     {dayAssignments.map((assignment, index) => {
+                      if (assignment.roomId === null) {
+                        const provider = providers.find((candidate) => candidate.id === assignment.providerId);
+                        const providerLabel = provider === undefined ? "Unassigned provider" : provider.display_name;
+                        const slotRows = constraintRows.filter((row) => row.id.startsWith(`${assignment.id}-`));
+                        return (
+                          <div key={assignment.id} className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+                            <p className="font-semibold">Center assignment (no room)</p>
+                            <p>{providerLabel}</p>
+                            <p>{shiftTypeLabel(assignment.shiftType)} · {assignment.startTime}–{assignment.endTime}</p>
+                            <p className="text-xs text-slate-500">Preserved when saving. Roomless slots cannot be edited on this board.</p>
+                            {slotRows.map((row) => <p key={row.id} className="text-xs text-amber-800">{row.message}</p>)}
+                          </div>
+                        );
+                      }
+
                       const room = roomForAssignment(assignment);
                       const roomName = room?.name ?? "Unknown room";
                       const centerName = room?.centerName ?? "Unknown center";
@@ -3221,19 +3218,18 @@ export function ScheduleWorkspace({
                         providerOptions,
                         assignment.providerId,
                       );
-                      const selectedMessages = validationMessagesForSelection(
-                        selectedOption,
-                      );
-                      const selectedStatus = validationStatusForSelection(
-                        selectedOption,
-                      );
+                      const slotRows = constraintRows.filter((row) => row.id.startsWith(`${assignment.id}-`));
+                      const selectedMessages = slotRows.map((row) => row.message);
+                      const hasHardSlotRows = slotRows.some((row) => row.severity === "Hard");
+                      const hasWarningSlotRows = slotRows.some((row) => row.severity === "Warning");
+                      const selectedStatus = hasHardSlotRows ? "invalid" : hasWarningSlotRows ? "warning" : "valid";
                       const selectedProviderIsMissing = selectedOption === null;
                       const selectedStatusIsValid = selectedStatus === "valid";
                       const selectedStatusIsInvalid = selectedStatus === "invalid";
                       const selectedStatusIsWarning =
                         selectedStatus === "warning" && !selectedProviderIsMissing;
                       const selectedStatusLabel = selectedStatusIsValid
-                        ? "Eligible"
+                        ? backendValidationIsPending ? "Pending validation" : "Eligible"
                         : selectedStatusIsWarning
                           ? "Warning"
                           : "Not publishable";
@@ -3248,8 +3244,9 @@ export function ScheduleWorkspace({
                         openProviderAssignmentId === assignment.id;
                       const providerPickerLabel =
                         providerPickerButtonLabel(selectedOption);
-                      const providerPickerStatus =
-                        providerPickerStatusLabel(selectedOption);
+                      const providerPickerStatus = selectedStatusIsInvalid
+                        ? "Not publishable"
+                        : backendValidationIsPending ? "Save to validate" : providerPickerStatusLabel(selectedOption);
                       const providerSelectionShouldShow = !compactModeEnabled;
                       const assignmentContainerClassName = shiftTypeContainerClassName(
                         assignment.shiftType,
@@ -3271,7 +3268,7 @@ export function ScheduleWorkspace({
                             <div className="h-1 rounded bg-teal-600" aria-hidden="true" />
                           ) : null}
                           <div
-                            draggable
+                            draggable={!isScheduleBusy}
                             onDragStart={(event) =>
                               handleDragStart(event, {
                                 type: "scheduled-room",
@@ -3559,6 +3556,9 @@ export function ScheduleWorkspace({
               );
             })}
           </div>
+          {hasUnsavedScheduleChanges ? (
+            <p className="px-4 py-3 text-sm text-amber-800">Save draft to refresh backend validation for these changes.</p>
+          ) : null}
           {constraintRows.length > 0 ? (
             <div className="border-t border-slate-200 px-4 py-3">
               <h4 className="text-sm font-semibold text-slate-950">
@@ -3636,7 +3636,7 @@ export function ScheduleWorkspace({
                 return (
                   <div
                     key={room.id}
-                    draggable
+                    draggable={!isScheduleBusy}
                     onDragStart={(event) =>
                       handleDragStart(event, {
                         type: "available-room",
@@ -3702,6 +3702,6 @@ export function ScheduleWorkspace({
           </aside>
         </div>
       </div>
-    </div>
+    </fieldset>
   );
 }

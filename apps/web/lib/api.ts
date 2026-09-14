@@ -1,3 +1,4 @@
+import { scheduleAssignmentSavePayloadSchema, providerSlotEligibilityPayloadSchema } from "@/lib/schemas/schedule";
 import { z } from "zod";
 
 import { centerSchema, type CenterFormValues } from "@/lib/schemas/center";
@@ -155,21 +156,7 @@ export type ProviderPortalProfile = ProviderPortalProfileApi;
 export type ProviderPortalAvailabilityRecord = ProviderPortalWeekAvailability;
 export type ProviderPortalPreferenceOptionRecord = ProviderPortalPreferenceOptions;
 
-export type ScheduleAssignmentSavePayload = {
-  room_slot_id: string;
-  allow_slot_date_change: boolean;
-  provider_id: string | null;
-  center_id: string;
-  room_id: string | null;
-  shift_requirement_id: string | null;
-  required_provider_type: string | null;
-  shift_type: "full_shift" | "first_half" | "second_half" | "short_shift";
-  schedule_date: string;
-  start_time: string;
-  end_time: string;
-  source: string;
-  notes: string | null;
-};
+export type ScheduleAssignmentSavePayload = z.infer<typeof scheduleAssignmentSavePayloadSchema>;
 
 export type ScheduleDraftSavePayload = {
   schedule_period_id: string;
@@ -185,18 +172,7 @@ export type ScheduleGeneratePayload = {
   generation_mode: "strict" | "best_effort";
 };
 
-export type ProviderSlotEligibilityPayload = {
-  schedule_period_id: string;
-  schedule_version_id: string | null;
-  assignment_id: string | null;
-  provider_id: string;
-  center_id: string;
-  room_id: string | null;
-  required_provider_type: string | null;
-  shift_type: "full_shift" | "first_half" | "second_half" | "short_shift";
-  start_time: string;
-  end_time: string;
-};
+export type ProviderSlotEligibilityPayload = z.infer<typeof providerSlotEligibilityPayloadSchema>;
 
 const apiStringErrorResponseSchema = z.object({
   detail: z.string().min(1),
@@ -856,7 +832,12 @@ export async function getScheduleVersion(
 export async function saveDraftScheduleVersion(
   payload: ScheduleDraftSavePayload,
 ): Promise<ScheduleVersionDetail> {
-  const init = jsonRequestInit("POST", payload);
+  const assignments = payload.assignments.map((assignment) => {
+    const parsedAssignment = scheduleAssignmentSavePayloadSchema.parse(assignment);
+    return parsedAssignment;
+  });
+  const validatedPayload = { ...payload, assignments };
+  const init = jsonRequestInit("POST", validatedPayload);
   const responseJson = await requestJson<unknown>("/schedule-versions/draft", init);
   const detail = scheduleDraftSaveResponseApiSchema.parse(responseJson);
   return detail;
@@ -866,7 +847,12 @@ export async function generateScheduleVersion(
   periodId: string,
   payload: ScheduleGeneratePayload,
 ): Promise<ScheduleGenerateResponse> {
-  const init = jsonRequestInit("POST", payload);
+  const assignments = payload.assignments.map((assignment) => {
+    const parsedAssignment = scheduleAssignmentSavePayloadSchema.parse(assignment);
+    return parsedAssignment;
+  });
+  const validatedPayload = { ...payload, assignments };
+  const init = jsonRequestInit("POST", validatedPayload);
   const responseJson = await requestJson<unknown>(
     `/schedule-periods/${periodId}/generate`,
     init,
@@ -902,7 +888,8 @@ export async function getProviderWeeklyAvailability(
 export async function checkProviderSlotEligibility(
   payload: ProviderSlotEligibilityPayload,
 ): Promise<ProviderSlotEligibility> {
-  const init = jsonRequestInit("POST", payload);
+  const parsedPayload = providerSlotEligibilityPayloadSchema.parse(payload);
+  const init = jsonRequestInit("POST", parsedPayload);
   const responseJson = await requestJson<unknown>("/schedule-provider-eligibility", init);
   const response = providerSlotEligibilityApiSchema.parse(responseJson);
   return response;
