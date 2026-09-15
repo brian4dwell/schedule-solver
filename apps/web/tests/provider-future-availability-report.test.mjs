@@ -124,11 +124,11 @@ test("overlapping weeks keep independent notes and missing submissions differ fr
   assert.equal(view.container.querySelectorAll("table").length, 2);
   assert.match(view.container.textContent, /Only a note was saved/);
   assert.match(view.container.textContent, /Not submitted/);
-  assert.match(view.container.textContent, /Unset/);
+  assert.doesNotMatch(view.container.textContent, /Unset/);
   const rows = view.container.querySelectorAll("tbody tr");
   assert.match(rows[1].textContent, /None/);
   assert.doesNotMatch(rows[1].textContent, /Not submitted/);
-  assert.match(rows[2].textContent, /UnsetNot submitted/);
+  assert.equal(rows[2].cells[2].textContent, "");
 });
 
 test("refresh shows cleared notes and an empty result explains missing future weeks", async (context) => {
@@ -205,4 +205,78 @@ test("report contract validates dates, notes, half shifts, and missing submissio
   const missingSavedState = reportFor();
   delete missingSavedState.weeks[0].days[0].is_saved;
   assert.equal(schemas.providerFutureAvailabilityReportApiSchema.safeParse(missingSavedState).success, false);
+});
+
+test("all Providers PDF waits for every report and includes Providers hidden by search", async (context) => {
+  const first = Promise.withResolvers();
+  const second = Promise.withResolvers();
+  const print = context.mock.method(window, "print", () => {});
+  const view = await setup(context, (id) => id === providers[0].id ? first.promise : second.promise);
+  const input = view.container.querySelector('input[type="search"]');
+  const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value");
+  await act(async () => {
+    descriptor.set.call(input, "avery");
+    input.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  assert.equal(view.container.querySelectorAll("option").length, 2);
+  await click(button(view.container, "PDF for All Providers"));
+  assert.equal(button(view.container, "Preparing PDF...").disabled, true);
+  assert.equal(view.getProviderFutureAvailabilityReport.mock.callCount(), 2);
+  await finishRequest(first, reportFor(providers[0], "Avery note"));
+  assert.equal(print.mock.callCount(), 0);
+  const emptyReport = reportFor(providers[1]);
+  emptyReport.weeks = [];
+  await finishRequest(second, emptyReport);
+  assert.equal(print.mock.callCount(), 1);
+  const combinedReport = view.container.querySelector(".future-availability-all-providers");
+  assert.equal(combinedReport.querySelectorAll(".future-availability-provider").length, 2);
+  assert.match(combinedReport.textContent, /Avery note/);
+  assert.match(combinedReport.textContent, /Blake.*Inactive/);
+  assert.match(combinedReport.textContent, /No upcoming schedule weeks/);
+  assert.equal(window.location.search, "");
+  await act(async () => window.dispatchEvent(new window.Event("afterprint")));
+  assert.equal(view.container.querySelector(".future-availability-all-providers"), null);
+  assert.equal(button(view.container, "PDF for All Providers").disabled, false);
+});
+
+test("a failed all Providers PDF never prints partial results and can be retried", async (context) => {
+  const print = context.mock.method(window, "print", () => {});
+  const view = await setup(context, async (id) => {
+    if (id === providers[1].id) {
+      throw new Error("Blake report failed");
+    }
+
+    return reportFor(providers[0]);
+  });
+  await click(button(view.container, "PDF for All Providers"));
+  assert.equal(print.mock.callCount(), 0);
+  assert.equal(view.container.querySelector(".future-availability-all-providers"), null);
+  assert.equal(button(view.container, "PDF for All Providers").disabled, false);
+  assert.equal(view.showToast.mock.calls[0].arguments[0].tone, "error");
+  view.getProviderFutureAvailabilityReport.mock.mockImplementation(async (id) => {
+    const provider = providers.find((candidate) => candidate.id === id);
+    return reportFor(provider);
+  });
+  await click(button(view.container, "PDF for All Providers"));
+  assert.equal(print.mock.callCount(), 1);
+  assert.equal(view.getProviderFutureAvailabilityReport.mock.callCount(), 4);
+  await act(async () => window.dispatchEvent(new window.Event("afterprint")));
+});
+
+test("finishing an all Providers PDF restores printing the selected Provider", async (context) => {
+  const print = context.mock.method(window, "print", () => {});
+  const view = await setup(context, async (id) => {
+    const provider = providers.find((candidate) => candidate.id === id);
+    return reportFor(provider);
+  }, providers[0].id);
+  await click(button(view.container, "PDF for All Providers"));
+  assert.equal(print.mock.callCount(), 1);
+  const combinedReport = view.container.querySelector(".future-availability-all-providers");
+  assert.equal(combinedReport.querySelectorAll("h2").length, 2);
+  await act(async () => window.dispatchEvent(new window.Event("afterprint")));
+  assert.equal(view.container.querySelector(".future-availability-all-providers"), null);
+  assert.equal(new URLSearchParams(window.location.search).get("provider_id"), providers[0].id);
+  assert.equal(view.container.querySelectorAll("h2").length, 1);
+  await click(button(view.container, "Print / Save as PDF"));
+  assert.equal(print.mock.callCount(), 2);
 });

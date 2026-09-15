@@ -112,6 +112,7 @@ def persist_solver_result(
     notes: str | None,
     organization_id: UUID,
     session: Session,
+    schedule_job_id: UUID | None = None,
 ) -> tuple[ScheduleVersion, list[Assignment], list[ConstraintViolation]]:
     schedule_version = create_schedule_version(
         schedule_period_id,
@@ -122,6 +123,7 @@ def persist_solver_result(
         session,
     )
     assignments: list[Assignment] = []
+    schedule_version.schedule_job_id = schedule_job_id
 
     for solver_assignment in solver_result.assignments:
         assignment = create_assignment(
@@ -150,7 +152,7 @@ def persist_solver_result(
         organization_id,
         session,
     )
-    session.commit()
+    session.flush()
     session.refresh(schedule_version)
 
     for assignment in assignments:

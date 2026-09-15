@@ -21,6 +21,11 @@ type ReportState =
   | { status: "ready"; report: ProviderFutureAvailabilityReportApi }
   | { status: "error" };
 
+type AllProvidersPrintState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "printing"; reports: ProviderFutureAvailabilityReportApi[] };
+
 function providerLabel(provider: ReportProviderApi): string {
   const inactiveLabel = provider.is_active ? "" : " · Inactive";
   const label = `${provider.display_name} · ${provider.provider_type} · ${provider.employment_type}${inactiveLabel}`;
@@ -40,7 +45,7 @@ function availabilityLabel(option: AvailabilityOption): string {
     case "none":
       return "None";
     case "unset":
-      return "Unset";
+      return "";
   }
 }
 
@@ -58,7 +63,7 @@ function AvailabilityWeek({ week }: { week: FutureAvailabilityWeekApi }) {
   const hasNotes = week.notes !== null;
 
   return (
-    <section className="rounded-md border border-slate-200 bg-white p-4">
+    <section className="future-availability-week rounded-md border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="font-semibold text-slate-950">{week.name}</h3>
@@ -72,7 +77,7 @@ function AvailabilityWeek({ week }: { week: FutureAvailabilityWeekApi }) {
       <p className="mt-3 text-sm text-slate-700">
         Requested shifts for the entire week: minimum {week.min_shifts_requested}, maximum {week.max_shifts_requested}.
       </p>
-      <div className="mt-4 grid gap-5 lg:grid-cols-2">
+      <div className="future-availability-week-details mt-4 grid gap-5 lg:grid-cols-2">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <caption className="sr-only">Availability for {week.name}</caption>
@@ -85,24 +90,22 @@ function AvailabilityWeek({ week }: { week: FutureAvailabilityWeekApi }) {
             </thead>
             <tbody>
               {week.days.map((day) => {
-                const optionLabels = day.options.map(availabilityLabel);
+                const visibleOptions = day.options.filter((option) => option !== "unset");
+                const optionLabels = visibleOptions.map(availabilityLabel);
                 const optionsText = optionLabels.join(", ");
 
                 return (
                   <tr key={day.date} className="border-b border-slate-100 last:border-0">
                     <td className="whitespace-nowrap py-2 pr-3">{day.date}</td>
                     <td className="py-2 pr-3 capitalize">{day.weekday}</td>
-                    <td className="py-2">
-                      <span>{optionsText}</span>
-                      {!day.is_saved ? <span className="ml-2 text-xs text-slate-500">Not submitted</span> : null}
-                    </td>
+                    <td className="py-2">{optionsText}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
-        <div className="min-w-0 rounded-md bg-slate-50 p-3">
+        <div className="future-availability-notes min-w-0 rounded-md bg-slate-50 p-3">
           <h4 className="text-sm font-semibold text-slate-950">Notes for this week</h4>
           {hasNotes ? (
             <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 [overflow-wrap:anywhere]">{week.notes}</p>
@@ -115,11 +118,115 @@ function AvailabilityWeek({ week }: { week: FutureAvailabilityWeekApi }) {
   );
 }
 
+function ProviderReportContent({ report }: { report: ProviderFutureAvailabilityReportApi }) {
+  return (
+    <section className="future-availability-provider space-y-4">
+      <header>
+        <h2 className="text-lg font-semibold">{providerLabel(report.provider)}</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Today and later: {report.cutoff_date} ({report.timezone}). {report.weeks.length} upcoming schedule weeks.
+          Current weeks show only remaining dates; notes and requests cover the full week.
+        </p>
+      </header>
+      {report.weeks.length === 0 ? <p className="text-sm text-slate-600">No upcoming schedule weeks</p> : null}
+      {report.weeks.map((week) => <AvailabilityWeek key={week.schedule_period_id} week={week} />)}
+    </section>
+  );
+}
+
+function AllProvidersPdf({ providers }: ReportProps) {
+  const { showToast } = useToast();
+  const [state, setState] = useState<AllProvidersPrintState>({ status: "idle" });
+  const isBusy = state.status !== "idle";
+  const isDisabled = isBusy || providers.length === 0;
+
+  useEffect(() => {
+    if (state.status !== "loading") {
+      return;
+    }
+
+    let isCurrent = true;
+
+    async function loadAllReports() {
+      try {
+        const reports: ProviderFutureAvailabilityReportApi[] = [];
+        const batchSize = 5;
+
+        for (let index = 0; index < providers.length; index += batchSize) {
+          const batchEnd = index + batchSize;
+          const batch = providers.slice(index, batchEnd);
+          const requests = batch.map((provider) => getProviderFutureAvailabilityReport(provider.id));
+          const batchReports = await Promise.all(requests);
+
+          if (!isCurrent) {
+            return;
+          }
+
+          reports.push(...batchReports);
+        }
+
+        setState({ status: "printing", reports });
+      } catch (error) {
+        if (isCurrent) {
+          setState({ status: "idle" });
+          const description = error instanceof Error ? error.message : String(error);
+          showToast({ title: "Unable to prepare PDF for all Providers", description, tone: "error" });
+        }
+      }
+    }
+
+    void loadAllReports();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [providers, showToast, state.status]);
+
+  useEffect(() => {
+    if (state.status !== "printing") {
+      return;
+    }
+
+    function finishPrinting() {
+      setState({ status: "idle" });
+    }
+
+    window.addEventListener("afterprint", finishPrinting);
+    window.print();
+
+    return () => {
+      window.removeEventListener("afterprint", finishPrinting);
+    };
+  }, [state.status]);
+
+  return (
+    <>
+      <div className="future-availability-screen-only flex flex-wrap items-center gap-3" aria-busy={isBusy}>
+        <button
+          type="button"
+          disabled={isDisabled}
+          onClick={() => setState({ status: "loading" })}
+          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
+        >
+          {isBusy ? "Preparing PDF..." : "PDF for All Providers"}
+        </button>
+        <p className="text-sm text-slate-600">Save all Providers, including inactive Providers, as one PDF from the print dialog.</p>
+      </div>
+      {state.status === "printing" ? (
+        <div className="future-availability-all-providers">
+          {state.reports.map((report) => <ProviderReportContent key={report.provider.id} report={report} />)}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function SelectedProviderReport({ providerId }: { providerId: string }) {
   const { showToast } = useToast();
   const [state, setState] = useState<ReportState>({ status: "loading" });
   const [refreshCount, setRefreshCount] = useState(0);
   const isLoading = state.status === "loading";
+  const canPrint = state.status === "ready";
 
   useEffect(() => {
     let isCurrent = true;
@@ -154,32 +261,30 @@ function SelectedProviderReport({ providerId }: { providerId: string }) {
 
   return (
     <div className="space-y-4" aria-busy={isLoading}>
-      <div className="flex items-center justify-between gap-3">
+      <div className="future-availability-screen-only flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-600">Read-only report of saved availability and notes.</p>
-        <button
-          type="button"
-          disabled={isLoading}
-          onClick={refreshReport}
-          className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
-        >
-          Refresh
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={!canPrint}
+            onClick={() => window.print()}
+            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
+          >
+            Print / Save as PDF
+          </button>
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={refreshReport}
+            className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
       {isLoading ? <p role="status" className="text-sm text-slate-600">Loading report...</p> : null}
       {state.status === "error" ? <p role="status" className="text-sm text-slate-600">Report unavailable. Refresh to try again.</p> : null}
-      {state.status === "ready" ? (
-        <>
-          <header>
-            <h2 className="text-lg font-semibold">{providerLabel(state.report.provider)}</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Today and later: {state.report.cutoff_date} ({state.report.timezone}). {state.report.weeks.length} upcoming schedule weeks.
-              Current weeks show only remaining dates; notes and requests cover the full week.
-            </p>
-          </header>
-          {state.report.weeks.length === 0 ? <p className="text-sm text-slate-600">No upcoming schedule weeks</p> : null}
-          {state.report.weeks.map((week) => <AvailabilityWeek key={week.schedule_period_id} week={week} />)}
-        </>
-      ) : null}
+      {state.status === "ready" ? <ProviderReportContent report={state.report} /> : null}
     </div>
   );
 }
@@ -215,8 +320,9 @@ export function ProviderFutureAvailabilityReport({ providers }: ReportProps) {
   }
 
   return (
-    <div className="space-y-5">
-      <section className="grid gap-4 rounded-md border border-slate-200 bg-white p-4 sm:grid-cols-2">
+    <div className="future-availability-report space-y-5">
+      <AllProvidersPdf providers={providers} />
+      <section className="future-availability-screen-only grid gap-4 rounded-md border border-slate-200 bg-white p-4 sm:grid-cols-2">
         <label className="space-y-2 text-sm font-medium">
           <span className="block">Search Providers</span>
           <input
@@ -241,11 +347,13 @@ export function ProviderFutureAvailabilityReport({ providers }: ReportProps) {
         </label>
         {filteredProviders.length === 0 ? <p className="text-sm text-slate-500">No matching Providers</p> : null}
       </section>
-      {hasSelection ? (
-        <SelectedProviderReport key={providerId} providerId={providerId} />
-      ) : (
-        <p className="text-sm text-slate-600">Select a Provider to view future availability and weekly notes.</p>
-      )}
+      <div className="future-availability-single-provider">
+        {hasSelection ? (
+          <SelectedProviderReport key={providerId} providerId={providerId} />
+        ) : (
+          <p className="text-sm text-slate-600">Select a Provider to view future availability and weekly notes.</p>
+        )}
+      </div>
     </div>
   );
 }

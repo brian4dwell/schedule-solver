@@ -79,8 +79,9 @@ def preview_draft_cleanup(selection: DraftCleanupSelection, session: Session) ->
         if not owned_job or not finished_job:
             raise ValueError("Selected drafts have an active or unscoped job.")
 
+    legacy_job_ids = [job.id for job in jobs if job.solver_snapshot is None]
     references_statement = select(ScheduleVersion.id)
-    references_statement = references_statement.where(ScheduleVersion.schedule_job_id.in_(unique_job_ids))
+    references_statement = references_statement.where(ScheduleVersion.schedule_job_id.in_(legacy_job_ids))
     references_statement = references_statement.where(ScheduleVersion.id.not_in(selected_ids))
     external_job_reference = session.scalar(references_statement)
 
@@ -100,7 +101,7 @@ def preview_draft_cleanup(selection: DraftCleanupSelection, session: Session) ->
         violation_count=count_rows(ConstraintViolation),
         fairness_event_count=count_rows(ProviderFairnessEvent),
         fairness_snapshot_count=count_rows(ProviderFairnessSnapshot),
-        job_count=len(jobs),
+        job_count=sum(job.solver_snapshot is None for job in jobs),
     )
     return preview
 
@@ -130,6 +131,7 @@ def apply_draft_cleanup(selection: DraftCleanupSelection, session: Session) -> D
     job_statement = delete(ScheduleJob)
     job_statement = job_statement.where(ScheduleJob.organization_id == selection.organization_id)
     job_statement = job_statement.where(ScheduleJob.id.in_(job_ids))
+    job_statement = job_statement.where(ScheduleJob.solver_snapshot.is_(None))
     session.execute(job_statement)
     session.flush()
     return preview

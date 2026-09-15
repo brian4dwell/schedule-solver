@@ -1,5 +1,6 @@
 import { scheduleAssignmentSavePayloadSchema, providerSlotEligibilityPayloadSchema } from "@/lib/schemas/schedule";
 import { z } from "zod";
+import { solverRunSchema, solverSettingsSchema, solverSettingsWriteSchema, solverWeightsSchema, type SolverWeights } from "@/lib/schemas/solver-controls";
 
 import { centerSchema, type CenterFormValues } from "@/lib/schemas/center";
 import { nextPublicApiBaseUrl } from "@/lib/env";
@@ -180,8 +181,10 @@ export type ScheduleDraftSavePayload = {
 export type ScheduleGeneratePayload = {
   parent_schedule_version_id: string | null;
   notes: string | null;
-  assignments: ScheduleAssignmentSavePayload[];
+  assignments?: ScheduleAssignmentSavePayload[];
   generation_mode: "strict" | "best_effort";
+  solver_weights?: SolverWeights;
+  replay_of_run_id?: string;
 };
 
 export type ProviderSlotEligibilityPayload = z.infer<typeof providerSlotEligibilityPayloadSchema>;
@@ -859,11 +862,14 @@ export async function generateScheduleVersion(
   periodId: string,
   payload: ScheduleGeneratePayload,
 ): Promise<ScheduleGenerateResponse> {
-  const assignments = payload.assignments.map((assignment) => {
+  const assignments = payload.assignments?.map((assignment) => {
     const parsedAssignment = scheduleAssignmentSavePayloadSchema.parse(assignment);
     return parsedAssignment;
   });
-  const validatedPayload = { ...payload, assignments };
+  const solverWeights = payload.solver_weights === undefined
+    ? undefined
+    : solverWeightsSchema.parse(payload.solver_weights);
+  const validatedPayload = { ...payload, assignments, solver_weights: solverWeights };
   const init = jsonRequestInit("POST", validatedPayload);
   const responseJson = await requestJson<unknown>(
     `/schedule-periods/${periodId}/generate`,
@@ -871,6 +877,24 @@ export async function generateScheduleVersion(
   );
   const response = scheduleGenerateResponseApiSchema.parse(responseJson);
   return response;
+}
+
+export async function getSolverSettings() {
+  const response = await requestJson<unknown>("/solver-settings", { cache: "no-store" });
+  return solverSettingsSchema.parse(response);
+}
+
+export async function saveSolverSettings(weights: SolverWeights, revision: number) {
+  const payload = solverSettingsWriteSchema.parse({ weights, expected_revision: revision });
+  const init = jsonRequestInit("PUT", payload);
+  const response = await requestJson<unknown>("/solver-settings", init);
+  return solverSettingsSchema.parse(response);
+}
+
+export async function getSolverRuns(periodId: string, offset = 0) {
+  const path = `/schedule-periods/${periodId}/solver-runs?offset=${offset}&limit=50`;
+  const response = await requestJson<unknown>(path, { cache: "no-store" });
+  return z.array(solverRunSchema).parse(response);
 }
 
 export async function publishScheduleVersion(

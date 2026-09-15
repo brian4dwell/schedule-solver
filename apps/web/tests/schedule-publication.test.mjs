@@ -21,6 +21,11 @@ const versionId = "00000000-0000-4000-8000-000000000007";
 const nextVersionId = "00000000-0000-4000-8000-000000000008";
 const timestamp = "2026-09-13T12:00:00Z";
 const scheduleSchemas = loadTsModule("lib/schemas/schedule.ts");
+const solverBaseline = {
+  center_weight: 4, shift_type_weight: 6, manager_hidden_weight: 5,
+  below_minimum_weight: 10, above_maximum_weight: 15, balance_weight: 3,
+  fairness_weight: 10, unfilled_weight: 100000,
+};
 
 function versionDetail(shiftType = "full_shift") {
   return scheduleSchemas.scheduleVersionDetailApiSchema.parse({
@@ -85,6 +90,8 @@ async function setup(context, { detail = versionDetail(), availabilityOption = "
       ...detail,
       version: { ...detail.version, id: nextVersionId, version_number: 2, notes: payload.notes },
     })),
+    getSolverSettings: mock.fn(async () => ({ weights: solverBaseline, baseline: solverBaseline, revision: 1 })),
+    getSolverRuns: mock.fn(async () => []),
     ...apiOverrides,
   };
   const toast = { showToast: mock.fn(() => "toast-id"), dismissToast: mock.fn() };
@@ -103,6 +110,8 @@ async function setup(context, { detail = versionDetail(), availabilityOption = "
     ["next/navigation", { useRouter: () => router }],
     ["next/link", (props) => createElement("a", props)],
   ]);
+  const tuningPanel = loadTsModule("components/schedules/solver-tuning-panel.tsx", overrides);
+  overrides.set("@/components/schedules/solver-tuning-panel", tuningPanel);
   const { ScheduleWorkspace } = loadTsModule("components/schedules/schedule-workspace.tsx", overrides);
   const props = {
     initialVersionDetail: detail,
@@ -224,6 +233,11 @@ for (const operation of ["save", "generate"]) {
     assert.equal(button(container, "Publish saved draft").disabled, false);
     const action = operation === "save" ? "Save draft" : "Solve - Strict";
     await click(button(container, action));
+    if (operation === "generate") {
+      const payload = api.generateScheduleVersion.mock.calls[0].arguments[1];
+      assert.deepEqual(payload.solver_weights, solverBaseline);
+      assert.ok(Array.isArray(payload.assignments));
+    }
     assert.equal(button(container, "Publish saved draft").disabled, true);
     await click(button(container, "Publish saved draft"));
     assert.equal(api.publishScheduleVersion.mock.callCount(), 0);

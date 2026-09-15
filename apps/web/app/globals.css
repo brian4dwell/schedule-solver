@@ -22,6 +22,115 @@ body {
   display: none;
 }
 
+.future-availability-all-providers {
+  display: none;
+}
+
+@page provider-future-availability {
+  size: portrait;
+  margin: 0.5in;
+}
+
+@media print {
+  .future-availability-all-providers {
+    display: block;
+  }
+
+  .future-availability-report:has(.future-availability-all-providers) .future-availability-single-provider {
+    display: none;
+  }
+
+  .future-availability-all-providers > .future-availability-provider + .future-availability-provider {
+    break-before: page;
+  }
+
+  .future-availability-provider > header {
+    break-after: avoid;
+  }
+
+  body:has(.future-availability-report),
+  body:has(.future-availability-report) .min-h-screen {
+    background: white !important;
+    min-height: 0 !important;
+  }
+
+  body:has(.future-availability-report) .min-h-screen > header,
+  .future-availability-screen-only {
+    display: none !important;
+  }
+
+  body:has(.future-availability-report) main {
+    page: provider-future-availability;
+    padding: 0 !important;
+  }
+
+  .future-availability-report,
+  .future-availability-report * {
+    color: black !important;
+    font-size: 10pt;
+    overflow-wrap: anywhere;
+  }
+
+  .future-availability-report h2 {
+    font-size: 13pt;
+  }
+
+  .future-availability-report header,
+  .future-availability-week {
+    break-inside: avoid;
+  }
+
+  .future-availability-week {
+    margin-top: 0.15in;
+    padding: 0.12in;
+    border-color: #a3a3a3;
+  }
+
+  .future-availability-week-details {
+    display: block;
+    margin-top: 0.1in;
+  }
+
+  .future-availability-week .overflow-x-auto {
+    overflow: visible;
+  }
+
+  .future-availability-week thead {
+    display: table-header-group;
+  }
+
+  .future-availability-week table {
+    table-layout: fixed;
+  }
+
+  .future-availability-week th:last-child {
+    width: 50%;
+  }
+
+  .future-availability-week tr {
+    break-inside: avoid;
+  }
+
+  .future-availability-week th,
+  .future-availability-week td {
+    padding-top: 0.03in;
+    padding-bottom: 0.03in;
+    border-color: #d4d4d4;
+  }
+
+  .future-availability-notes {
+    background: white;
+    margin-top: 0.1in;
+    padding: 0;
+    orphans: 3;
+    widows: 3;
+  }
+
+  .future-availability-notes h4 {
+    break-after: avoid;
+  }
+}
+
 @page shift-backup-list {
   size: portrait;
   margin: 0.5in;

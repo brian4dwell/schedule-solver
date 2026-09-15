@@ -1,11 +1,28 @@
 # Solver Controls
 
-Status: Planned; not implemented.
+Status: Initial tuning release implemented; migration required before use.
 Created: 2026-09-14.
+Updated: 2026-09-14.
+
+## Implementation decisions
+
+- The schedule workspace includes a collapsible tuning panel with sliders, numeric inputs, per-factor explanations, resets, run history, and original outcome breakdowns.
+- Seven integer weights accept values from zero through twice their application baseline, in steps of one. Zero disables scoring influence while raw outcomes remain measurable. Coverage stays fixed at 100,000; strict and best-effort coverage behavior is preserved. These bounds are an initial conservative range, not a guarantee of coverage dominance.
+- Organization defaults are stored on `Organization`, with a revision check to reject conflicting saves. New organizations receive explicit application defaults. Each accepted run captures its resolved weights independently.
+- Existing `ScheduleJob` records hold versioned, typed JSON snapshots of settings, inputs, runtime, solver results, and outcomes. Configuration and captured inputs are saved before solving; the final result and generated draft are committed together. Handled execution failures retain the attempt record.
+- Settings and run APIs use the existing admin authorization boundary. The initiating authentication subject is recorded without creating a separate local User record.
+- Preference outcomes count positive, negative, neutral, and missing preferences per assigned slot. The positive-preference denominator includes assignments with a specified preference, including neutral and negative values. Missing preferences are shown separately.
+- Runtime compatibility includes a hash of scheduling source and the settings contract, the OR-Tools version, time limit, worker setting, and seed. Replay requires the same runtime and generation mode, and reuses captured inputs. Current eligibility is checked again at publication.
+- History loads 50 runs at a time. Comparisons use earlier loaded runs only when input fingerprints, generation modes, and runtimes match. Score contributions account for Provider-level fairness rounding.
+- Manual descendants retain the original job reference and show original solver measurements as such. Draft cleanup retains recorded run snapshots. Deleting an entire Schedule Period retains the application's existing full-period deletion behavior, including its jobs.
+- Historical records without snapshots are not backfilled with guessed settings. A process terminated before completion can leave a run marked running; automatic abandoned-run reconciliation is not part of this release.
+- Apply Alembic revision `202609140003` before running the updated application. PostgreSQL migration tests require `SCHEDULE_TEST_POSTGRES_URL` pointing to an isolated test server.
+
+The sections below retain the feature design and acceptance criteria. Named profiles, multi-alternative selection, and sensitivity analysis remain future work.
 
 ## Problem and intended outcome
 
-Solver weights are currently defined in code, making scheduling tradeoffs difficult to inspect or tune. Generated Schedule Versions retain a total solver score, but do not retain the exact weights used to produce them.
+Previously, solver weights were defined only in code, making scheduling tradeoffs difficult to inspect or tune. Generated Schedule Versions retained a total solver score without the exact weights used to produce them.
 
 Add a Solver tuning panel that lets schedulers adjust weights, generate a draft, and understand the resulting schedule. Start with occasional tuning and experimentation so users develop a feel for how the weights matter. Preserve a path to generating several alternatives and choosing between them later.
 
@@ -13,7 +30,7 @@ The core workflow is **adjust → generate → inspect what changed**.
 
 ## Current factors
 
-The current coefficients are defined in `apps/api/app/services/scheduling/solver.py` and `solver_contracts.py`.
+The application baseline coefficients are consolidated in `apps/api/app/schemas/solver_settings.py` and passed to `solver.py` through the typed solver input.
 
 | Group | Factor | Current coefficient | Effect of increasing it |
 | --- | --- | ---: | --- |
@@ -155,12 +172,12 @@ Run focused backend checks through `uv run pytest`. Validate frontend changes wi
 - Selecting a preferred alternative through the existing draft review workflow.
 - Visual sensitivity analysis showing how outcomes respond to weight changes.
 
-## Decisions to resolve during implementation
+## Follow-up decisions
 
-- Allowed ranges and slider steps for each factor.
-- Coverage priority and its interaction with supported tuning ranges.
-- Exact preference outcome definitions and display language for historical fairness.
-- Permissions for changing organization defaults and inspecting run diagnostics.
-- Snapshot retention and replay compatibility across solver versions.
+- Recalibrate the initial bounded weight ranges using real tuning experience.
+- Decide whether best-effort coverage should become an explicit first-stage objective.
+- Establish a retention policy beyond the current Schedule Period lifetime.
+- Add compatibility handling if historical snapshots must replay across future solver versions.
+- Decide whether abandoned-run reconciliation is needed before introducing background execution.
 
 These decisions should support the initial tuning workflow without expanding the first release into a full alternatives-management interface.

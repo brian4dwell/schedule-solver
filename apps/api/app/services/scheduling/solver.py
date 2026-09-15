@@ -19,7 +19,7 @@ from app.services.scheduling.solver_contracts import SolverAssignment
 from app.services.scheduling.solver_contracts import SolverCenterCredential
 from app.services.scheduling.solver_contracts import SolverGenerationMode
 from app.services.scheduling.solver_contracts import SolverInput
-from app.services.scheduling.solver_contracts import SolverPreferenceWeights
+from app.schemas.solver_settings import SolverWeights
 from app.services.scheduling.solver_contracts import SolverProvider
 from app.services.scheduling.solver_contracts import SolverProviderRoomTypeSkill
 from app.services.scheduling.solver_contracts import SolverResult
@@ -29,12 +29,7 @@ from app.services.scheduling.solver_contracts import SolverViolation
 from app.services.scheduling.time_ranges import ranges_overlap
 from app.services.scheduling.time_ranges import split_day_pair_is_allowed
 
-BELOW_MIN_SHIFT_REQUEST_UNIT_PENALTY = 10
-ABOVE_MAX_SHIFT_REQUEST_UNIT_PENALTY = 15
-ASSIGNMENT_IMBALANCE_PENALTY = 3
-FAIRNESS_PRESSURE_SCALE = 10
 MAX_SOLVE_SECONDS = 30.0
-UNFILLED_SHIFT_ASSIGNMENT_PENALTY = 100_000
 SPLIT_DAY_SHIFT_TYPES = {
     "first_half",
     "second_half",
@@ -920,7 +915,7 @@ def add_shift_request_objective_terms(
             shortfall = model.NewIntVar(0, min_shifts_requested_units, shortfall_name)
             minimum_difference = min_shifts_requested_units - assignment_total
             model.Add(shortfall >= minimum_difference)
-            objective_term = shortfall * -BELOW_MIN_SHIFT_REQUEST_UNIT_PENALTY
+            objective_term = shortfall * -solver_input.preference_weights.below_minimum_weight
             objective_terms.append(objective_term)
 
         if max_shifts_requested_units >= 0:
@@ -928,7 +923,7 @@ def add_shift_request_objective_terms(
             excess = model.NewIntVar(0, assignment_total_upper_bound, excess_name)
             maximum_difference = assignment_total - max_shifts_requested_units
             model.Add(excess >= maximum_difference)
-            objective_term = excess * -ABOVE_MAX_SHIFT_REQUEST_UNIT_PENALTY
+            objective_term = excess * -solver_input.preference_weights.above_maximum_weight
             objective_terms.append(objective_term)
 
 
@@ -953,7 +948,7 @@ def add_assignment_balance_objective_terms(
             first_variable = first_total.variable
             second_variable = second_total.variable
             model.AddAbsEquality(difference, first_variable - second_variable)
-            objective_term = difference * -ASSIGNMENT_IMBALANCE_PENALTY
+            objective_term = difference * -solver_input.preference_weights.balance_weight
             objective_terms.append(objective_term)
 
 
@@ -975,7 +970,8 @@ def add_fairness_objective_terms(
         provider = provider_assignment_total.provider
         assignment_total = provider_assignment_total.variable
         fairness_pressure = fairness_pressure_for_provider(provider)
-        fairness_penalty = int(round(fairness_pressure * FAIRNESS_PRESSURE_SCALE))
+        scaled_pressure = fairness_pressure * solver_input.preference_weights.fairness_weight
+        fairness_penalty = int(round(scaled_pressure))
         objective_term = assignment_total * -fairness_penalty
         objective_terms.append(objective_term)
 
@@ -1030,7 +1026,7 @@ def manager_center_preference_level(
 
 def candidate_preference_score(
     candidate: SolverCandidate,
-    weights: SolverPreferenceWeights,
+    weights: SolverWeights,
 ) -> CandidatePreferenceScore:
     provider = candidate.provider
     shift_requirement = candidate.shift_requirement
@@ -1069,9 +1065,10 @@ def add_preference_objective_terms(
 def add_unfilled_shift_objective_terms(
     unfilled_counts: list[ShiftUnfilledCount],
     objective_terms: list[cp_model.LinearExpr],
+    weights: SolverWeights,
 ) -> None:
     for unfilled_count in unfilled_counts:
-        objective_term = unfilled_count.variable * -UNFILLED_SHIFT_ASSIGNMENT_PENALTY
+        objective_term = unfilled_count.variable * -weights.unfilled_weight
         objective_terms.append(objective_term)
 
 
@@ -1113,6 +1110,7 @@ def add_objective(
     add_unfilled_shift_objective_terms(
         active_unfilled_counts,
         objective_terms,
+        solver_input.preference_weights,
     )
 
     model.Maximize(sum(objective_terms))
@@ -1650,7 +1648,16 @@ def solve_schedule(
             generation_mode,
             candidate_violations,
         )
+        result.solver_status = "optimal" if solved_optimally else "feasible"
         return result
 
     result = infeasible_solver_result(candidate_violations)
+    if status == cp_model.UNKNOWN:
+        result.solver_status = "unknown"
+        result.violations[-1].constraint_type = "solver_time_limit"
+        result.violations[-1].message = "Solver reached its time limit without finding a solution; infeasibility was not proven."
+    if status == cp_model.MODEL_INVALID:
+        result.solver_status = "model_invalid"
+        result.violations[-1].constraint_type = "invalid_solver_model"
+        result.violations[-1].message = "Solver rejected the scheduling model."
     return result

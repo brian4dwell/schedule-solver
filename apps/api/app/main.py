@@ -12,6 +12,7 @@ from app.routers.provider_availability import router as provider_availability_ro
 from app.routers.reports import router as reports_router
 from app.routers.rooms import router as rooms_router
 from app.routers.schedules import router as schedules_router
+from app.routers.solver_controls import router as solver_controls_router
 
 app = FastAPI(title="Schedule Solver API")
 
@@ -34,3 +35,4 @@ app.include_router(providers_router)
 app.include_router(provider_availability_router)
 app.include_router(reports_router)
 app.include_router(schedules_router)
+app.include_router(solver_controls_router)

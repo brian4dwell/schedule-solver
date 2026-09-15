@@ -6,6 +6,8 @@ from pydantic import AwareDatetime
 from pydantic import BaseModel
 from pydantic import Field
 
+from app.schemas.solver_settings import SolverWeights
+
 SolverGenerationMode = Literal["strict", "best_effort"]
 
 
@@ -76,10 +78,8 @@ class SolverManagerCenterPreference(BaseModel):
     preference_level: int = Field(ge=-5, le=5)
 
 
-class SolverPreferenceWeights(BaseModel):
-    center_weight: int = 4
-    shift_type_weight: int = 6
-    manager_hidden_weight: int = 5
+class SolverPreferenceWeights(SolverWeights):
+    pass
 
 
 class SolverProvider(BaseModel):
@@ -112,7 +112,7 @@ class SolverInput(BaseModel):
     providers: list[SolverProvider] = Field(default_factory=list)
     center_credentials: list[SolverCenterCredential] = Field(default_factory=list)
     shift_requirements: list[SolverShiftRequirement] = Field(default_factory=list)
-    preference_weights: SolverPreferenceWeights = Field(default_factory=SolverPreferenceWeights)
+    preference_weights: SolverWeights = Field(default_factory=SolverWeights)
 
 
 class SolverAssignment(BaseModel):
@@ -139,6 +139,7 @@ class SolverResult(BaseModel):
     violations: list[SolverViolation] = Field(default_factory=list)
     solver_score: float | None
     is_feasible: bool
+    solver_status: Literal["optimal", "feasible", "infeasible", "unknown", "model_invalid"] = "infeasible"
 
 
 class SolverRunMetrics(BaseModel):

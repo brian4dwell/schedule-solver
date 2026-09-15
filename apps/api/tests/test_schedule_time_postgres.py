@@ -91,6 +91,8 @@ def postgres_engine():
 def postgres_connection(postgres_engine):
     with postgres_engine.connect() as connection:
         transaction = connection.begin()
+        # Keep current ORM configuration columns available while testing legacy slot clocks.
+        migrate_controls(connection, "upgrade")
         yield connection
         transaction.rollback()
 
@@ -104,6 +106,32 @@ def migrate(connection, direction: str) -> None:
     with Operations.context(context):
         operation = getattr(module, direction)
         operation()
+
+
+def migrate_controls(connection, direction: str) -> None:
+    migration_path = API_ROOT / "alembic/versions/202609140003_solver_controls.py"
+    spec = importlib.util.spec_from_file_location("solver_controls_migration", migration_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    context = MigrationContext.configure(connection)
+    with Operations.context(context):
+        operation = getattr(module, direction)
+        operation()
+
+
+def test_solver_controls_migration_backfills_existing_organizations(postgres_connection) -> None:
+    connection = postgres_connection
+    migrate_controls(connection, "downgrade")
+    organization_id = uuid4()
+    statement = text("INSERT INTO organizations (id, name, created_at, updated_at) VALUES (:id, 'Existing organization', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)")
+    connection.execute(statement, {"id": organization_id})
+    migrate_controls(connection, "upgrade")
+    row = connection.execute(text("SELECT solver_weights, solver_weights_revision FROM organizations WHERE id = :id"), {"id": organization_id}).one()
+    assert row.solver_weights["center_weight"] == 4
+    assert row.solver_weights["unfilled_weight"] == 100000
+    assert row.solver_weights_revision == 1
+    migrate_controls(connection, "downgrade")
+    assert connection.execute(text("SELECT name FROM organizations WHERE id = :id"), {"id": organization_id}).scalar_one() == "Existing organization"
 
 
 @dataclass(frozen=True)

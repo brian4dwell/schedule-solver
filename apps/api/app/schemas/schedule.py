@@ -7,6 +7,7 @@ from pydantic import ConfigDict
 from pydantic import Field
 
 from app.schemas.common import TimestampedSchema
+from app.schemas.solver_settings import SolverWeights
 from app.schemas.schedule_time import ClockRange
 from app.schemas.schedule_time import ScheduleDate
 from app.schemas.schedule_time import ScheduleTimeRange
@@ -69,6 +70,8 @@ class ScheduleGenerateRequest(BaseModel):
     notes: str | None = None
     assignments: list[ScheduleAssignmentCreate] | None = None
     generation_mode: SolverGenerationMode = "strict"
+    solver_weights: SolverWeights | None = None
+    replay_of_run_id: UUID | None = None
 
 
 class SchedulePeriodCreate(BaseModel):

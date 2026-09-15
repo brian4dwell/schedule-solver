@@ -14,6 +14,7 @@ from sqlalchemy import update as sqlalchemy_update
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.core.auth import AuthenticatedUser
 from app.core.config import get_settings
 from app.db.models import Assignment
 from app.db.models import Center
@@ -932,10 +933,14 @@ def save_schedule_version(
         session,
     )
     validate_assignment_times(requested_assignments, schedule_period, organization_id, session)
+    source_job_id = None
+    if request.parent_schedule_version_id is not None:
+        parent_version = require_schedule_version(request.parent_schedule_version_id, organization_id, session)
+        source_job_id = parent_version.schedule_job_id
     schedule_version = ScheduleVersion(
         organization_id=organization_id,
         schedule_period_id=request.schedule_period_id,
-        schedule_job_id=None,
+        schedule_job_id=source_job_id,
         version_number=version_number,
         status="draft",
         source=source,
@@ -1393,11 +1398,23 @@ def list_schedule_versions(
     response_model=ScheduleGenerateResponse,
     status_code=201,
 )
+def generate_schedule_period_route(
+    period_id: UUID,
+    request: ScheduleGenerateRequest | None = None,
+    session: Session = Depends(get_db),
+    organization_id: UUID = Depends(get_current_organization_id),
+    current_user: AuthenticatedUser = Depends(require_admin_user),
+) -> ScheduleGenerateResponse:
+    response = generate_schedule_period(period_id, request, session, organization_id, current_user.user_id)
+    return response
+
+
 def generate_schedule_period(
     period_id: UUID,
     request: ScheduleGenerateRequest | None = None,
     session: Session = Depends(get_db),
     organization_id: UUID = Depends(get_current_organization_id),
+    requested_by_subject: str | None = None,
 ) -> ScheduleGenerateResponse:
     generate_request = request
 
@@ -1405,6 +1422,8 @@ def generate_schedule_period(
         generate_request = ScheduleGenerateRequest()
 
     schedule_period = require_schedule_period(period_id, organization_id, session)
+    if generate_request.replay_of_run_id is not None and generate_request.assignments is not None:
+        raise HTTPException(status_code=400, detail="Replay uses captured inputs; omit current assignments")
     validate_parent_version(
         generate_request.parent_schedule_version_id,
         period_id,
@@ -1434,6 +1453,9 @@ def generate_schedule_period(
             session,
             requested_assignments,
             generate_request.generation_mode,
+            generate_request.solver_weights,
+            generate_request.replay_of_run_id,
+            requested_by_subject,
         )
     except ScheduleTimeError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error

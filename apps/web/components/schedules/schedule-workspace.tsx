@@ -52,6 +52,8 @@ import {
   trackSchedulePublished,
 } from "@/lib/logrocket";
 import { useToast } from "@/components/ui/toast-provider";
+import { SolverTuningPanel } from "@/components/schedules/solver-tuning-panel";
+import type { SolverRun, SolverWeights } from "@/lib/schemas/solver-controls";
 
 type RoomRow = {
   room: Room;
@@ -1562,6 +1564,9 @@ export function ScheduleWorkspace({
   const router = useRouter();
   const scheduleOperationRef = useRef(false);
   const [isScheduleBusy, setIsScheduleBusy] = useState(false);
+  const [solverWeights, setSolverWeights] = useState<SolverWeights | null>(null);
+  const [solverReplay, setSolverReplay] = useState<SolverRun | null>(null);
+  const [solverHistoryRefresh, setSolverHistoryRefresh] = useState(0);
   const pendingNavigationToastId = useRef<string | null>(null);
   const saveWorkingDraftRef = useRef<() => Promise<boolean>>(async () => {
     return false;
@@ -2130,13 +2135,24 @@ export function ScheduleWorkspace({
   });
 
   async function performGenerateSchedule(generationMode: "strict" | "best_effort") {
+    if (solverWeights === null) {
+      showToast({ title: "Check solver tuning", description: "Load valid solver settings before generating.", tone: "error" });
+      return;
+    }
     const parentVersionId =
-      savedVersionDetail === null ? null : savedVersionDetail.version.id;
+      solverReplay === null
+        ? savedVersionDetail?.version.id ?? null
+        : solverReplay.schedule_version_id;
+    const currentAssignments = solverReplay === null
+      ? savePayloadFromAssignments(workingVersion.assignments)
+      : undefined;
     const payload = {
       parent_schedule_version_id: parentVersionId,
       notes: scheduleNotesPayload(workingVersion.notes),
-      assignments: savePayloadFromAssignments(workingVersion.assignments),
+      assignments: currentAssignments,
       generation_mode: generationMode,
+      solver_weights: solverWeights,
+      replay_of_run_id: solverReplay?.id,
     };
     const generationTitle =
       generationMode === "strict" ? "Strict generation started" : "Best-effort generation started";
@@ -2172,7 +2188,7 @@ export function ScheduleWorkspace({
 
       const generatedVersion = versionFromDetail(schedulePeriod, detail);
       const nextVersion =
-        generationMode === "best_effort"
+        generationMode === "best_effort" && solverReplay === null
           ? versionWithPreservedBestEffortSlots(workingVersion, generatedVersion)
           : generatedVersion;
       const duration = detail.metrics.solve_duration_ms;
@@ -2224,6 +2240,7 @@ export function ScheduleWorkspace({
       });
     } finally {
       setIsGenerating(false);
+      setSolverHistoryRefresh((revision) => revision + 1);
     }
   }
 
@@ -3000,7 +3017,7 @@ export function ScheduleWorkspace({
               <button
                 type="button"
                 onClick={() => handleGenerateSchedule("strict")}
-                disabled={isGenerating}
+                disabled={isGenerating || solverWeights === null || (solverReplay !== null && solverReplay.generation_mode !== "strict")}
                 className="inline-flex h-9 items-center justify-center rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
               >
                 {isGenerating ? "Running solver" : "Solve - Strict"}
@@ -3008,7 +3025,7 @@ export function ScheduleWorkspace({
               <button
                 type="button"
                 onClick={() => handleGenerateSchedule("best_effort")}
-                disabled={isGenerating}
+                disabled={isGenerating || solverWeights === null || (solverReplay !== null && solverReplay.generation_mode !== "best_effort")}
                 className="inline-flex h-9 items-center justify-center rounded-md border border-teal-300 px-3 text-sm font-semibold text-teal-800 hover:bg-teal-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
               >
                 {isGenerating ? "Running solver" : "Solve - Best Effort"}
@@ -3053,6 +3070,18 @@ export function ScheduleWorkspace({
             ) : null}
           </div>
         </div>
+        <SolverTuningPanel
+          key={scheduleId}
+          periodId={scheduleId}
+          activeJobId={savedVersionDetail?.version.schedule_job_id ?? null}
+          hasSavedVersion={savedVersionDetail !== null}
+          refreshKey={solverHistoryRefresh}
+          busy={isScheduleBusy}
+          weights={solverWeights}
+          replay={solverReplay}
+          onWeightsChange={setSolverWeights}
+          onReplayChange={setSolverReplay}
+        />
         <div className="mt-4 border-t border-slate-200 pt-4">
           <h4 className="text-sm font-semibold text-slate-950">
             Schedule templates

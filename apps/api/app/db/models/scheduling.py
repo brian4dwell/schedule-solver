@@ -10,6 +10,7 @@ from sqlalchemy import Date
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
 from sqlalchemy import Integer
+from sqlalchemy import Index
 from sqlalchemy import Numeric
 from sqlalchemy import String
 from sqlalchemy import Text
@@ -22,6 +23,8 @@ from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import registry
 from sqlalchemy.orm import relationship
+
+from app.schemas.solver_settings import baseline_solver_weights_json
 
 mapper_registry = registry()
 
@@ -56,6 +59,8 @@ class Organization(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
     clerk_org_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    solver_weights: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=baseline_solver_weights_json)
+    solver_weights_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class User(Base, TimestampMixin):
@@ -462,6 +467,7 @@ class ScheduleStructureTemplateSlot(Base, TimestampMixin):
 
 class ScheduleJob(Base, TimestampMixin):
     __tablename__ = "schedule_jobs"
+    __table_args__ = (Index("ix_schedule_jobs_organization_period_created", "organization_id", "schedule_period_id", "created_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
@@ -471,6 +477,8 @@ class ScheduleJob(Base, TimestampMixin):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_by_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    solver_snapshot: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
 
 class ScheduleVersion(Base, TimestampMixin):

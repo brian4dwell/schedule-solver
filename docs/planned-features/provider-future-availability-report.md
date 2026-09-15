@@ -10,7 +10,9 @@ The report is available at `/reports/provider-future-availability` under the adm
 - `GET /reports/provider-future-availability/providers` supplies the searchable selector, including inactive Providers and all employment types.
 - `GET /reports/provider-future-availability?provider_id=<uuid>` returns the selected Provider, cutoff date, timezone, and every matching week.
 
-`SCHEDULING_TIMEZONE` defines today on the API and defaults to `America/New_York`. Configuration rejects invalid IANA timezones. The report displays date-only values directly, preserving dates across browser timezones. The first release is on-screen only.
+`SCHEDULING_TIMEZONE` defines today on the API and defaults to `America/New_York`. Configuration rejects invalid IANA timezones. The report displays date-only values directly, preserving dates across browser timezones. Unset daily availability displays as a blank cell; submission and completion status remain at the week level. Print / Save as PDF opens browser printing with a portrait layout, hides navigation and controls, and includes Provider details, dates, requests, and complete multiline notes.
+
+PDF for All Providers loads fresh reports for every Provider in the selector, including inactive Providers and Providers hidden by the current search. It works without selecting a Provider and opens one browser print dialog to save the combined report as a PDF, with each Provider starting on a new page. Requests run in batches of five. Any failed request stops printing and displays an app-wide error toast; retry reloads all reports. Closing the print dialog restores the selected Provider's print view.
 
 Periods, day rows, and independent weekly notes are loaded in one outer-joined query so they share a database read snapshot. Shared weekly projection and completion rules supply day defaults and full-week completion; each dated row also identifies whether it was saved. Provider selection stays in the URL. Switching Providers discards previous requests; refresh clears old results and request failures use the app-wide toast system.
 
@@ -28,7 +30,7 @@ Example: Selecting a Provider shows their availability for the remaining days of
 - Provide a searchable, single-Provider selector. Identify the selected Provider clearly in the report header.
 - Show all future Schedule Periods for that Provider, in chronological order, without a required month selection or a hidden date horizon.
 - Group results by schedule week. Show the week name, date range, draft/published status, and availability completion status using existing completion rules.
-- Within each week, show each included date, weekday, and saved availability options: full shift, first half, second half, short shift, none, or unset. Preserve multiple selected work options.
+- Within each week, show each included date, weekday, and saved availability options: full shift, first half, second half, short shift, or none. Leave unset availability blank. Preserve multiple selected work options.
 - Show the minimum and maximum requested shifts, including half-shift values, once per week. Label these as requests for the entire week, even when only its remaining dates are shown.
 - Show "Notes for this week" once per week, beside the availability it describes. Preserve line breaks, wrap long text, and render markup-like content as plain text.
 - Show a clear "No notes for this week" state when the note is null.
@@ -72,7 +74,7 @@ Derive today using `SCHEDULING_TIMEZONE`. Return the effective cutoff date and t
 - Today is included, past daily rows are excluded, and the current week's note and full-week requested counts remain correctly labeled.
 - Two weeks retain their own notes; two Providers in the same week never share or overwrite report content.
 - Draft and published weeks both appear, with published notes visible and all report content read-only.
-- Missing submissions, explicit `none`, and `unset` remain distinguishable according to existing rules. Notes do not change availability completion or eligibility.
+- Explicit `none` displays as None, while `unset` displays as a blank cell. Missing submissions remain labeled at the week level. Notes do not change availability completion or eligibility.
 - A week with notes but no day rows still displays its note. Cleared notes display the empty-note state after refresh.
 - Multiline, 2,000-character, and markup-like notes remain readable and render safely as plain text.
 - Half-shift requested counts and multiple daily availability options survive report projection unchanged.
@@ -85,7 +87,7 @@ Derive today using `SCHEDULING_TIMEZONE`. Return the effective cutoff date and t
 
 - The selector includes all Providers regardless of employment type or active status.
 - The API's configurable scheduling timezone defines today, defaulting to `America/New_York`. Date scope is today onward, including the remaining days of the current week.
-- Printing and CSV/PDF export are outside the first release. Preserve complete multiline notes if export is added later.
+- Browser printing and Save as PDF use a portrait layout with complete multiline notes and week sections kept together when they fit on a page. CSV export remains out of scope.
 
 ## Out of scope
 
