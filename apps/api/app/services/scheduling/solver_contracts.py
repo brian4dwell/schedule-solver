@@ -73,7 +73,7 @@ class SolverProviderShiftTypePreference(BaseModel):
 
 class SolverManagerCenterPreference(BaseModel):
     center_id: UUID
-    preference_level: int = Field(ge=-3, le=3)
+    preference_level: int = Field(ge=-5, le=5)
 
 
 class SolverPreferenceWeights(BaseModel):

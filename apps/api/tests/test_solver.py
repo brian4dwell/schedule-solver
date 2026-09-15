@@ -4,6 +4,8 @@ from datetime import datetime
 from uuid import UUID
 from uuid import uuid4
 
+import pytest
+
 from app.db.models import Center
 from app.db.models import Room
 from app.schemas.schedule import ScheduleAssignmentCreate
@@ -907,7 +909,8 @@ def test_solver_allows_fairness_pressure_to_outweigh_preference() -> None:
     assert result.assignments[0].provider_id == neutral_low_debt_provider.id
 
 
-def test_solver_uses_manager_hidden_center_preference() -> None:
+@pytest.mark.parametrize("lower_level", range(-5, 5))
+def test_solver_uses_each_manager_hidden_center_preference_step(lower_level: int) -> None:
     organization_id = uuid4()
     schedule_period_id = uuid4()
     center_id = uuid4()
@@ -917,9 +920,14 @@ def test_solver_uses_manager_hidden_center_preference() -> None:
     neutral_provider = create_provider(center_id, room_type_id)
     manager_preference = SolverManagerCenterPreference(
         center_id=center_id,
-        preference_level=3,
+        preference_level=lower_level + 1,
     )
     preferred_provider.manager_center_preferences = [manager_preference]
+    lower_preference = SolverManagerCenterPreference(
+        center_id=center_id,
+        preference_level=lower_level,
+    )
+    neutral_provider.manager_center_preferences = [lower_preference]
     preferred_credential = create_credential(preferred_provider.id, center_id)
     neutral_credential = create_credential(neutral_provider.id, center_id)
     shift = create_shift(center_id, room.id, 7, 15)

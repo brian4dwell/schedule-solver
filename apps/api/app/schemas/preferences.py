@@ -22,6 +22,7 @@ class ProviderShiftTypePreferenceUpsert(PreferenceInput):
 
 
 class ManagerProviderCenterPreferenceUpsert(PreferenceInput):
+    preference_level: int = Field(ge=-5, le=5)
     center_id: UUID
     manager_note: str | None = None
 
@@ -47,7 +48,7 @@ class ProviderShiftTypePreferenceRead(TimestampedSchema):
 class ManagerProviderCenterPreferenceRead(TimestampedSchema):
     provider_id: UUID
     center_id: UUID
-    preference_level: int
+    preference_level: int = Field(ge=-5, le=5)
     is_active: bool
     manager_note: str | None
 

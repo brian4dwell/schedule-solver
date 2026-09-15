@@ -297,7 +297,13 @@ class ProviderShiftTypePreference(Base, TimestampMixin):
 
 class ManagerProviderCenterPreference(Base, TimestampMixin):
     __tablename__ = "manager_provider_center_preferences"
-    __table_args__ = (UniqueConstraint("organization_id", "provider_id", "center_id"),)
+    __table_args__ = (
+        UniqueConstraint("organization_id", "provider_id", "center_id"),
+        CheckConstraint(
+            "preference_level BETWEEN -5 AND 5",
+            name="ck_manager_center_preference_level",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)

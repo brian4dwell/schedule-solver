@@ -1,13 +1,17 @@
 from datetime import date
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import model_validator
 
 from app.schemas.provider_availability_week import ProviderAvailabilityDayRead
 
 from app.schemas.schedule_time import ScheduleTimeRange
+from app.schemas.schedule_time import WallClock
+from app.services.scheduling.provider_eligibility_contracts import ProviderEligibilityViolation
 
 
 class MonthlyScheduleAssignmentRead(ScheduleTimeRange):
@@ -104,3 +108,101 @@ class FutureAvailabilityWeekRead(BaseModel):
 class ProviderFutureAvailabilityReportRead(FutureAvailabilityCutoffRead):
     provider: ReportProviderRead
     weeks: list[FutureAvailabilityWeekRead]
+
+
+class BackupReportDateRange(BaseModel):
+    start_date: date
+    end_date: date
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> "BackupReportDateRange":
+        if self.end_date < self.start_date:
+            raise ValueError("End date must be on or after start date.")
+        return self
+
+
+class BackupReportRequest(BackupReportDateRange):
+    center_id: UUID | None
+    selected_version_ids: list[UUID]
+    excluded_period_ids: list[UUID]
+
+
+class BackupReportVersionRead(BaseModel):
+    id: UUID
+    version_number: int
+    status: str
+
+
+class BackupReportPeriodRead(BackupReportDateRange):
+    id: UUID
+    name: str
+    versions: list[BackupReportVersionRead]
+
+
+class BackupReportCenterRead(BaseModel):
+    id: UUID
+    name: str
+    timezone: str
+    is_active: bool
+
+
+class BackupReportOptionsRead(BackupReportDateRange):
+    context_start_date: date
+    context_end_date: date
+    periods: list[BackupReportPeriodRead]
+    centers: list[BackupReportCenterRead]
+
+
+class BackupReportSelectedVersionRead(BackupReportVersionRead):
+    schedule_period_id: UUID
+    period_name: str
+    start_date: date
+    end_date: date
+
+
+class BackupReportExcludedPeriodRead(BackupReportDateRange):
+    id: UUID
+    name: str
+
+
+class BackupReportShiftIdentityRead(BaseModel):
+    assignment_id: UUID
+    schedule_period_id: UUID
+    schedule_version_id: UUID
+    schedule_date: date
+    start_time: WallClock
+    end_time: WallClock
+    center_id: UUID
+    center_name: str | None
+    timezone: str | None
+    room_id: UUID | None
+    room_name: str | None
+    shift_type: str
+
+
+class BackupReportConflictRead(BaseModel):
+    shift: BackupReportShiftIdentityRead
+    violations: list[ProviderEligibilityViolation]
+
+
+class BackupReportCandidateRead(BaseModel):
+    provider_id: UUID
+    display_name: str
+    warnings: list[ProviderEligibilityViolation]
+    conflicts: list[BackupReportConflictRead]
+
+
+class BackupReportShiftRead(BackupReportShiftIdentityRead):
+    assigned_provider_id: UUID | None
+    assigned_provider_name: str | None
+    blockers: list[ProviderEligibilityViolation]
+    available_replacements: list[BackupReportCandidateRead]
+    qualified_but_scheduled: list[BackupReportCandidateRead]
+
+
+class ShiftBackupProviderReportRead(BackupReportDateRange):
+    generated_at: datetime
+    center: BackupReportCenterRead | None
+    selected_versions: list[BackupReportSelectedVersionRead]
+    excluded_periods: list[BackupReportExcludedPeriodRead]
+    shifts: list[BackupReportShiftRead]

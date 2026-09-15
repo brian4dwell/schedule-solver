@@ -1,4 +1,5 @@
 import { scheduleTimeRangeSchema } from "@/lib/schemas/schedule-time";
+import { wallClockSchema } from "@/lib/schemas/schedule-time";
 import { z } from "zod";
 import {
   providerWeeklyAvailabilityDaySchema,
@@ -142,3 +143,105 @@ export const providerFutureAvailabilityReportApiSchema = z.object({
 export type ReportProviderApi = z.infer<typeof reportProviderApiSchema>;
 export type FutureAvailabilityWeekApi = z.infer<typeof futureAvailabilityWeekApiSchema>;
 export type ProviderFutureAvailabilityReportApi = z.infer<typeof providerFutureAvailabilityReportApiSchema>;
+
+export const backupReportDateRangeSchema = z.object({
+  start_date: z.iso.date(),
+  end_date: z.iso.date(),
+}).refine((dates) => dates.end_date >= dates.start_date, {
+  message: "End date must be on or after start date.",
+  path: ["end_date"],
+});
+
+export const backupReportRequestSchema = backupReportDateRangeSchema.safeExtend({
+  center_id: z.string().uuid().nullable(),
+  selected_version_ids: z.array(z.string().uuid()),
+  excluded_period_ids: z.array(z.string().uuid()),
+});
+
+const backupReportVersionSchema = z.object({
+  id: z.string().uuid(),
+  version_number: z.number().int().min(1),
+  status: z.enum(["draft", "published"]),
+});
+
+const backupReportCenterSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  timezone: z.string().min(1),
+  is_active: z.boolean(),
+});
+
+export const backupReportOptionsSchema = backupReportDateRangeSchema.safeExtend({
+  context_start_date: z.iso.date(),
+  context_end_date: z.iso.date(),
+  centers: z.array(backupReportCenterSchema),
+  periods: z.array(backupReportDateRangeSchema.safeExtend({
+    id: z.string().uuid(),
+    name: z.string(),
+    versions: z.array(backupReportVersionSchema),
+  })),
+});
+
+const backupReportViolationSchema = z.object({
+  severity: z.enum(["hard_violation", "warning"]),
+  constraint_type: z.string().min(1),
+  category: z.string().min(1),
+  message: z.string().min(1),
+});
+
+// A report must display invalid draft ranges with blockers, not reject the whole response.
+const backupReportShiftIdentitySchema = z.object({
+  assignment_id: z.string().uuid(),
+  schedule_period_id: z.string().uuid(),
+  schedule_version_id: z.string().uuid(),
+  schedule_date: z.iso.date(),
+  start_time: wallClockSchema,
+  end_time: wallClockSchema,
+  center_id: z.string().uuid(),
+  center_name: z.string().nullable(),
+  timezone: z.string().nullable(),
+  room_id: z.string().uuid().nullable(),
+  room_name: z.string().nullable(),
+  shift_type: z.string(),
+});
+
+const backupReportCandidateSchema = z.object({
+  provider_id: z.string().uuid(),
+  display_name: z.string(),
+  warnings: z.array(backupReportViolationSchema),
+  conflicts: z.array(z.object({
+    shift: backupReportShiftIdentitySchema,
+    violations: z.array(backupReportViolationSchema),
+  })),
+});
+
+const backupReportShiftSchema = backupReportShiftIdentitySchema.extend({
+  assigned_provider_id: z.string().uuid().nullable(),
+  assigned_provider_name: z.string().nullable(),
+  blockers: z.array(backupReportViolationSchema),
+  available_replacements: z.array(backupReportCandidateSchema),
+  qualified_but_scheduled: z.array(backupReportCandidateSchema),
+});
+
+export const shiftBackupProviderReportSchema = backupReportDateRangeSchema.safeExtend({
+  generated_at: z.iso.datetime({ offset: true }),
+  center: backupReportCenterSchema.nullable(),
+  selected_versions: z.array(backupReportVersionSchema.extend({
+    schedule_period_id: z.string().uuid(),
+    period_name: z.string(),
+    start_date: z.iso.date(),
+    end_date: z.iso.date(),
+  })),
+  excluded_periods: z.array(backupReportDateRangeSchema.safeExtend({
+    id: z.string().uuid(),
+    name: z.string(),
+  })),
+  shifts: z.array(backupReportShiftSchema),
+});
+
+export type BackupReportDateRange = z.infer<typeof backupReportDateRangeSchema>;
+export type BackupReportRequest = z.infer<typeof backupReportRequestSchema>;
+export type BackupReportOptions = z.infer<typeof backupReportOptionsSchema>;
+export type BackupReportCandidate = z.infer<typeof backupReportCandidateSchema>;
+export type BackupReportShift = z.infer<typeof backupReportShiftSchema>;
+export type ShiftBackupProviderReport = z.infer<typeof shiftBackupProviderReportSchema>;

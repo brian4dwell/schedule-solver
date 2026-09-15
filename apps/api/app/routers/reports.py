@@ -37,6 +37,12 @@ from app.schemas.reports import FutureAvailabilityDayRead
 from app.schemas.reports import FutureAvailabilityWeekRead
 from app.schemas.reports import ProviderFutureAvailabilityReportRead
 from app.schemas.reports import ReportProviderRead
+from app.schemas.reports import BackupReportDateRange
+from app.schemas.reports import BackupReportOptionsRead
+from app.schemas.reports import BackupReportRequest
+from app.schemas.reports import ShiftBackupProviderReportRead
+from app.services.shift_backup_report import backup_report_options
+from app.services.shift_backup_report import build_shift_backup_report
 from app.schemas.provider_availability_week import WEEKDAY_VALUES
 from app.schemas.provider_availability_week import WORK_AVAILABILITY_OPTION_VALUES
 from app.schemas.reports import MonthlyAvailabilityDayRead
@@ -51,6 +57,28 @@ MINIMUM_YEAR = 2000
 MAXIMUM_YEAR = 2100
 MINIMUM_MONTH = 1
 MAXIMUM_MONTH = 12
+
+
+@router.get("/shift-backup-providers/options", response_model=BackupReportOptionsRead)
+def read_shift_backup_options(
+    start_date: date,
+    end_date: date,
+    organization_id: UUID = Depends(get_current_organization_id),
+    session: Session = Depends(get_db),
+) -> BackupReportOptionsRead:
+    if end_date < start_date:
+        raise HTTPException(status_code=400, detail="End date must be on or after start date.")
+    dates = BackupReportDateRange(start_date=start_date, end_date=end_date)
+    return backup_report_options(dates, organization_id, session)
+
+
+@router.post("/shift-backup-providers", response_model=ShiftBackupProviderReportRead)
+def read_shift_backup_provider_report(
+    request: BackupReportRequest,
+    organization_id: UUID = Depends(get_current_organization_id),
+    session: Session = Depends(get_db),
+) -> ShiftBackupProviderReportRead:
+    return build_shift_backup_report(request, organization_id, session)
 
 
 def future_availability_cutoff(

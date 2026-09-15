@@ -36,6 +36,14 @@ import {
   monthlyAvailabilitySelectionSchema,
   providerFutureAvailabilityReportApiSchema,
   reportProviderApiSchema,
+  backupReportDateRangeSchema,
+  backupReportOptionsSchema,
+  backupReportRequestSchema,
+  shiftBackupProviderReportSchema,
+  type BackupReportDateRange,
+  type BackupReportOptions,
+  type BackupReportRequest,
+  type ShiftBackupProviderReport,
   type MonthlyAvailabilityReportApi,
   type ProviderFutureAvailabilityReportApi,
   type ReportProviderApi,
@@ -974,6 +982,23 @@ export async function listFutureAvailabilityProviders(): Promise<ReportProviderA
   const responseJson = await requestJson<unknown>(path, { cache: "no-store" });
   const providers = z.array(reportProviderApiSchema).parse(responseJson);
   return providers;
+}
+
+export async function getShiftBackupReportOptions(dates: BackupReportDateRange): Promise<BackupReportOptions> {
+  const parsedDates = backupReportDateRangeSchema.parse(dates);
+  const params = new URLSearchParams(parsedDates);
+  const path = `/reports/shift-backup-providers/options?${params.toString()}`;
+  const responseJson = await requestJson<unknown>(path, { cache: "no-store" });
+  const options = backupReportOptionsSchema.parse(responseJson);
+  return options;
+}
+
+export async function getShiftBackupProviderReport(request: BackupReportRequest): Promise<ShiftBackupProviderReport> {
+  const payload = backupReportRequestSchema.parse(request);
+  const init = jsonRequestInit("POST", payload);
+  const responseJson = await requestJson<unknown>("/reports/shift-backup-providers", init);
+  const report = shiftBackupProviderReportSchema.parse(responseJson);
+  return report;
 }
 
 export async function getProviderFutureAvailabilityReport(

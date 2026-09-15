@@ -14,6 +14,7 @@ import {
   type ProviderPreferencesSavePayload,
 } from "@/lib/api";
 import { useToast } from "@/components/ui/toast-provider";
+import { managerPreferenceLevelSchema, type ManagerPreferenceLevel } from "@/lib/schemas/preferences";
 
 type ProviderPreferencesEditorProps = {
   centers: Center[];
@@ -36,11 +37,14 @@ type ShiftTypePreferenceDraft = {
   preferenceLevel: PreferenceLevel;
 };
 
-type ManagerCenterPreferenceDraft = CenterPreferenceDraft & {
+type ManagerCenterPreferenceDraft = {
+  centerId: string;
+  preferenceLevel: ManagerPreferenceLevel;
   managerNote: string;
 };
 
 const preferenceLevels: PreferenceLevel[] = [3, 2, 0, -2, -3];
+const managerPreferenceLevels: ManagerPreferenceLevel[] = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5];
 
 const shiftTypes: ShiftTypeValue[] = [
   "full_shift",
@@ -78,7 +82,24 @@ function labelForPreferenceLevel(value: PreferenceLevel): string {
   return "Neutral";
 }
 
-function levelBadgeClassName(value: PreferenceLevel): string {
+function labelForManagerPreferenceLevel(value: ManagerPreferenceLevel): string {
+  if (value === 0) {
+    return "0 (Neutral)";
+  }
+
+  if (value === -5) {
+    return "-5 (Avoid)";
+  }
+
+  if (value === 5) {
+    return "+5 (Strong prefer)";
+  }
+
+  const label = value > 0 ? `+${value}` : String(value);
+  return label;
+}
+
+function levelBadgeClassName(value: number): string {
   if (value > 0) {
     return "bg-emerald-100 text-emerald-800";
   }
@@ -136,7 +157,7 @@ function createManagerPreferenceDrafts(
       const centerMatches = item.center_id === center.id;
       return centerMatches;
     });
-    const preferenceLevel = (preference?.preference_level ?? 0) as PreferenceLevel;
+    const preferenceLevel = preference?.preference_level ?? 0;
     const draft = {
       centerId: center.id,
       preferenceLevel,
@@ -483,6 +504,9 @@ export function ProviderPreferencesEditor({
           <div>
             <h2 className="text-lg font-semibold text-slate-950">Manager Preferences</h2>
             <p className="mt-1 text-sm text-slate-600">{provider.display_name}</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Choose from -5 (Avoid) to +5 (Strong prefer), with 0 as Neutral.
+            </p>
           </div>
           {managerMessage ? (
             <span className="rounded-md bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-800">
@@ -508,7 +532,7 @@ export function ProviderPreferencesEditor({
                 <div className="min-w-0">
                   <p className="font-medium text-slate-950">{centerName}</p>
                   <span className={`mt-2 inline-flex rounded-md px-2 py-1 text-xs font-semibold ${badgeClassName}`}>
-                    {labelForPreferenceLevel(draft.preferenceLevel)}
+                    {labelForManagerPreferenceLevel(draft.preferenceLevel)}
                   </span>
                 </div>
                 <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
@@ -517,14 +541,15 @@ export function ProviderPreferencesEditor({
                     className="h-10 rounded-md border border-slate-300 bg-white px-3 text-slate-950"
                     value={draft.preferenceLevel}
                     onChange={(event) => {
-                      const preferenceLevel = parsePreferenceLevel(event.target.value);
+                      const numberValue = Number(event.target.value);
+                      const preferenceLevel = managerPreferenceLevelSchema.parse(numberValue);
                       updateManagerDraft(draft.centerId, { preferenceLevel });
                     }}
                   >
-                    {preferenceLevels.map((level) => {
+                    {managerPreferenceLevels.map((level) => {
                       return (
                         <option key={level} value={level}>
-                          {labelForPreferenceLevel(level)}
+                          {labelForManagerPreferenceLevel(level)}
                         </option>
                       );
                     })}

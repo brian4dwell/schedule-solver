@@ -1,8 +1,14 @@
 # Provider Workload Priority
 
-Status: Planned; not implemented by this document.
+Status: Superseded on 2026-09-14 by the eleven-point Manager Preference scale.
 Created: 2026-09-14.
 Updated: 2026-09-14.
+
+## Replacement decision
+
+Manager Center Preferences now offer every integer from `-5` (Avoid) through `+5` (Strong prefer), with `0` (Neutral) in the middle. Existing stored values retain their numeric scores. Provider-visible Center and shift-type preferences keep their existing five options.
+
+The existing linear manager preference scoring uses the expanded range. Workload allocation and fairness rules continue to apply. The workload-priority policy below is retained as historical context and is no longer planned for implementation.
 
 ## Problem and outcome
 

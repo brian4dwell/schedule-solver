@@ -64,6 +64,10 @@ const reportsMenu: NavigationMenu = {
   label: "Reports",
   links: [
     {
+      href: "/reports/shift-backup-providers",
+      label: "Shift Backup Providers",
+    },
+    {
       href: "/reports/provider-future-availability",
       label: "Provider Future Availability",
     },

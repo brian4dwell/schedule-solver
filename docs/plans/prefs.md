@@ -65,6 +65,8 @@ The solver objective does not relax hard constraints.
 
 ### Base Preference Levels
 
+Manager-only Center preferences use every integer from `-5` (Avoid) to `+5` (Strong prefer), with `0` (Neutral). Existing numeric scores are preserved. The five options below apply to Provider-visible preferences.
+
 Use a small integer band for stable tuning.
 
 Use `3` for strong preference.

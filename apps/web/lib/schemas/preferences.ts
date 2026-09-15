@@ -2,6 +2,10 @@ import { z } from "zod";
 
 export const preferenceLevelSchema = z.number().int().min(-3).max(3);
 
+export const managerPreferenceLevelSchema = z.number().int().min(-5).max(5);
+
+export type ManagerPreferenceLevel = z.infer<typeof managerPreferenceLevelSchema>;
+
 export const preferenceLevelFieldsSchema = z.object({
   preference_level: preferenceLevelSchema,
 }).strict();
@@ -25,6 +29,7 @@ export const providerShiftTypePreferenceApiSchema = preferenceLevelFieldsSchema.
 });
 
 export const managerProviderCenterPreferenceApiSchema = preferenceLevelFieldsSchema.extend({
+  preference_level: managerPreferenceLevelSchema,
   id: z.string().uuid(),
   provider_id: z.string().uuid(),
   center_id: z.string().uuid(),
@@ -54,6 +59,7 @@ export const providerShiftTypePreferencePayloadSchema = preferenceLevelFieldsSch
 });
 
 export const managerProviderCenterPreferencePayloadSchema = preferenceLevelFieldsSchema.extend({
+  preference_level: managerPreferenceLevelSchema,
   center_id: z.string().uuid(),
   manager_note: z.string().nullable(),
 });

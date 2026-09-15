@@ -11,7 +11,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test:auth": "node --test tests/auth-protection.test.mjs",
     "test:scheduling": "node --test tests/schedule-times.test.mjs",
-    "test:workflows": "node --test tests/availability-editor.test.mjs tests/weekly-availability-notes.test.mjs tests/provider-future-availability-report.test.mjs tests/schedule-publication.test.mjs tests/provider-invites.test.mjs"
+    "test:workflows": "node --test tests/availability-editor.test.mjs tests/weekly-availability-notes.test.mjs tests/provider-future-availability-report.test.mjs tests/schedule-publication.test.mjs tests/provider-invites.test.mjs tests/manager-preferences.test.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.2",

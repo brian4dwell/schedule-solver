@@ -402,6 +402,8 @@ Solver soft constraints should eventually include:
 
 Detailed solver notes live in `docs/plans/solver.md`.
 
+Manager Center Preferences use eleven integer options from `-5` (Avoid) through `+5` (Strong prefer), with `0` (Neutral) in the middle. Each point contributes through the existing manager preference weight. Existing saved scores keep their numeric values. These manager-only soft preferences influence assignments alongside workload and fairness scoring. Provider-visible Center and shift-type preferences retain their five options. This replaces the [Provider Workload Priority proposal](planned-features/provider-workload-priority.md).
+
 ## Key Product Decisions
 
 ### Backend Is Source Of Truth

@@ -22,6 +22,60 @@ body {
   display: none;
 }
 
+@page shift-backup-list {
+  size: portrait;
+  margin: 0.5in;
+}
+
+@media print {
+  body:has(.shift-backup-report) {
+    background: white;
+  }
+
+  body:has(.shift-backup-report) .min-h-screen {
+    min-height: 0 !important;
+    background: white !important;
+  }
+
+  body:has(.shift-backup-report) .min-h-screen > header,
+  body:has(.shift-backup-report) .shift-backup-screen-only {
+    display: none !important;
+  }
+
+  body:has(.shift-backup-report) main {
+    padding: 0 !important;
+  }
+
+  .shift-backup-report {
+    page: shift-backup-list;
+  }
+
+  .shift-backup-results {
+    color: black !important;
+    font-size: 10pt;
+  }
+
+  .shift-backup-results * {
+    color: black !important;
+    overflow: visible !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+  }
+
+  .shift-backup-shift {
+    break-inside: avoid;
+    margin-top: 0.15in;
+  }
+
+  .shift-backup-shift thead {
+    display: table-header-group;
+  }
+
+  .shift-backup-shift tr {
+    break-inside: auto;
+  }
+}
+
 @page monthly-availability-calendar {
   size: landscape;
   margin: 0.35in;
