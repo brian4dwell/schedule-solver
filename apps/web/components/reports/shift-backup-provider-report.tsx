@@ -81,6 +81,10 @@ export function ShiftBackupReportResults({ report }: { report: ShiftBackupProvid
 
         return (
           <table key={shift.assignment_id} className="shift-backup-shift w-full table-fixed border border-slate-300 bg-white text-left text-sm">
+            <colgroup>
+              <col className="w-1/3" />
+              <col />
+            </colgroup>
             <thead className="bg-slate-100">
               <tr>
                 <th colSpan={2} className="p-3 font-normal [overflow-wrap:anywhere]">

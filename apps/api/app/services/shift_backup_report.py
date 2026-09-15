@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import UTC
 from datetime import date
 from datetime import datetime
+from typing import get_args
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -19,6 +20,7 @@ from app.db.models import RoomRoomType
 from app.db.models import SchedulePeriod
 from app.db.models import ScheduleVersion
 from app.db.models import ShiftRequirement
+from app.schemas.provider import ProviderType
 from app.schemas.reports import BackupReportCandidateRead
 from app.schemas.reports import BackupReportCenterRead
 from app.schemas.reports import BackupReportConflictRead
@@ -255,7 +257,8 @@ def prepare_backup_shift(
             block("missing_shift_requirement", "Shift requirement is unavailable in this organization.")
         else:
             required_type = requirement.required_provider_type
-    if required_type is not None and required_type not in {"doctor", "crna"}:
+    provider_types = get_args(ProviderType)
+    if required_type is not None and required_type not in provider_types:
         block("invalid_required_provider_type", "Required Provider type is not supported.")
     identity = BackupReportShiftIdentityRead(
         assignment_id=assignment.id,

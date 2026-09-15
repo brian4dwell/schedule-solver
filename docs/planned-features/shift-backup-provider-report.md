@@ -1,7 +1,21 @@
 # Shift Backup Provider Report
 
-Status: Planned; not implemented by this document.
+Status: Implemented.
 Created: 2026-09-14.
+
+## Implementation and release decisions
+
+Open **Reports → Shift Backup Providers** at `/reports/shift-backup-providers`. Enter an inclusive date range, load schedule choices, select a draft or published version (or explicitly exclude) for each period, optionally filter shift rows by Center, and generate the report. Generate again to refresh qualifications and availability; printing is disabled until the current selections have a generated report.
+
+The report uses existing Center credentials, Provider types, and Room Type skills. It does not verify a separate licensing registry. Both available and qualified-but-scheduled candidates appear on screen and in print. Contact details and weekly notes are omitted.
+
+The selection step includes periods overlapping the requested dates plus two neighboring calendar days on either side. This accounts for simultaneous shifts in Centers as far apart as UTC+14 and UTC-12. Each period requires an explicit version or exclusion, including overlapping alternatives and neighboring periods. Selecting overlapping periods treats their chosen versions as concurrent work. Every assignment in a selected version participates in the schedule context across all Centers; the date and Center filters only control displayed shifts. Full-version assignments also supply weekly requested-shift counts. Unselected versions and explicitly excluded periods never create conflicts. The generated report discloses both selections and exclusions, and claims conflict-free status only within that chosen context.
+
+`GET /reports/shift-backup-providers/options` loads scoped period/version and Center choices. `POST /reports/shift-backup-providers` is a read-only report request with `start_date`, `end_date`, nullable `center_id`, `selected_version_ids`, and `excluded_period_ids`. The backend revalidates every choice on generation. Both endpoints require admin authorization. The service in `apps/api/app/services/shift_backup_report.py` batches data loading and uses the shared eligibility evaluator, credential interval check, overlap check, and same-day pairing rule. No persistence migration is needed.
+
+Invalid target shift data is displayed with blockers and no replacement recommendations. Existing assignments with unresolved time or Center data prevent affected candidates from being labeled available. Typed conflict codes and warnings survive into the response. Browser print repeats each shift's identity and table headings on continuation pages, hides controls/navigation, and prints every candidate without pagination.
+
+Regression tests: `apps/api/tests/test_shift_backup_report.py` and `apps/web/tests/shift-backup-provider-report.test.mjs`. Print QA covers empty results, mixed draft/published sources, long names, and an 80-candidate list.
 
 ## Problem and outcome
 
@@ -9,7 +23,7 @@ Schedulers need a printable shift list that answers: "If the assigned Provider c
 
 The report should put each shift, its assigned Provider, and potential replacements together so a scheduler can use it during an unexpected absence.
 
-## Proposed first release
+## First release requirements
 
 - Add an admin report with a date range, optional Center filter, and explicit Schedule Version selection for the relevant Schedule Periods.
 - Offer published and draft versions with visible status and version numbers. Select exactly one version for each included period; never combine assignments from multiple versions of the same period.
@@ -23,7 +37,7 @@ The report should put each shift, its assigned Provider, and potential replaceme
 
 ## Eligibility semantics
 
-The current application models relevant qualifications through Provider Center Credentials, Provider type, and Provider Room Type Skills. Do not claim that the report verifies a separate licensing registry. Confirm whether "licensing" requires additional data beyond these existing records.
+The current application models relevant qualifications through Provider Center Credentials, Provider type, and Provider Room Type Skills. The first release uses these records and does not claim to verify a separate licensing registry.
 
 Reuse the backend rules in `apps/api/app/services/scheduling/provider_eligibility.py` and its typed contracts:
 
@@ -70,13 +84,11 @@ The first release evaluates the selected schedule against current saved availabi
 - Print preview covers empty results, long lists, multiple pages, and mixed draft/published selections without clipped content.
 - Run focused backend report and eligibility tests with `uv run pytest`, plus frontend checks appropriate to the implemented UI and contracts.
 
-## Decisions to confirm during refinement
+## Future extensions
 
-- Does licensing mean the existing credential/type/skill checks, or are additional license records needed?
-- Should qualified-but-booked Providers appear in print, or should print contain only conflict-free replacements?
-- Should contact details be printed, and which existing contact field should be used?
-- Should the report include weekly notes from [Weekly Availability Notes](weekly-availability-notes.md)? Proposed first release: no dependency on that feature.
-- Define how competing or overlapping Schedule Periods are selected and which additional scheduled work participates in conflict checks.
+- Separate license registry data, if required in addition to the existing credential/type/skill records.
+- Optional print filters for booked candidates or contact details.
+- Optional weekly notes from [Weekly Availability Notes](weekly-availability-notes.md).
 
 ## Out of scope
 

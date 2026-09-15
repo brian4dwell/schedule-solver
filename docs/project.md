@@ -151,6 +151,8 @@ Admins can use **Reports → Provider Future Availability** to select any Provid
 
 The report defines today using the API's `SCHEDULING_TIMEZONE` setting, which defaults to `America/New_York` and requires a valid IANA timezone. It returns and displays the effective cutoff date and timezone; stored dates are displayed without browser timezone conversion. Week data and notes are read together in a single joined database query. This is an on-screen, read-only report with no new persistence tables. See [Provider Future Availability Report](planned-features/provider-future-availability-report.md).
 
+Admins can use **Reports → Shift Backup Providers** to generate and print replacement candidates for an inclusive date range and optional Center. Each relevant period requires an explicit draft/published version or exclusion; neighboring periods are included in these choices for cross-timezone conflict checks. Only the selected versions contribute assignments, across all Centers. The report applies current saved availability and shared hard eligibility rules, separates qualified-but-scheduled Providers with conflict details, preserves warnings, and shows invalid shift data as blockers. It includes unassigned shifts and discloses source versions, exclusions, and generation time. Browser print preserves Center-local clocks and all filtered results. See [Shift Backup Provider Report](planned-features/shift-backup-provider-report.md).
+
 ## Architecture
 
 The repo follows a monorepo shape.

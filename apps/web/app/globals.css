@@ -71,8 +71,12 @@ body {
     display: table-header-group;
   }
 
-  .shift-backup-shift tr {
+  .shift-backup-shift:has(tbody tr:nth-child(7)) {
     break-inside: auto;
+  }
+
+  .shift-backup-shift tr {
+    break-inside: avoid;
   }
 }
 
