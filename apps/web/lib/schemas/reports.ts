@@ -1,5 +1,10 @@
 import { scheduleTimeRangeSchema } from "@/lib/schemas/schedule-time";
 import { z } from "zod";
+import {
+  providerWeeklyAvailabilityDaySchema,
+  providerWeeklyNotesSchema,
+  weekdaySchema,
+} from "@/lib/schemas/provider-weekly-availability";
 
 const monthlyAvailabilityOptionSchema = z.enum([
   "full_shift",
@@ -100,3 +105,40 @@ export type MonthlyScheduleCandidateGroupApi = z.infer<
 export type MonthlyAvailabilitySelection = z.infer<
   typeof monthlyAvailabilitySelectionSchema
 >;
+
+export const reportProviderApiSchema = z.object({
+  id: z.string().uuid(),
+  display_name: z.string().min(1),
+  provider_type: z.string().min(1),
+  employment_type: z.string().min(1),
+  is_active: z.boolean(),
+});
+
+export const futureAvailabilityWeekApiSchema = z.object({
+  schedule_period_id: z.string().uuid(),
+  name: z.string().min(1),
+  start_date: z.iso.date(),
+  end_date: z.iso.date(),
+  status: z.string().min(1),
+  has_submission: z.boolean(),
+  is_complete: z.boolean(),
+  unset_weekdays: z.array(weekdaySchema),
+  min_shifts_requested: z.number().min(0).max(14).multipleOf(0.5),
+  max_shifts_requested: z.number().min(0).max(14).multipleOf(0.5),
+  notes: providerWeeklyNotesSchema,
+  days: z.array(providerWeeklyAvailabilityDaySchema.extend({
+    date: z.iso.date(),
+    is_saved: z.boolean(),
+  })),
+});
+
+export const providerFutureAvailabilityReportApiSchema = z.object({
+  provider: reportProviderApiSchema,
+  cutoff_date: z.iso.date(),
+  timezone: z.string().min(1),
+  weeks: z.array(futureAvailabilityWeekApiSchema),
+});
+
+export type ReportProviderApi = z.infer<typeof reportProviderApiSchema>;
+export type FutureAvailabilityWeekApi = z.infer<typeof futureAvailabilityWeekApiSchema>;
+export type ProviderFutureAvailabilityReportApi = z.infer<typeof providerFutureAvailabilityReportApiSchema>;

@@ -147,6 +147,10 @@ Published schedule weeks lock availability edits.
 
 Providers can save optional weekly notes (up to 2,000 characters) alongside availability in the Provider Portal. Notes are scoped to the organization, Provider, and schedule week, stored separately from weekday rows, and locked when published. Admins read them in Provider week detail; admin availability edits preserve them and full-week resets clear them. Notes do not affect scheduling rules or completeness. See [Provider Portal](provider-portal.md).
 
+Admins can use **Reports → Provider Future Availability** to select any Provider, including inactive Providers and all employment types, and read every existing schedule week ending today or later. The report shows remaining dates, full-week shift requests, completion status, and weekly notes for both draft and published periods. Overlapping periods stay separate, missing submissions are labeled, and no future date horizon is imposed. Selection is saved in the URL and Refresh retrieves the latest saved data.
+
+The report defines today using the API's `SCHEDULING_TIMEZONE` setting, which defaults to `America/New_York` and requires a valid IANA timezone. It returns and displays the effective cutoff date and timezone; stored dates are displayed without browser timezone conversion. Week data and notes are read together in a single joined database query. This is an on-screen, read-only report with no new persistence tables. See [Provider Future Availability Report](planned-features/provider-future-availability-report.md).
+
 ## Architecture
 
 The repo follows a monorepo shape.

@@ -64,6 +64,10 @@ const reportsMenu: NavigationMenu = {
   label: "Reports",
   links: [
     {
+      href: "/reports/provider-future-availability",
+      label: "Provider Future Availability",
+    },
+    {
       href: "/reports/monthly-availability",
       label: "Monthly Availability",
     },

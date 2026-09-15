@@ -34,7 +34,11 @@ import {
 import {
   monthlyAvailabilityReportApiSchema,
   monthlyAvailabilitySelectionSchema,
+  providerFutureAvailabilityReportApiSchema,
+  reportProviderApiSchema,
   type MonthlyAvailabilityReportApi,
+  type ProviderFutureAvailabilityReportApi,
+  type ReportProviderApi,
 } from "@/lib/schemas/reports";
 import {
   persistedScheduleVersionApiSchema,
@@ -962,5 +966,29 @@ export async function getMonthlyAvailabilityReport(
     cache: "no-store",
   });
   const report = monthlyAvailabilityReportApiSchema.parse(responseJson);
+  return report;
+}
+
+export async function listFutureAvailabilityProviders(): Promise<ReportProviderApi[]> {
+  const path = "/reports/provider-future-availability/providers";
+  const responseJson = await requestJson<unknown>(path, { cache: "no-store" });
+  const providers = z.array(reportProviderApiSchema).parse(responseJson);
+  return providers;
+}
+
+export async function getProviderFutureAvailabilityReport(
+  providerId: string,
+): Promise<ProviderFutureAvailabilityReportApi> {
+  const parsedProviderId = z.string().uuid().parse(providerId);
+  const params = new URLSearchParams({ provider_id: parsedProviderId });
+  const path = `/reports/provider-future-availability?${params.toString()}`;
+  const responseJson = await requestJson<unknown>(path, { cache: "no-store" });
+  const report = providerFutureAvailabilityReportApiSchema.parse(responseJson);
+  const providerMatches = report.provider.id === parsedProviderId;
+
+  if (!providerMatches) {
+    throw new Error("The report does not match the selected Provider.");
+  }
+
   return report;
 }

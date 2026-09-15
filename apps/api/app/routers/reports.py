@@ -4,25 +4,39 @@ from datetime import date
 from datetime import datetime
 from datetime import time
 from datetime import timedelta
+from itertools import groupby
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from sqlalchemy import select
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.db.models import Assignment
 from app.db.models import Center
 from app.db.models import Provider
 from app.db.models import ProviderScheduleWeekAvailability
+from app.db.models import ProviderScheduleWeekNote
 from app.db.models import Room
 from app.db.models import SchedulePeriod
 from app.db.models import ScheduleVersion
 from app.db.session import get_db
 from app.dependencies import get_current_organization_id
 from app.dependencies import require_admin_user
+from app.core.config import Settings
+from app.core.config import get_settings
+from app.routers.provider_availability import build_read_response
+from app.routers.provider_availability import require_provider
+from app.routers.provider_portal import availability_completion
+from app.schemas.reports import FutureAvailabilityCutoffRead
+from app.schemas.reports import FutureAvailabilityDayRead
+from app.schemas.reports import FutureAvailabilityWeekRead
+from app.schemas.reports import ProviderFutureAvailabilityReportRead
+from app.schemas.reports import ReportProviderRead
 from app.schemas.provider_availability_week import WEEKDAY_VALUES
 from app.schemas.provider_availability_week import WORK_AVAILABILITY_OPTION_VALUES
 from app.schemas.reports import MonthlyAvailabilityDayRead
@@ -37,6 +51,125 @@ MINIMUM_YEAR = 2000
 MAXIMUM_YEAR = 2100
 MINIMUM_MONTH = 1
 MAXIMUM_MONTH = 12
+
+
+def future_availability_cutoff(
+    settings: Settings = Depends(get_settings),
+) -> FutureAvailabilityCutoffRead:
+    timezone = ZoneInfo(settings.scheduling_timezone)
+    current_time = datetime.now(timezone)
+    cutoff_date = current_time.date()
+    cutoff = FutureAvailabilityCutoffRead(
+        cutoff_date=cutoff_date,
+        timezone=settings.scheduling_timezone,
+    )
+    return cutoff
+
+
+def future_availability_week(
+    period: SchedulePeriod,
+    provider_id: UUID,
+    rows: list[ProviderScheduleWeekAvailability],
+    notes: str | None,
+    cutoff_date: date,
+) -> FutureAvailabilityWeekRead:
+    availability = build_read_response(period, provider_id, rows, notes)
+    completion = availability_completion(period, availability)
+    start_date = max(period.start_date, cutoff_date)
+    included_dates = dates_between(start_date, period.end_date)
+    saved_weekdays = {row.weekday for row in rows}
+    days: list[FutureAvailabilityDayRead] = []
+
+    for included_date in included_dates:
+        weekday_index = included_date.weekday()
+        day = availability.days[weekday_index]
+        is_saved = day.weekday in saved_weekdays
+        dated_day = FutureAvailabilityDayRead(
+            date=included_date,
+            weekday=day.weekday,
+            options=day.options,
+            is_saved=is_saved,
+        )
+        days.append(dated_day)
+
+    has_submission = len(rows) > 0
+    week = FutureAvailabilityWeekRead(
+        schedule_period_id=period.id,
+        name=period.name,
+        start_date=period.start_date,
+        end_date=period.end_date,
+        status=period.status,
+        has_submission=has_submission,
+        is_complete=completion.is_complete,
+        unset_weekdays=completion.unset_weekdays,
+        min_shifts_requested=availability.min_shifts_requested,
+        max_shifts_requested=availability.max_shifts_requested,
+        notes=availability.notes,
+        days=days,
+    )
+    return week
+
+
+@router.get("/provider-future-availability/providers", response_model=list[ReportProviderRead])
+def list_future_availability_providers(
+    organization_id: UUID = Depends(get_current_organization_id),
+    session: Session = Depends(get_db),
+) -> list[ReportProviderRead]:
+    statement = select(Provider)
+    statement = statement.where(Provider.organization_id == organization_id)
+    statement = statement.order_by(Provider.display_name, Provider.id)
+    providers = session.scalars(statement)
+    response = [ReportProviderRead.model_validate(provider) for provider in providers]
+    return response
+
+
+@router.get("/provider-future-availability", response_model=ProviderFutureAvailabilityReportRead)
+def read_provider_future_availability(
+    provider_id: UUID,
+    organization_id: UUID = Depends(get_current_organization_id),
+    session: Session = Depends(get_db),
+    cutoff: FutureAvailabilityCutoffRead = Depends(future_availability_cutoff),
+) -> ProviderFutureAvailabilityReportRead:
+    provider = require_provider(provider_id, organization_id, session)
+    availability_join = and_(
+        ProviderScheduleWeekAvailability.schedule_week_id == SchedulePeriod.id,
+        ProviderScheduleWeekAvailability.provider_id == provider_id,
+        ProviderScheduleWeekAvailability.organization_id == organization_id,
+    )
+    note_join = and_(
+        ProviderScheduleWeekNote.schedule_week_id == SchedulePeriod.id,
+        ProviderScheduleWeekNote.provider_id == provider_id,
+        ProviderScheduleWeekNote.organization_id == organization_id,
+    )
+    # One SELECT gives periods, availability, and independent notes one read snapshot.
+    statement = select(SchedulePeriod, ProviderScheduleWeekAvailability, ProviderScheduleWeekNote)
+    statement = statement.outerjoin(ProviderScheduleWeekAvailability, availability_join)
+    statement = statement.outerjoin(ProviderScheduleWeekNote, note_join)
+    statement = statement.where(SchedulePeriod.organization_id == organization_id)
+    statement = statement.where(SchedulePeriod.end_date >= cutoff.cutoff_date)
+    statement = statement.order_by(SchedulePeriod.start_date, SchedulePeriod.id)
+    statement = statement.order_by(ProviderScheduleWeekAvailability.weekday)
+    statement = statement.execution_options(populate_existing=True)
+    results = session.execute(statement).all()
+    period_groups = groupby(results, key=lambda result: result[0].id)
+    weeks: list[FutureAvailabilityWeekRead] = []
+
+    for _period_id, period_results in period_groups:
+        grouped_results = list(period_results)
+        period, _first_row, note = grouped_results[0]
+        rows = [row for _period, row, _note in grouped_results if row is not None]
+        notes = note.notes if note is not None else None
+        week = future_availability_week(period, provider_id, rows, notes, cutoff.cutoff_date)
+        weeks.append(week)
+
+    selected_provider = ReportProviderRead.model_validate(provider)
+    response = ProviderFutureAvailabilityReportRead(
+        provider=selected_provider,
+        cutoff_date=cutoff.cutoff_date,
+        timezone=cutoff.timezone,
+        weeks=weeks,
+    )
+    return response
 
 
 @dataclass(frozen=True)

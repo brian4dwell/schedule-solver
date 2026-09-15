@@ -1,7 +1,20 @@
 # Provider Future Availability Report
 
-Status: Planned; not implemented by this document.
+Status: Implemented.
 Created: 2026-09-14.
+
+## Implementation
+
+The report is available at `/reports/provider-future-availability` under the admin Reports menu. Both API endpoints are admin-only and organization-scoped:
+
+- `GET /reports/provider-future-availability/providers` supplies the searchable selector, including inactive Providers and all employment types.
+- `GET /reports/provider-future-availability?provider_id=<uuid>` returns the selected Provider, cutoff date, timezone, and every matching week.
+
+`SCHEDULING_TIMEZONE` defines today on the API and defaults to `America/New_York`. Configuration rejects invalid IANA timezones. The report displays date-only values directly, preserving dates across browser timezones. The first release is on-screen only.
+
+Periods, day rows, and independent weekly notes are loaded in one outer-joined query so they share a database read snapshot. Shared weekly projection and completion rules supply day defaults and full-week completion; each dated row also identifies whether it was saved. Provider selection stays in the URL. Switching Providers discards previous requests; refresh clears old results and request failures use the app-wide toast system.
+
+Regression coverage lives in `apps/api/tests/test_provider_future_availability_report.py` and `apps/web/tests/provider-future-availability-report.test.mjs`. No migration is required.
 
 ## Problem and outcome
 
@@ -9,7 +22,7 @@ Schedulers need to select an employee and see all of that person's future availa
 
 Example: Selecting a Provider shows their availability for the remaining days of this week and every stored future schedule week, including requested shifts and the note saved for each week.
 
-## Proposed first release
+## First release requirements
 
 - Add an admin-only "Provider Future Availability" report under Reports.
 - Provide a searchable, single-Provider selector. Identify the selected Provider clearly in the report header.
@@ -26,9 +39,9 @@ This report shows submitted availability, not assigned shifts or inferred schedu
 
 ## Date and inclusion rules
 
-Proposed meaning of "future": today and later. Include the current week when its end date is today or later, but show only daily availability dated today or later. Always retain the whole week's note and requested shift counts, with the full week range visible so their scope is clear.
+"Future" means today and later. Include the current week when its end date is today or later, but show only daily availability dated today or later. Always retain the whole week's note and requested shift counts, with the full week range visible so their scope is clear.
 
-Derive today using an explicit scheduling timezone. Return the effective cutoff date and timezone in the report metadata and display the cutoff in the UI. Confirm the timezone policy during refinement; do not let browser timezone conversion change stored availability dates.
+Derive today using `SCHEDULING_TIMEZONE`. Return the effective cutoff date and timezone in the report metadata and display the cutoff in the UI. Do not let browser timezone conversion change stored availability dates.
 
 - Include every existing Schedule Period whose end date meets the cutoff, including weeks with no saved availability. Clearly distinguish "Not submitted" from explicit `none` availability.
 - Reuse existing weekly availability projection and completion semantics for missing day rows; do not treat a missing submission as offered work or infer availability from notes.
@@ -68,11 +81,11 @@ Derive today using an explicit scheduling timezone. Return the effective cutoff 
 - Switching Providers during a pending request cannot show the previous Provider's data under the new name. Failed refreshes cannot leave stale results mislabeled as current.
 - Add focused backend report tests through `uv run pytest` and UI regression checks for selection, date boundaries, notes, empty states, and request races. Run the relevant frontend typecheck, lint, and build checks.
 
-## Decisions to confirm during refinement
+## Release decisions
 
-- Should the selector include all Providers regardless of employment type, as proposed, or only Providers whose employment type is employee?
-- Which scheduling timezone defines today? Proposed date scope is today onward, including the remaining days of the current week.
-- Should printing or CSV/PDF export be part of the first release? Proposed first release is the on-screen report; preserve complete multiline notes if export is added later.
+- The selector includes all Providers regardless of employment type or active status.
+- The API's configurable scheduling timezone defines today, defaulting to `America/New_York`. Date scope is today onward, including the remaining days of the current week.
+- Printing and CSV/PDF export are outside the first release. Preserve complete multiline notes if export is added later.
 
 ## Out of scope
 

@@ -1,6 +1,8 @@
 from pathlib import Path
 from functools import lru_cache
 from typing import Literal
+from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfoNotFoundError
 
 from pydantic import AliasChoices
 from pydantic import EmailStr
@@ -19,6 +21,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/crna_scheduler"
     redis_url: str = "redis://localhost:6379/0"
     environment: str = "development"
+    scheduling_timezone: str = "America/New_York"
     local_organization_name: str = "Local Scheduling Organization"
     auth_mode: AuthMode = "clerk"
     clerk_secret_key: SecretStr | None = None
@@ -48,6 +51,15 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @field_validator("scheduling_timezone")
+    @classmethod
+    def validate_scheduling_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as error:
+            raise ValueError("Scheduling timezone must be a valid IANA timezone.") from error
+        return value
 
     @field_validator("database_url")
     @classmethod

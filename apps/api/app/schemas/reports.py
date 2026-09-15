@@ -2,6 +2,10 @@ from datetime import date
 from uuid import UUID
 
 from pydantic import BaseModel
+from pydantic import ConfigDict
+from pydantic import Field
+
+from app.schemas.provider_availability_week import ProviderAvailabilityDayRead
 
 from app.schemas.schedule_time import ScheduleTimeRange
 
@@ -60,3 +64,43 @@ class MonthlyAvailabilityReportRead(BaseModel):
     end_date: date
     schedule_candidate_groups: list[MonthlyScheduleCandidateGroupRead]
     days: list[MonthlyAvailabilityDayRead]
+
+
+class ReportProviderRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    display_name: str
+    provider_type: str
+    employment_type: str
+    is_active: bool
+
+
+class FutureAvailabilityCutoffRead(BaseModel):
+    cutoff_date: date
+    timezone: str
+
+
+class FutureAvailabilityDayRead(ProviderAvailabilityDayRead):
+    date: date
+    is_saved: bool
+
+
+class FutureAvailabilityWeekRead(BaseModel):
+    schedule_period_id: UUID
+    name: str
+    start_date: date
+    end_date: date
+    status: str
+    has_submission: bool
+    is_complete: bool
+    unset_weekdays: list[str]
+    min_shifts_requested: float
+    max_shifts_requested: float
+    notes: str | None = Field(max_length=2000)
+    days: list[FutureAvailabilityDayRead]
+
+
+class ProviderFutureAvailabilityReportRead(FutureAvailabilityCutoffRead):
+    provider: ReportProviderRead
+    weeks: list[FutureAvailabilityWeekRead]
