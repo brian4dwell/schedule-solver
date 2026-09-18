@@ -34,17 +34,6 @@ def default_options_for_weekday(weekday: str) -> list[str]:
     return default_options
 
 
-def saved_options_for_day(options: list[str]) -> list[str]:
-    only_unset_is_selected = options == ["unset"]
-
-    if only_unset_is_selected:
-        saved_options = ["none"]
-    else:
-        saved_options = options
-
-    return saved_options
-
-
 def require_schedule_week(schedule_week_id: UUID, organization_id: UUID, session: Session) -> SchedulePeriod:
     statement = select(SchedulePeriod).where(SchedulePeriod.id == schedule_week_id)
     statement = statement.where(SchedulePeriod.organization_id == organization_id)
@@ -159,7 +148,7 @@ def replace_provider_weekly_availability(schedule_week_id: UUID, provider_id: UU
     session.flush()
 
     for day in request.days:
-        availability_options = saved_options_for_day(day.options)
+        availability_options = day.options
         minimum_units = half_shift_units(request.min_shifts_requested)
         maximum_units = half_shift_units(request.max_shifts_requested)
         created_row = ProviderScheduleWeekAvailability(

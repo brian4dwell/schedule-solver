@@ -127,6 +127,7 @@ Rules:
 
 - `unset` means availability has not been supplied.
 - `none` means the Provider is explicitly unavailable that day.
+- Saving availability preserves `unset` days until the Provider explicitly chooses availability or `none`.
 - `unset` and `none` are exclusive choices.
 - Work availability options can be combined.
 - A slot's `shift_type` must appear in the Provider's weekday options.

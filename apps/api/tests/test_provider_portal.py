@@ -8,13 +8,14 @@ from app.core.auth import local_development_user
 from app.db.models import Provider
 from app.db.models import ProviderIdentityLink
 from app.db.models import ProviderInvite
-from app.db.models import ProviderScheduleWeekAvailability
 from app.db.models import SchedulePeriod
 from app.dependencies import CurrentProvider
+from app.routers.provider_availability import replace_provider_weekly_availability
 from app.routers.provider_portal import account_state_for_provider
 from app.routers.provider_portal import admin_router
 from app.routers.provider_portal import availability_completion
 from app.routers.provider_portal import provider_router
+from app.routers.provider_portal import read_current_provider_weekly_availability
 from app.routers.provider_portal import replace_current_provider_weekly_availability
 from app.schemas.provider_availability_week import ProviderAvailabilityDayInput
 from app.schemas.provider_availability_week import ProviderAvailabilityDayRead
@@ -22,30 +23,10 @@ from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityRep
 from app.schemas.provider_availability_week import ProviderWeeklyAvailabilityRead
 from app.schemas.provider_portal import ProviderInviteAcceptanceRequest
 from app.schemas.provider_portal import ProviderInviteCreate
-from app.schemas.provider_portal import ProviderPortalWeekAvailabilityRead
 from app.services.provider_portal_service import INVITE_STATUS_ACCEPTED
 from app.services.provider_portal_service import accept_provider_invite_request
 from app.services.provider_portal_service import provider_invite_email
-
-
-class FakeProviderPortalSession:
-    def __init__(self) -> None:
-        self.added_rows: list[ProviderScheduleWeekAvailability] = []
-
-    def delete(self, row: ProviderScheduleWeekAvailability) -> None:
-        return None
-
-    def flush(self) -> None:
-        return None
-
-    def add(self, row: ProviderScheduleWeekAvailability) -> None:
-        self.added_rows.append(row)
-
-    def commit(self) -> None:
-        return None
-
-    def scalar(self, statement: object) -> None:
-        return None
+from conftest import SchedulingDatabase
 
 
 class FakeInviteAcceptanceSession:
@@ -180,79 +161,22 @@ def test_availability_completion_ignores_unset_weekends() -> None:
     assert completion.unset_weekdays == []
 
 
-def test_provider_portal_availability_save_changes_unset_to_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    provider = create_provider()
-    schedule_week = create_schedule_week()
+@pytest.mark.parametrize("save_as_admin", [False, True])
+@pytest.mark.parametrize(
+    "selected_options",
+    [["full_shift"], ["second_half"], ["full_shift", "first_half"], ["none"]],
+)
+def test_availability_save_preserves_unassigned_days(
+    scheduling_database: SchedulingDatabase,
+    save_as_admin: bool,
+    selected_options: list[str],
+) -> None:
+    database = scheduling_database
     user = local_development_user()
-    current_provider = CurrentProvider(user=user, provider=provider)
-    organization_id = provider.organization_id
-    session = FakeProviderPortalSession()
-
-    def fake_require_schedule_week(
-        schedule_week_id: object,
-        scoped_organization_id: object,
-        scoped_session: object,
-    ) -> SchedulePeriod:
-        return schedule_week
-
-    def fake_rows_for_provider_week(
-        schedule_week_id: object,
-        provider_id: object,
-        scoped_organization_id: object,
-        scoped_session: object,
-    ) -> list[ProviderScheduleWeekAvailability]:
-        return []
-
-    def fake_provider_week_availability_response(
-        selected_schedule_week: SchedulePeriod,
-        provider_id: object,
-        scoped_organization_id: object,
-        scoped_session: object,
-    ) -> ProviderPortalWeekAvailabilityRead:
-        days = [
-            ProviderAvailabilityDayRead(weekday="monday", options=["full_shift"]),
-            ProviderAvailabilityDayRead(weekday="tuesday", options=["none"]),
-            ProviderAvailabilityDayRead(weekday="wednesday", options=["none"]),
-            ProviderAvailabilityDayRead(weekday="thursday", options=["none"]),
-            ProviderAvailabilityDayRead(weekday="friday", options=["none"]),
-            ProviderAvailabilityDayRead(weekday="saturday", options=["none"]),
-            ProviderAvailabilityDayRead(weekday="sunday", options=["none"]),
-        ]
-        availability = ProviderWeeklyAvailabilityRead(
-            notes=None,
-            schedule_week_id=selected_schedule_week.id,
-            provider_id=provider.id,
-            is_locked=False,
-            min_shifts_requested=0,
-            max_shifts_requested=1,
-            days=days,
-        )
-        completion = availability_completion(selected_schedule_week, availability)
-        response = ProviderPortalWeekAvailabilityRead(
-            schedule_week_id=selected_schedule_week.id,
-            schedule_week_name=selected_schedule_week.name,
-            schedule_week_start_date=selected_schedule_week.start_date,
-            schedule_week_end_date=selected_schedule_week.end_date,
-            availability=availability,
-            completion=completion,
-        )
-        return response
-
-    monkeypatch.setattr(
-        "app.routers.provider_portal.require_schedule_week",
-        fake_require_schedule_week,
-    )
-    monkeypatch.setattr(
-        "app.routers.provider_portal.rows_for_provider_week",
-        fake_rows_for_provider_week,
-    )
-    monkeypatch.setattr(
-        "app.routers.provider_portal.provider_week_availability_response",
-        fake_provider_week_availability_response,
-    )
+    current_provider = CurrentProvider(user=user, provider=database.provider)
     days = [
-        ProviderAvailabilityDayInput(weekday="monday", options=["full_shift"]),
-        ProviderAvailabilityDayInput(weekday="tuesday", options=["unset"]),
+        ProviderAvailabilityDayInput(weekday="monday", options=["unset"]),
+        ProviderAvailabilityDayInput(weekday="tuesday", options=selected_options),
         ProviderAvailabilityDayInput(weekday="wednesday", options=["none"]),
         ProviderAvailabilityDayInput(weekday="thursday", options=["unset"]),
         ProviderAvailabilityDayInput(weekday="friday", options=["unset"]),
@@ -266,21 +190,41 @@ def test_provider_portal_availability_save_changes_unset_to_none(monkeypatch: py
         days=days,
     )
 
-    replace_current_provider_weekly_availability(
-        schedule_week.id,
-        request,
+    if save_as_admin:
+        saved_availability = replace_provider_weekly_availability(
+            database.period.id,
+            database.provider.id,
+            request,
+            database.organization.id,
+            database.session,
+        )
+    else:
+        saved_record = replace_current_provider_weekly_availability(
+            database.period.id,
+            request,
+            current_provider,
+            database.organization.id,
+            database.session,
+        )
+        saved_availability = saved_record.availability
+        assert saved_record.completion.is_complete is False
+        assert saved_record.completion.unset_weekdays == ["monday", "thursday", "friday"]
+
+    expected_options = [day.options for day in days]
+    saved_options = [day.options for day in saved_availability.days]
+    assert saved_options == expected_options
+
+    database.session.expire_all()
+    reloaded_record = read_current_provider_weekly_availability(
+        database.period.id,
         current_provider,
-        organization_id,
-        session,
+        database.organization.id,
+        database.session,
     )
-
-    monday_row = next(row for row in session.added_rows if row.weekday == "monday")
-    tuesday_row = next(row for row in session.added_rows if row.weekday == "tuesday")
-    thursday_row = next(row for row in session.added_rows if row.weekday == "thursday")
-
-    assert monday_row.availability_options == ["full_shift"]
-    assert tuesday_row.availability_options == ["none"]
-    assert thursday_row.availability_options == ["none"]
+    reloaded_options = [day.options for day in reloaded_record.availability.days]
+    assert reloaded_options == expected_options
+    assert reloaded_record.completion.is_complete is False
+    assert reloaded_record.completion.unset_weekdays == ["monday", "thursday", "friday"]
 
 
 def test_account_state_prefers_linked_over_invited() -> None:

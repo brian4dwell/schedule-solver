@@ -28,7 +28,6 @@ from app.dependencies import require_current_provider
 from app.routers.provider_availability import build_read_response
 from app.routers.provider_availability import require_schedule_week
 from app.routers.provider_availability import rows_for_provider_week
-from app.routers.provider_availability import saved_options_for_day
 from app.routers.provider_availability import schedule_week_is_locked
 from app.routers.preferences import delete_visible_preferences
 from app.routers.preferences import provider_preferences_response
@@ -457,7 +456,7 @@ def replace_current_provider_weekly_availability(
     maximum_units = half_shift_units(request.max_shifts_requested)
 
     for day in request.days:
-        availability_options = saved_options_for_day(day.options)
+        availability_options = day.options
         created_row = ProviderScheduleWeekAvailability(
             organization_id=organization_id,
             schedule_week_id=schedule_week_id,
