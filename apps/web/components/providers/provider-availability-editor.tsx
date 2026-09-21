@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 
 import {
   deleteProviderWeeklyAvailability,
@@ -15,6 +16,7 @@ import {
   type Weekday,
 } from "@/lib/schemas/provider-weekly-availability";
 import { useToast } from "@/components/ui/toast-provider";
+import { AvailabilityWeekNavigation } from "./availability-week-navigation";
 
 const weekdayOrder: Weekday[] = [
   "monday",
@@ -63,6 +65,25 @@ function addDays(value: Date, dayCount: number) {
   const nextDayOfMonth = date.getUTCDate() + dayCount;
   date.setUTCDate(nextDayOfMonth);
   return date;
+}
+
+function adjacentWeekId(
+  periods: SchedulePeriod[],
+  scheduleWeekId: string,
+  dayOffset: number,
+) {
+  const currentPeriod = periods.find((period) => period.id === scheduleWeekId);
+
+  if (currentPeriod === undefined) {
+    return undefined;
+  }
+
+  const currentStart = dateAtUtcMidnight(currentPeriod.start_date);
+  const adjacentStart = addDays(currentStart, dayOffset);
+  const adjacentIsoDate = adjacentStart.toISOString();
+  const adjacentDate = adjacentIsoDate.slice(0, 10);
+  const adjacentPeriod = periods.find((period) => period.start_date === adjacentDate);
+  return adjacentPeriod?.id;
 }
 
 function dateForWeekday(schedulePeriod: SchedulePeriod, weekday: Weekday) {
@@ -181,17 +202,49 @@ type ProviderAvailabilityEditorProps = {
 type SelectedProviderAvailabilityEditorProps = ProviderAvailabilityEditorProps & {
   scheduleWeekId: string;
   providerId: string;
+  previousWeekHref: string | undefined;
+  nextWeekHref: string | undefined;
   onScheduleWeekSelected: (scheduleWeekId: string) => void;
   onProviderSelected: (providerId: string) => void;
 };
 
 export function ProviderAvailabilityEditor(props: ProviderAvailabilityEditorProps) {
   const { periods, providers } = props;
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const firstPeriodId = periods.at(0)?.id ?? "";
   const firstProviderId = providers.at(0)?.id ?? "";
-  const [scheduleWeekId, setScheduleWeekId] = useState(firstPeriodId);
-  const [providerId, setProviderId] = useState(firstProviderId);
+  const scheduleWeekId = searchParams.get("weekId") ?? firstPeriodId;
+  const providerId = searchParams.get("providerId") ?? firstProviderId;
   const selectionKey = `${scheduleWeekId}:${providerId}`;
+  const previousWeekId = adjacentWeekId(periods, scheduleWeekId, -7);
+  const nextWeekId = adjacentWeekId(periods, scheduleWeekId, 7);
+
+  function selectionHref(weekId: string, selectedProviderId: string) {
+    const params = new URLSearchParams(searchParams);
+    params.set("weekId", weekId);
+    params.set("providerId", selectedProviderId);
+    const query = params.toString();
+    const href = `${pathname}?${query}`;
+    return href;
+  }
+
+  function selectScheduleWeek(weekId: string) {
+    const href = selectionHref(weekId, providerId);
+    window.history.pushState(null, "", href);
+  }
+
+  function selectProvider(selectedProviderId: string) {
+    const href = selectionHref(scheduleWeekId, selectedProviderId);
+    window.history.pushState(null, "", href);
+  }
+
+  const previousWeekHref = previousWeekId === undefined
+    ? undefined
+    : selectionHref(previousWeekId, providerId);
+  const nextWeekHref = nextWeekId === undefined
+    ? undefined
+    : selectionHref(nextWeekId, providerId);
 
   return (
     <SelectedProviderAvailabilityEditor
@@ -200,8 +253,10 @@ export function ProviderAvailabilityEditor(props: ProviderAvailabilityEditorProp
       providers={providers}
       scheduleWeekId={scheduleWeekId}
       providerId={providerId}
-      onScheduleWeekSelected={setScheduleWeekId}
-      onProviderSelected={setProviderId}
+      previousWeekHref={previousWeekHref}
+      nextWeekHref={nextWeekHref}
+      onScheduleWeekSelected={selectScheduleWeek}
+      onProviderSelected={selectProvider}
     />
   );
 }
@@ -211,6 +266,8 @@ function SelectedProviderAvailabilityEditor({
   providers,
   scheduleWeekId,
   providerId,
+  previousWeekHref,
+  nextWeekHref,
   onScheduleWeekSelected,
   onProviderSelected,
 }: SelectedProviderAvailabilityEditorProps) {
@@ -534,23 +591,26 @@ function SelectedProviderAvailabilityEditor({
             <span className={statusBadgeClassName}>{statusLabel}</span>
           </div>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="flex flex-col gap-2 text-sm text-slate-700">
-            <span className="font-semibold text-slate-950">Schedule week</span>
-            <select
-              className="h-12 rounded-md border border-slate-400 bg-white px-3 text-base font-semibold text-slate-950 shadow-sm focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
-              value={scheduleWeekId}
-              onChange={(event) => onScheduleWeekSelected(event.target.value)}
-            >
-              {periods.map((period) => {
-                return (
-                  <option key={period.id} value={period.id}>
-                    {period.name}
-                  </option>
-                );
-              })}
-            </select>
-          </label>
+        <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex min-w-0 flex-1 basis-64 flex-col gap-2 text-sm text-slate-700">
+              <span className="font-semibold text-slate-950">Schedule week</span>
+              <select
+                className="h-12 rounded-md border border-slate-400 bg-white px-3 text-base font-semibold text-slate-950 shadow-sm focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                value={scheduleWeekId}
+                onChange={(event) => onScheduleWeekSelected(event.target.value)}
+              >
+                {periods.map((period) => {
+                  return (
+                    <option key={period.id} value={period.id}>
+                      {period.name}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            <AvailabilityWeekNavigation previousHref={previousWeekHref} nextHref={nextWeekHref} />
+          </div>
           <label className="flex flex-col gap-2 text-sm text-slate-700">
             <span className="font-semibold text-slate-950">Provider</span>
             <select

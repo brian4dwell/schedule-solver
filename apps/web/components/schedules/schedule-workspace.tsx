@@ -104,6 +104,8 @@ type ScheduleWorkspaceProps = {
   providers: Provider[];
   rooms: RoomRow[];
   schedulePeriod: SchedulePeriod;
+  previousWeek: SchedulePeriod | undefined;
+  nextWeek: SchedulePeriod | undefined;
   scheduleId: string;
 };
 
@@ -1558,6 +1560,8 @@ export function ScheduleWorkspace({
   providers,
   rooms,
   schedulePeriod,
+  previousWeek,
+  nextWeek,
   scheduleId,
 }: ScheduleWorkspaceProps) {
   const { dismissToast, showToast } = useToast();
@@ -2907,12 +2911,48 @@ export function ScheduleWorkspace({
       <section className="rounded-md border border-slate-200 bg-white px-4 py-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <Link
-              href="/schedules"
-              className="text-xs font-semibold text-teal-700 hover:text-teal-900"
-            >
-              Back to schedules
-            </Link>
+            <nav aria-label="Schedule weeks" className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/schedules"
+                className="mr-2 text-xs font-semibold text-teal-700 hover:text-teal-900"
+              >
+                Back to schedules
+              </Link>
+              {previousWeek === undefined ? (
+                <span
+                  aria-disabled="true"
+                  title="No schedule exists for the previous week"
+                  className="inline-flex h-8 items-center rounded-md border border-slate-200 px-3 text-xs font-semibold text-slate-400"
+                >
+                  &larr; Previous week
+                </span>
+              ) : (
+                <Link
+                  href={`/schedules/${previousWeek.id}`}
+                  title={`${previousWeek.name} (${previousWeek.start_date})`}
+                  className="inline-flex h-8 items-center rounded-md border border-slate-300 px-3 text-xs font-semibold text-teal-700 hover:bg-teal-50 hover:text-teal-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700"
+                >
+                  &larr; Previous week
+                </Link>
+              )}
+              {nextWeek === undefined ? (
+                <span
+                  aria-disabled="true"
+                  title="No schedule exists for the next week"
+                  className="inline-flex h-8 items-center rounded-md border border-slate-200 px-3 text-xs font-semibold text-slate-400"
+                >
+                  Next week &rarr;
+                </span>
+              ) : (
+                <Link
+                  href={`/schedules/${nextWeek.id}`}
+                  title={`${nextWeek.name} (${nextWeek.start_date})`}
+                  className="inline-flex h-8 items-center rounded-md border border-slate-300 px-3 text-xs font-semibold text-teal-700 hover:bg-teal-50 hover:text-teal-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700"
+                >
+                  Next week &rarr;
+                </Link>
+              )}
+            </nav>
             <h3 className="mt-1 text-lg font-semibold text-slate-950">
               {workingVersion.name}
             </h3>

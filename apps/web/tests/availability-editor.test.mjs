@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
+import { useSyncExternalStore } from "react";
 
 import {
+  act,
   button,
   click,
+  createElement,
   finishRequest,
   loadTsModule,
   renderComponent,
@@ -34,12 +37,32 @@ function availability(providerId, scheduleWeekId, maxShiftsRequested = 5) {
   return record;
 }
 
-async function setup(context, api) {
+function subscribeToUrl(callback) {
+  window.addEventListener("popstate", callback);
+  return () => window.removeEventListener("popstate", callback);
+}
+
+function useSearchParams() {
+  const search = useSyncExternalStore(subscribeToUrl, () => window.location.search);
+  return new URLSearchParams(search);
+}
+
+async function setup(context, api, initialUrl = "/availability") {
+  window.history.replaceState(null, "", initialUrl);
+  const pushState = window.history.pushState.bind(window.history);
+  context.mock.method(window.history, "pushState", (...args) => {
+    pushState(...args);
+    window.dispatchEvent(new window.PopStateEvent("popstate"));
+  });
   const showToast = mock.fn();
   const overrides = new Map([
     ["@/lib/api", api],
     ["@/components/ui/toast-provider", { useToast: () => ({ showToast }) }],
+    ["next/navigation", { useSearchParams, usePathname: () => "/availability" }],
+    ["next/link", (props) => createElement("a", props)],
   ]);
+  const navigation = loadTsModule("components/providers/availability-week-navigation.tsx", overrides);
+  overrides.set("./availability-week-navigation", navigation);
   const { ProviderAvailabilityEditor } = loadTsModule(
     "components/providers/provider-availability-editor.tsx",
     overrides,
@@ -47,6 +70,43 @@ async function setup(context, api) {
   const container = await renderComponent(context, ProviderAvailabilityEditor, { periods, providers });
   return container;
 }
+
+test("week links retain the provider and a linked URL selects that availability", async (context) => {
+  const api = {
+    getProviderWeeklyAvailability: mock.fn(async (weekId, providerId) => availability(providerId, weekId)),
+  };
+  const container = await setup(context, api, "/availability?weekId=week-b&providerId=provider-b");
+  assert.equal(selector(container, 0).value, "week-b");
+  assert.equal(selector(container, 1).value, "provider-b");
+  assert.deepEqual(api.getProviderWeeklyAvailability.mock.calls[0].arguments, ["week-b", "provider-b"]);
+  const previousLink = container.querySelector('nav[aria-label="Availability weeks"] a');
+  assert.equal(previousLink.getAttribute("href"), "/availability?weekId=week-a&providerId=provider-b");
+  assert.match(previousLink.textContent, /Previous week/);
+  assert.match(container.querySelector('[aria-disabled="true"]').textContent, /Next week/);
+
+  await act(async () => {
+    window.history.pushState(null, "", previousLink.href);
+  });
+  assert.equal(selector(container, 0).value, "week-a");
+  assert.equal(selector(container, 1).value, "provider-b");
+  assert.deepEqual(api.getProviderWeeklyAvailability.mock.calls.at(-1).arguments, ["week-a", "provider-b"]);
+});
+
+test("dropdown changes update the URL and adjacent week links", async (context) => {
+  const api = {
+    getProviderWeeklyAvailability: mock.fn(async (weekId, providerId) => availability(providerId, weekId)),
+  };
+  const container = await setup(context, api);
+  await select(selector(container, 1), "provider-b");
+  assert.equal(window.location.search, "?weekId=week-a&providerId=provider-b");
+  const nextLink = container.querySelector('nav[aria-label="Availability weeks"] a');
+  assert.equal(nextLink.getAttribute("href"), "/availability?weekId=week-b&providerId=provider-b");
+  assert.match(nextLink.textContent, /Next week/);
+  await select(selector(container, 0), "week-b");
+  assert.equal(window.location.search, "?weekId=week-b&providerId=provider-b");
+  const previousLink = container.querySelector('nav[aria-label="Availability weeks"] a');
+  assert.match(previousLink.textContent, /Previous week/);
+});
 
 function selector(container, index) {
   const selectors = container.querySelectorAll("select");
