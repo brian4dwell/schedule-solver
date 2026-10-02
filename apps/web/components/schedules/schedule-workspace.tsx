@@ -64,6 +64,7 @@ type AvailableRoom = {
   id: string;
   centerId: string;
   centerName: string;
+  centerColor: string | null;
   name: string;
   mdOnly: boolean;
   roomTypeIds: string[];
@@ -533,6 +534,7 @@ function availableRoomsFromRows(rows: RoomRow[]): AvailableRoom[] {
         id: row.room.id,
         centerId: row.center.id,
         centerName: row.center.name,
+        centerColor: row.center.color,
         name: row.room.name,
         mdOnly: row.room.md_only,
         roomTypeIds: row.room.room_types.map((roomType) => {
@@ -1341,18 +1343,50 @@ function shiftTypeLabel(shiftType: ScheduleRoomAssignment["shiftType"]) {
 
 function shiftTypeContainerClassName(shiftType: ScheduleRoomAssignment["shiftType"]) {
   if (shiftType === "full_shift") {
-    return "rounded-md border border-slate-200 bg-white p-3 shadow-sm";
+    return "relative rounded-md border border-slate-200 bg-white p-3 shadow-sm";
   }
 
   if (shiftType === "first_half") {
-    return "rounded-md border border-blue-200 bg-blue-50 p-3 shadow-sm";
+    return "relative rounded-md border border-blue-200 bg-blue-50 p-3 shadow-sm";
   }
 
   if (shiftType === "second_half") {
-    return "rounded-md border border-violet-200 bg-violet-50 p-3 shadow-sm";
+    return "relative rounded-md border border-violet-200 bg-violet-50 p-3 shadow-sm";
   }
 
-  return "rounded-md border border-amber-200 bg-amber-50 p-3 shadow-sm";
+  return "relative rounded-md border border-amber-200 bg-amber-50 p-3 shadow-sm";
+}
+
+function centerColorStripe(color: string | null | undefined) {
+  const hasColor = color !== null && color !== undefined;
+
+  if (!hasColor) {
+    return null;
+  }
+
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-y-0 left-0 w-[4px] rounded-l-md"
+      style={{ backgroundColor: color }}
+    />
+  );
+}
+
+function centerColorDot(color: string | null | undefined) {
+  const hasColor = color !== null && color !== undefined;
+
+  if (!hasColor) {
+    return null;
+  }
+
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-block h-2 w-2 shrink-0 rounded-full ring-1 ring-black/10"
+      style={{ backgroundColor: color }}
+    />
+  );
 }
 
 function parseDragPayload(data: string): DragPayload | null {
@@ -3254,11 +3288,13 @@ export function ScheduleWorkspace({
                   >
                     {dayAssignments.map((assignment, index) => {
                       if (assignment.roomId === null) {
+                        const centerRow = rooms.find((row) => row.center.id === assignment.centerId);
                         const provider = providers.find((candidate) => candidate.id === assignment.providerId);
                         const providerLabel = provider === undefined ? "Unassigned provider" : provider.display_name;
                         const slotRows = constraintRows.filter((row) => row.id.startsWith(`${assignment.id}-`));
                         return (
-                          <div key={assignment.id} className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+                          <div key={assignment.id} className="relative rounded-md border border-slate-200 bg-white p-3 text-sm">
+                            {centerColorStripe(centerRow?.center.color)}
                             <p className="font-semibold">Center assignment (no room)</p>
                             <p>{providerLabel}</p>
                             <p>{shiftTypeLabel(assignment.shiftType)} · {assignment.startTime}–{assignment.endTime}</p>
@@ -3355,9 +3391,11 @@ export function ScheduleWorkspace({
                             }
                             className={assignmentContainerClassName}
                           >
+                          {centerColorStripe(room?.centerColor)}
                           <div className="flex items-start justify-between gap-2">
                             <div>
-                              <p className="text-sm font-semibold text-slate-950">
+                              <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-950">
+                                {centerColorDot(room?.centerColor)}
                                 {centerName}
                               </p>
                               <p className="text-xs text-slate-500">{roomName}</p>
@@ -3712,9 +3750,11 @@ export function ScheduleWorkspace({
                         roomId: room.id,
                       })
                     }
-                    className="cursor-grab rounded-md border border-slate-200 bg-white p-3 shadow-sm active:cursor-grabbing"
+                    className="relative cursor-grab rounded-md border border-slate-200 bg-white p-3 shadow-sm active:cursor-grabbing"
                   >
-                    <p className="text-sm font-semibold text-slate-950">
+                    {centerColorStripe(room.centerColor)}
+                    <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-950">
+                      {centerColorDot(room.centerColor)}
                       {room.centerName}
                     </p>
                     <p className="text-xs text-slate-500">{room.name}</p>

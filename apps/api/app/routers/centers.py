@@ -54,6 +54,7 @@ def create_center(
     center = Center(
         organization_id=organization_id,
         name=request.name,
+        color=request.color,
         address_line_1=request.address_line_1,
         address_line_2=request.address_line_2,
         city=request.city,
@@ -88,6 +89,9 @@ def update_center(
 
     if "name" in request.model_fields_set:
         center.name = request.name
+
+    if "color" in request.model_fields_set:
+        center.color = request.color
 
     if "address_line_1" in request.model_fields_set:
         center.address_line_1 = request.address_line_1

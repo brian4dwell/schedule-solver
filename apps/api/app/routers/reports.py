@@ -244,6 +244,7 @@ class MonthlyScheduleAssignmentRow:
     provider_id: UUID
     center_id: UUID
     center_name: str
+    center_color: str | None
     room_id: UUID | None
     room_name: str | None
     shift_type: str
@@ -635,6 +636,7 @@ def assignment_row_from_result(
         provider_id=assignment.provider_id,
         center_id=center.id,
         center_name=center.name,
+        center_color=center.color,
         room_id=assignment.room_id,
         room_name=room_name,
         shift_type=assignment.shift_type,
@@ -721,6 +723,7 @@ def assignment_read_for_row(
         schedule_version_status=row.schedule_version_status,
         center_id=row.center_id,
         center_name=row.center_name,
+        center_color=row.center_color,
         room_id=row.room_id,
         room_name=row.room_name,
         shift_type=row.shift_type,

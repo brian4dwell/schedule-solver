@@ -2,6 +2,7 @@
 
 import { formatScheduleClock } from "@/lib/schedule-time";
 import { WeeklyAvailabilityNotes } from "@/components/reports/weekly-availability-notes";
+import { scheduledCenterStyles } from "@/components/reports/monthly-availability-colors";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -409,10 +410,12 @@ function calendarDayCell(day: MonthlyAvailabilityDayApi) {
       </div>
       <div className="mt-1.5 space-y-1.5">
         {scheduledProviders.map((provider) => {
+          const centerStyles = scheduledCenterStyles(provider.scheduled_assignments);
           return (
             <div
               key={`${provider.provider_id}-${provider.schedule_period_id}`}
-              className="rounded-md border border-teal-200 bg-teal-50 px-1.5 py-1 shadow-sm"
+              className="rounded-md border border-slate-200 bg-white px-1.5 py-1 shadow-sm"
+              style={centerStyles.card}
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
@@ -421,7 +424,10 @@ function calendarDayCell(day: MonthlyAvailabilityDayApi) {
                   </p>
                   {providerOptionMarkers(provider)}
                 </div>
-                <span className="rounded bg-teal-700 px-1 py-0.5 text-[9px] font-semibold leading-3 text-white">
+                <span
+                  className="rounded px-1 py-0.5 text-[9px] font-semibold leading-3 text-slate-950"
+                  style={centerStyles.badge}
+                >
                   Scheduled
                 </span>
               </div>
@@ -429,7 +435,8 @@ function calendarDayCell(day: MonthlyAvailabilityDayApi) {
                 return (
                   <p
                     key={assignment.assignment_id}
-                    className="monthly-availability-print-text mt-0.5 truncate text-[11px] font-medium leading-4 text-teal-950"
+                    className="monthly-availability-print-text mt-0.5 truncate border-l-2 border-transparent pl-1 text-[11px] font-medium leading-4 text-slate-950"
+                    style={{ borderLeftColor: assignment.center_color === null ? undefined : assignment.center_color }}
                   >
                     {assignmentDetail(assignment)}
                   </p>

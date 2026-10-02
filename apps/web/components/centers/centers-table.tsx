@@ -7,6 +7,7 @@ import { useState } from "react";
 import { deactivateCenter, type Center } from "@/lib/api";
 import { formatTimezone } from "@/lib/timezones";
 import { useToast } from "@/components/ui/toast-provider";
+import { CenterColorEditor } from "@/components/centers/center-color-editor";
 
 type CentersTableProps = {
   centers: Center[];
@@ -51,6 +52,7 @@ export function CentersTable({ centers }: CentersTableProps) {
           <thead className="bg-slate-100 text-left text-slate-600">
             <tr>
               <th className="px-4 py-3 font-semibold">Name</th>
+              <th className="px-4 py-3 font-semibold">Color</th>
               <th className="px-4 py-3 font-semibold">Location</th>
               <th className="px-4 py-3 font-semibold">Timezone</th>
               <th className="px-4 py-3 font-semibold">Status</th>
@@ -69,6 +71,9 @@ export function CentersTable({ centers }: CentersTableProps) {
                     <Link href={`/centers/${center.id}`} className="hover:text-teal-700">
                       {center.name}
                     </Link>
+                  </td>
+                  <td className="px-4 py-3">
+                    <CenterColorEditor center={center} />
                   </td>
                   <td className="px-4 py-3 text-slate-600">{location}</td>
                   <td className="px-4 py-3 text-slate-600">{timezone}</td>

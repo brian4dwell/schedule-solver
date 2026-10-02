@@ -7,6 +7,7 @@ import { createCenter, type Center, updateCenter } from "@/lib/api";
 import type { CenterFormValues } from "@/lib/schemas/center";
 import { parseUsTimezone, usTimezoneOptions } from "@/lib/timezones";
 import { useToast } from "@/components/ui/toast-provider";
+import { CenterColorPicker } from "@/components/centers/center-color-picker";
 
 type CenterFormProps = {
   center?: Center;
@@ -17,6 +18,8 @@ export function CenterForm({ center }: CenterFormProps) {
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const isEditing = center !== undefined;
+  const initialColor = center === undefined ? null : center.color;
+  const [color, setColor] = useState<string | null>(initialColor);
 
   async function handleSubmit(formData: FormData) {
     setErrorMessage(null);
@@ -31,6 +34,7 @@ export function CenterForm({ center }: CenterFormProps) {
       state: String(formData.get("state") ?? ""),
       postalCode: String(formData.get("postalCode") ?? ""),
       timezone,
+      color,
     };
 
     try {
@@ -66,6 +70,10 @@ export function CenterForm({ center }: CenterFormProps) {
         </div>
       ) : null}
       <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+          <span>Color</span>
+          <CenterColorPicker color={color} onChange={setColor} label="Center color" />
+        </div>
         <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
           Name
           <input

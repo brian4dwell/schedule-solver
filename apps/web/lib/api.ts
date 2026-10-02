@@ -3,6 +3,7 @@ import { z } from "zod";
 import { solverRunSchema, solverSettingsSchema, solverSettingsWriteSchema, solverWeightsSchema, type SolverWeights } from "@/lib/schemas/solver-controls";
 
 import { centerSchema, type CenterFormValues } from "@/lib/schemas/center";
+import { centerApiSchema, centerColorUpdateSchema, centersApiSchema, type CenterApi } from "@/lib/schemas/center";
 import { nextPublicApiBaseUrl } from "@/lib/env";
 import {
   fairnessReportApiSchema,
@@ -99,19 +100,7 @@ import {
   type ProviderPortalWeekAvailability,
 } from "@/lib/schemas/provider-portal";
 
-export type Center = {
-  id: string;
-  name: string;
-  address_line_1: string | null;
-  address_line_2: string | null;
-  city: string | null;
-  state: string | null;
-  postal_code: string | null;
-  timezone: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-};
+export type Center = CenterApi;
 
 export type Room = {
   id: string;
@@ -342,6 +331,7 @@ function jsonRequestInit(method: string, body: unknown): RequestInit {
 function centerPayload(values: CenterFormValues) {
   const payload = {
     name: values.name,
+    color: values.color,
     address_line_1: values.addressLine1 || null,
     address_line_2: values.addressLine2 || null,
     city: values.city || null,
@@ -388,12 +378,14 @@ function providerPayload(values: ProviderFormValues) {
 }
 
 export async function listCenters(): Promise<Center[]> {
-  const centers = await requestJson<Center[]>("/centers", { cache: "no-store" });
+  const response = await requestJson<unknown>("/centers", { cache: "no-store" });
+  const centers = centersApiSchema.parse(response);
   return centers;
 }
 
 export async function getCenter(centerId: string): Promise<Center> {
-  const center = await requestJson<Center>(`/centers/${centerId}`, { cache: "no-store" });
+  const response = await requestJson<unknown>(`/centers/${centerId}`, { cache: "no-store" });
+  const center = centerApiSchema.parse(response);
   return center;
 }
 
@@ -401,7 +393,8 @@ export async function createCenter(values: CenterFormValues): Promise<Center> {
   const parsedValues = centerSchema.parse(values);
   const payload = centerPayload(parsedValues);
   const init = jsonRequestInit("POST", payload);
-  const center = await requestJson<Center>("/centers", init);
+  const response = await requestJson<unknown>("/centers", init);
+  const center = centerApiSchema.parse(response);
   return center;
 }
 
@@ -412,15 +405,25 @@ export async function updateCenter(
   const parsedValues = centerSchema.parse(values);
   const payload = centerPayload(parsedValues);
   const init = jsonRequestInit("PATCH", payload);
-  const center = await requestJson<Center>(`/centers/${centerId}`, init);
+  const response = await requestJson<unknown>(`/centers/${centerId}`, init);
+  const center = centerApiSchema.parse(response);
+  return center;
+}
+
+export async function updateCenterColor(centerId: string, color: string | null): Promise<Center> {
+  const payload = centerColorUpdateSchema.parse({ color });
+  const init = jsonRequestInit("PATCH", payload);
+  const response = await requestJson<unknown>(`/centers/${centerId}`, init);
+  const center = centerApiSchema.parse(response);
   return center;
 }
 
 export async function deactivateCenter(centerId: string): Promise<Center> {
-  const center = await requestJson<Center>(`/centers/${centerId}`, {
+  const response = await requestJson<unknown>(`/centers/${centerId}`, {
     method: "DELETE",
     cache: "no-store",
   });
+  const center = centerApiSchema.parse(response);
   return center;
 }
 

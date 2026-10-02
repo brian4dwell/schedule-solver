@@ -313,6 +313,8 @@ Implemented in `apps/web`:
 - Zod schemas for form and API boundaries.
 - App shell with dashboard and two-tier top navigation.
 - Centers pages and forms.
+- Optional Center colors configured with a picker in Setup → Centers and the add/edit form. Colors persist as six-digit hex values and are available on Center API responses for other UI areas; existing Centers remain unset until configured.
+- Monthly Availability scheduled cards use Center colors for borders, background tints, badges, and shift markers. Multiple Center colors share a card in bands; Centers without configured colors remain uncolored.
 - Rooms pages and forms.
 - Room Types pages and forms.
 - Providers pages and forms.

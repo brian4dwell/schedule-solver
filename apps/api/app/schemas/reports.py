@@ -23,6 +23,7 @@ class MonthlyScheduleAssignmentRead(ScheduleTimeRange):
     schedule_version_status: str
     center_id: UUID
     center_name: str
+    center_color: str | None = Field(pattern=r"^#[0-9a-fA-F]{6}$")
     room_id: UUID | None
     room_name: str | None
     shift_type: str

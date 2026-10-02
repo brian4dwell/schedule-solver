@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from pydantic import ConfigDict
+from pydantic import Field
 from pydantic import field_validator
 
 from app.core.timezones import require_timezone
@@ -8,6 +9,7 @@ from app.schemas.common import TimestampedSchema
 
 class CenterBase(BaseModel):
     name: str
+    color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     address_line_1: str | None = None
     address_line_2: str | None = None
     city: str | None = None
@@ -28,6 +30,7 @@ class CenterCreate(CenterBase):
 
 class CenterUpdate(BaseModel):
     name: str | None = None
+    color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     address_line_1: str | None = None
     address_line_2: str | None = None
     city: str | None = None

@@ -1,16 +1,22 @@
 from datetime import UTC
 from datetime import date
 from datetime import datetime
+from datetime import time
 from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
 
 from app.db.models import Provider
+from app.db.models import Assignment
+from app.db.models import Center
+from app.db.models import ScheduleVersion
 from app.db.models import ProviderScheduleWeekAvailability
 from app.db.models import ProviderScheduleWeekNote
 from app.db.models import SchedulePeriod
 from app.routers.reports import LatestScheduleCandidate
+from app.routers.reports import assignment_row_from_result
+from app.routers.reports import assignment_read_for_row
 from app.routers.reports import MonthlyAvailabilityRow
 from app.routers.reports import monthly_availability_row_from_result
 from app.routers.reports import monthly_availability_days
@@ -93,6 +99,28 @@ def test_work_options_keep_report_order() -> None:
     work_options = work_options_from_availability_options(options)
 
     assert work_options == ["full_shift", "short_shift"]
+
+
+@pytest.mark.parametrize("color", ["#123abc", None])
+def test_monthly_scheduled_assignments_include_current_center_color(color: str | None) -> None:
+    period = SchedulePeriod(id=uuid4(), name="Week of May 4")
+    version = ScheduleVersion(id=uuid4(), version_number=1, status="draft")
+    center = Center(id=uuid4(), name="Center A", color=color)
+    assignment = Assignment(
+        id=uuid4(),
+        provider_id=uuid4(),
+        room_id=None,
+        shift_type="full_shift",
+        schedule_date=date(2026, 5, 4),
+        start_time=time(7),
+        end_time=time(15),
+    )
+
+    row = assignment_row_from_result(assignment, period, version, center, None)
+    response = assignment_read_for_row(row)
+
+    assert response.center_id == center.id
+    assert response.center_color == color
 
 
 def test_monthly_availability_days_expands_weekly_rows_to_matching_dates() -> None:

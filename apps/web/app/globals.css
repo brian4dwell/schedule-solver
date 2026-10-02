@@ -221,6 +221,7 @@ body {
   }
 
   body:has(.monthly-availability-report) .monthly-availability-report {
+    print-color-adjust: exact;
     color: #0f172a;
     page: monthly-availability-calendar;
   }

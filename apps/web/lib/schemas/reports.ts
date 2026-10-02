@@ -1,6 +1,7 @@
 import { scheduleTimeRangeSchema } from "@/lib/schemas/schedule-time";
 import { wallClockSchema } from "@/lib/schemas/schedule-time";
 import { z } from "zod";
+import { centerColorSchema } from "@/lib/schemas/center";
 import {
   providerWeeklyAvailabilityDaySchema,
   providerWeeklyNotesSchema,
@@ -23,6 +24,7 @@ export const monthlyScheduleAssignmentApiSchema = scheduleTimeRangeSchema.safeEx
   schedule_version_status: z.string().min(1),
   center_id: z.string().uuid(),
   center_name: z.string().min(1),
+  center_color: centerColorSchema,
   room_id: z.string().uuid().nullable(),
   room_name: z.string().nullable(),
   shift_type: monthlyAvailabilityOptionSchema,

@@ -78,10 +78,17 @@ class User(Base, TimestampMixin):
 
 class Center(Base, TimestampMixin):
     __tablename__ = "centers"
+    __table_args__ = (
+        CheckConstraint(
+            "color IS NULL OR (length(color) = 7 AND substr(color, 1, 1) = '#')",
+            name="ck_centers_color_format",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=create_uuid)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    color: Mapped[str | None] = mapped_column(String(7), nullable=True)
     address_line_1: Mapped[str | None] = mapped_column(String(255), nullable=True)
     address_line_2: Mapped[str | None] = mapped_column(String(255), nullable=True)
     city: Mapped[str | None] = mapped_column(String(120), nullable=True)
