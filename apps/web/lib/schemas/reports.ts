@@ -34,6 +34,9 @@ export const monthlyAvailabilityProviderApiSchema = z.object({
   schedule_period_id: z.string().uuid(),
   schedule_period_name: z.string().min(1),
   options: z.array(monthlyAvailabilityOptionSchema),
+  min_shifts_requested: z.number().min(0).max(14).multipleOf(0.5),
+  max_shifts_requested: z.number().min(0).max(14).multipleOf(0.5),
+  notes: providerWeeklyNotesSchema,
   scheduled_assignments: z.array(monthlyScheduleAssignmentApiSchema),
 });
 

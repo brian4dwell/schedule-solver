@@ -34,6 +34,9 @@ class MonthlyAvailabilityProviderRead(BaseModel):
     schedule_period_id: UUID
     schedule_period_name: str
     options: list[str]
+    min_shifts_requested: float
+    max_shifts_requested: float
+    notes: str | None
     scheduled_assignments: list[MonthlyScheduleAssignmentRead]
 
 

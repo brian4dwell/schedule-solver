@@ -1,6 +1,7 @@
 "use client";
 
 import { formatScheduleClock } from "@/lib/schedule-time";
+import { WeeklyAvailabilityNotes } from "@/components/reports/weekly-availability-notes";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -354,8 +355,10 @@ function assignmentDetail(assignment: MonthlyScheduleAssignmentApi) {
 }
 
 function providerOptionMarkers(provider: MonthlyAvailabilityProviderApi) {
+  const shiftRange = `${provider.min_shifts_requested}–${provider.max_shifts_requested}`;
+  const shiftRangeDescription = `Weekly shifts: minimum ${provider.min_shifts_requested}, maximum ${provider.max_shifts_requested}`;
   return (
-    <span className="monthly-availability-option-markers flex flex-wrap gap-1">
+    <span className="monthly-availability-option-markers flex flex-wrap items-center gap-1">
       {provider.options.map((option) => {
         const label = optionLabel(option);
         const toneClassName = optionToneClassName(option);
@@ -368,6 +371,19 @@ function providerOptionMarkers(provider: MonthlyAvailabilityProviderApi) {
           </span>
         );
       })}
+      <span
+        className="whitespace-nowrap text-[10px] font-medium leading-3 text-slate-600"
+        title={shiftRangeDescription}
+        aria-label={shiftRangeDescription}
+      >
+        {shiftRange}
+      </span>
+      {provider.notes !== null ? (
+        <WeeklyAvailabilityNotes
+          providerName={provider.provider_display_name}
+          notes={provider.notes}
+        />
+      ) : null}
     </span>
   );
 }

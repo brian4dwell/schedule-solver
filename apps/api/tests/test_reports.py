@@ -6,8 +6,13 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
+from app.db.models import Provider
+from app.db.models import ProviderScheduleWeekAvailability
+from app.db.models import ProviderScheduleWeekNote
+from app.db.models import SchedulePeriod
 from app.routers.reports import LatestScheduleCandidate
 from app.routers.reports import MonthlyAvailabilityRow
+from app.routers.reports import monthly_availability_row_from_result
 from app.routers.reports import monthly_availability_days
 from app.routers.reports import month_end_date
 from app.routers.reports import router
@@ -29,6 +34,9 @@ def create_monthly_availability_row(
         provider_display_name="Avery Provider",
         weekday=weekday,
         availability_options=availability_options,
+        min_shifts_requested=1.5,
+        max_shifts_requested=4,
+        notes="Prefer morning shifts this week.\nUnavailable after 3 pm.",
     )
     return row
 
@@ -111,6 +119,9 @@ def test_monthly_availability_days_expands_weekly_rows_to_matching_dates() -> No
     assert first_matching_day.date == date(2026, 5, 4)
     assert provider.provider_display_name == "Avery Provider"
     assert provider.options == ["full_shift", "first_half"]
+    assert provider.min_shifts_requested == 1.5
+    assert provider.max_shifts_requested == 4
+    assert provider.notes == row.notes
 
 
 def test_monthly_availability_days_omits_none_and_unset_rows() -> None:
@@ -129,6 +140,30 @@ def test_monthly_availability_days_omits_none_and_unset_rows() -> None:
     ]
 
     assert matching_days == []
+
+
+@pytest.mark.parametrize("notes", [None, "Morning shifts only.\nThank you!"])
+def test_monthly_availability_reads_half_shift_limits_and_optional_weekly_notes(notes: str | None) -> None:
+    period = SchedulePeriod(
+        id=uuid4(),
+        name="Week of May 4",
+        start_date=date(2026, 5, 4),
+        end_date=date(2026, 5, 10),
+    )
+    provider = Provider(id=uuid4(), display_name="Avery Provider")
+    availability = ProviderScheduleWeekAvailability(
+        weekday="monday",
+        availability_options=["full_shift"],
+        min_shifts_requested_units=3,
+        max_shifts_requested_units=7,
+    )
+    note = ProviderScheduleWeekNote(notes=notes) if notes is not None else None
+
+    row = monthly_availability_row_from_result(period, provider, availability, note)
+
+    assert row.min_shifts_requested == 1.5
+    assert row.max_shifts_requested == 3.5
+    assert row.notes == notes
 
 
 def test_schedule_group_selection_uses_requested_schedule_period() -> None:

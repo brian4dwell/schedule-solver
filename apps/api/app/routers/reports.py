@@ -210,6 +210,9 @@ class MonthlyAvailabilityRow:
     provider_display_name: str
     weekday: str
     availability_options: list[str]
+    min_shifts_requested: float
+    max_shifts_requested: float
+    notes: str | None
 
 
 @dataclass(frozen=True)
@@ -540,7 +543,11 @@ def monthly_availability_row_from_result(
     schedule_period: SchedulePeriod,
     provider: Provider,
     availability: ProviderScheduleWeekAvailability,
+    note: ProviderScheduleWeekNote | None,
 ) -> MonthlyAvailabilityRow:
+    minimum_shifts = availability.min_shifts_requested_units / 2
+    maximum_shifts = availability.max_shifts_requested_units / 2
+    notes = note.notes if note is not None else None
     row = MonthlyAvailabilityRow(
         schedule_period_id=schedule_period.id,
         schedule_period_name=schedule_period.name,
@@ -550,6 +557,9 @@ def monthly_availability_row_from_result(
         provider_display_name=provider.display_name,
         weekday=availability.weekday,
         availability_options=availability.availability_options,
+        min_shifts_requested=minimum_shifts,
+        max_shifts_requested=maximum_shifts,
+        notes=notes,
     )
     return row
 
@@ -561,7 +571,7 @@ def monthly_availability_rows(
     selected_period_ids: list[UUID] | None,
     session: Session,
 ) -> list[MonthlyAvailabilityRow]:
-    statement = select(SchedulePeriod, Provider, ProviderScheduleWeekAvailability)
+    statement = select(SchedulePeriod, Provider, ProviderScheduleWeekAvailability, ProviderScheduleWeekNote)
     statement = statement.join(
         ProviderScheduleWeekAvailability,
         ProviderScheduleWeekAvailability.schedule_week_id == SchedulePeriod.id,
@@ -570,6 +580,12 @@ def monthly_availability_rows(
         Provider,
         Provider.id == ProviderScheduleWeekAvailability.provider_id,
     )
+    note_join = and_(
+        ProviderScheduleWeekNote.schedule_week_id == SchedulePeriod.id,
+        ProviderScheduleWeekNote.provider_id == Provider.id,
+        ProviderScheduleWeekNote.organization_id == organization_id,
+    )
+    statement = statement.outerjoin(ProviderScheduleWeekNote, note_join)
     statement = statement.where(SchedulePeriod.organization_id == organization_id)
     statement = statement.where(ProviderScheduleWeekAvailability.organization_id == organization_id)
     statement = statement.where(Provider.organization_id == organization_id)
@@ -585,11 +601,12 @@ def monthly_availability_rows(
     results = session.execute(statement).all()
     rows: list[MonthlyAvailabilityRow] = []
 
-    for schedule_period, provider, availability in results:
+    for schedule_period, provider, availability, note in results:
         row = monthly_availability_row_from_result(
             schedule_period,
             provider,
             availability,
+            note,
         )
         rows.append(row)
 
@@ -760,6 +777,9 @@ def provider_read_for_row(
         schedule_period_id=row.schedule_period_id,
         schedule_period_name=row.schedule_period_name,
         options=work_options,
+        min_shifts_requested=row.min_shifts_requested,
+        max_shifts_requested=row.max_shifts_requested,
+        notes=row.notes,
         scheduled_assignments=scheduled_assignments,
     )
     return provider
